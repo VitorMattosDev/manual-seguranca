@@ -1,3 +1,327 @@
 # Autenticidade, não repúdio e responsabilização {#sec-cap003}
 
-*(em elaboracao)*
+Numa quinta-feira de junho, o setor financeiro de um provedor recebeu um e-mail do fornecedor de equipamentos ópticos com quem trabalhava havia seis anos. A mensagem vinha na mesma cadeia de respostas de uma negociação real em andamento, com o histórico completo abaixo, a assinatura de sempre e o mesmo tom. Informava mudança de banco e anexava a nota reemitida com os novos dados. O pagamento de R$ 118 mil saiu no dia seguinte.
+
+O domínio remetente não era `fornecedor.com.br`, e sim `fornecedor-com.br`. Nada mais no e-mail era falso: o histórico era autêntico, porque a caixa de um vendedor do fornecedor havia sido comprometida semanas antes e a conversa fora copiada dali. Não houve invasão do provedor, não houve malware, não houve nenhuma falha nos três pilares do @sec-cap002. Confidencialidade, integridade e disponibilidade da mensagem estavam preservadas: ela chegou íntegra, no horário, a quem devia. O que faltou foi uma propriedade diferente — **a garantia de que a origem é quem afirma ser**.
+
+Dentro do mesmo provedor, na mesma semana, um segundo episódio menor: alguém executou `no ip route 0.0.0.0/0` no roteador de borda às 14h20 de uma quarta e derrubou a saída por dezenove minutos. O log do equipamento registrou o comando com precisão de segundo. Registrou também o usuário: `admin`. Como as sete pessoas da equipe técnica usavam `admin`, o log respondeu o que aconteceu e quando, e não respondeu a única pergunta que faltava.
+
+Este capítulo trata das três propriedades que os pilares clássicos não cobrem: **autenticidade** (a origem é quem afirma ser), **não repúdio** (a origem não pode negar depois) e **responsabilização** (cada ação é atribuível a um sujeito identificado).
+
+## Quatro coisas diferentes que se confundem
+
+Antes das três propriedades, é preciso separar quatro conceitos que a linguagem cotidiana funde e cuja confusão produz erros de arquitetura recorrentes. A @fig-iaaa mostra a cadeia.
+
+::: {#fig-iaaa}
+```{.tikz}
+%%| filename: iaaa
+%%| alt: Cadeia de quatro etapas — identificação, autenticação, autorização e responsabilização — com a pergunta que cada uma responde e o mecanismo típico
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{etapa/.style={thick, rounded corners=3pt, align=center, inner sep=5pt,
+                         minimum width=3.05cm, minimum height=2.5cm}}
+
+  \node[etapa, draw=manualgray, fill=manualgray!8] (n1) at (0,0)
+    {\textbf{\textcolor{manualgray}{Identificação}}\\[4pt]
+     Quem você\\diz ser?\\[5pt]
+     \scriptsize\color{manualgray}login, CPF,\\número de conta};
+
+  \node[etapa, draw=manualblue, fill=manualblue!8] (n2) at (3.55,0)
+    {\textbf{\textcolor{manualblue}{Autenticação}}\\[4pt]
+     Consegue\\provar?\\[5pt]
+     \scriptsize\color{manualgray}senha, chave,\\token, biometria};
+
+  \node[etapa, draw=manualgreen, fill=manualgreen!8] (n3) at (7.1,0)
+    {\textbf{\textcolor{manualgreen}{Autorização}}\\[4pt]
+     Pode fazer\\isso?\\[5pt]
+     \scriptsize\color{manualgray}papéis, ACL,\\políticas};
+
+  \node[etapa, draw=manualyellow, fill=manualyellow!8] (n4) at (10.65,0)
+    {\textbf{\textcolor{manualyellow}{Responsabilização}}\\[4pt]
+     Quem fez\\o que fez?\\[5pt]
+     \scriptsize\color{manualgray}log íntegro,\\trilha de auditoria};
+
+  \draw[vetor, manualgray] (n1) -- (n2);
+  \draw[vetor, manualgray] (n2) -- (n3);
+  \draw[vetor, manualgray] (n3) -- (n4);
+
+  \node[anchor=north, manualred, font=\scriptsize] at (5.32,-1.6)
+    {sem a primeira etapa correta, nenhuma das três seguintes tem valor};
+\end{tikzpicture}
+```
+Identificação, autenticação, autorização e responsabilização. Quatro perguntas distintas, quatro mecanismos distintos.
+:::
+
+**Identificação** é a alegação: "sou o usuário `mmatos`". É pública e não prova nada. **Autenticação** é a verificação dessa alegação contra uma evidência. **Autorização** é a decisão sobre o que aquele sujeito, já autenticado, pode fazer. E **responsabilização** é a capacidade, *depois*, de atribuir cada ação a um sujeito.
+
+Duas confusões custam caro na prática. A primeira é tratar identificação como autenticação — é o que faz uma central de atendimento liberar mudança cadastral porque a pessoa "sabe o CPF", quando o CPF é dado de identificação, presente em dezenas de bases e amplamente vazado. A segunda é presumir que autenticação forte resolve a responsabilização: se sete pessoas compartilham a credencial, o segundo fator apenas garante que *alguém do grupo* entrou.
+
+## Autenticidade
+
+**Autenticidade** é a garantia de que uma entidade, mensagem ou dado é genuinamente o que ou de quem se afirma. Vem em três recortes:
+
+- **Autenticidade de entidade.** Quem está do outro lado da conexão é mesmo aquele servidor, aquele usuário, aquele equipamento. É o que o certificado TLS resolve para o servidor e o que a autenticação resolve para o usuário.
+- **Autenticidade de mensagem ou de dado.** Aquele arquivo, e-mail ou pacote realmente foi produzido pela origem alegada. É o que faltou no caso de abertura.
+- **Autenticidade de origem em tempo real.** Além de vir da origem certa, a mensagem é *desta* conversa e não a repetição de uma anterior — o problema do frescor, tratado adiante.
+
+Note que autenticidade e integridade caminham juntas mas não são a mesma coisa. Integridade responde "isto foi alterado?"; autenticidade responde "quem produziu isto?". Um hash SHA-256 publicado ao lado de um arquivo dá integridade contra corrupção acidental, e não dá autenticidade nenhuma: quem alterou o arquivo altera o hash publicado na mesma página. A diferença é a existência de um **segredo** que só a origem legítima possui.
+
+### Os dois mecanismos, e por que não são intercambiáveis
+
+Existem duas famílias criptográficas para autenticidade de mensagem, e a diferença entre elas é a diferença entre ter e não ter não repúdio (@fig-mac-vs-assinatura).
+
+::: {#fig-mac-vs-assinatura}
+```{.tikz}
+%%| filename: mac-vs-assinatura
+%%| alt: Comparação entre código de autenticação de mensagem com chave compartilhada e assinatura digital com par de chaves, destacando que só a segunda oferece não repúdio
+\begin{tikzpicture}[font=\footnotesize]
+  % --- Painel esquerdo: HMAC
+  \draw[manualblue, thick, fill=manualblue!5, rounded corners=5pt]
+    (-0.4,-3.5) rectangle (6.4,2.5);
+  \node[anchor=north, manualblue] at (3.0,2.35) {\bfseries HMAC (chave compartilhada)};
+
+  \node[draw=manualgray, fill=white, rounded corners=2pt, minimum width=1.6cm,
+        minimum height=0.7cm] (ea) at (0.9,1.1) {Alice};
+  \node[draw=manualgray, fill=white, rounded corners=2pt, minimum width=1.6cm,
+        minimum height=0.7cm] (eb) at (5.1,1.1) {Bob};
+  \draw[vetor, manualblue] (ea) -- (eb)
+    node[midway, above, font=\scriptsize] {msg + tag};
+
+  \node[align=center, font=\scriptsize] at (3.0,-0.1)
+    {ambos conhecem a\\mesma chave $K$};
+  \node[draw=manualgreen, fill=manualgreen!10, rounded corners=2pt, align=center,
+        inner sep=3pt, font=\scriptsize] at (3.0,-1.3)
+    {Bob confirma:\\veio de quem tem $K$};
+  \node[draw=manualred, fill=manualred!10, rounded corners=2pt, align=center,
+        inner sep=3pt, font=\scriptsize] at (3.0,-2.7)
+    {Bob não prova a terceiro:\\ele mesmo poderia ter forjado};
+
+  % --- Painel direito: assinatura digital
+  \draw[manualgreen, thick, fill=manualgreen!5, rounded corners=5pt]
+    (7.4,-3.5) rectangle (14.2,2.5);
+  \node[anchor=north, manualgreen] at (10.8,2.35) {\bfseries Assinatura digital (par de chaves)};
+
+  \node[draw=manualgray, fill=white, rounded corners=2pt, minimum width=1.6cm,
+        minimum height=0.7cm] (sa) at (8.7,1.1) {Alice};
+  \node[draw=manualgray, fill=white, rounded corners=2pt, minimum width=1.6cm,
+        minimum height=0.7cm] (sb) at (12.9,1.1) {Bob};
+  \draw[vetor, manualgreen] (sa) -- (sb)
+    node[midway, above, font=\scriptsize] {msg + assinatura};
+
+  \node[align=center, font=\scriptsize] at (10.8,-0.1)
+    {só Alice tem a privada;\\a pública é de todos};
+  \node[draw=manualgreen, fill=manualgreen!10, rounded corners=2pt, align=center,
+        inner sep=3pt, font=\scriptsize] at (10.8,-1.3)
+    {Bob confirma:\\só Alice pôde gerar};
+  \node[draw=manualgreen, fill=manualgreen!10, rounded corners=2pt, align=center,
+        inner sep=3pt, font=\scriptsize] at (10.8,-2.7)
+    {qualquer terceiro verifica:\\há não repúdio};
+\end{tikzpicture}
+```
+Chave simétrica compartilhada dá autenticidade entre as partes; só o par de chaves assimétrico sustenta não repúdio perante terceiros.
+:::
+
+Um **código de autenticação de mensagem** (MAC, tipicamente HMAC) usa uma chave secreta compartilhada entre remetente e destinatário. É rápido, simples e suficiente quando as duas partes confiam uma na outra e o objetivo é apenas detectar adulteração e impostor. Mas, como *ambos* possuem a chave, o destinatário poderia ter produzido a mesma tag — logo não consegue provar a um juiz que a mensagem veio do remetente.
+
+Uma **assinatura digital** usa um par de chaves: a privada, que só a origem possui, gera a assinatura; a pública, que todos podem ter, a verifica. Isso permite que *qualquer terceiro* verifique, e é a base do não repúdio. A mecânica de ambas é assunto do Volume 3.
+
+### Autenticidade no e-mail: o caso de abertura resolvido
+
+O correio eletrônico nasceu sem autenticidade nenhuma: o campo `From:` é preenchido livremente por quem envia, como o remetente escrito no verso de um envelope. Três mecanismos foram acrescentados depois:
+
+- **SPF** declara, em registro DNS do domínio, quais servidores estão autorizados a enviar em seu nome. Verifica o envelope, não o `From:` que o usuário vê.
+- **DKIM** assina criptograficamente cabeçalhos e corpo da mensagem com uma chave cujo par público está publicado no DNS do domínio. Dá autenticidade de origem e integridade, e sobrevive a encaminhamentos.
+- **DMARC** amarra os dois ao domínio que o usuário efetivamente lê, define a política para quem falha na verificação (`none`, `quarantine`, `reject`) e produz relatórios.
+
+E aqui está o ponto desconfortável do caso de abertura: **os três teriam passado**. O domínio `fornecedor-com.br` era real, registrado pelo atacante, com SPF e DKIM próprios corretamente configurados. A mensagem era autêntica — de um domínio que não era o esperado. Autenticidade criptográfica prova a origem; não prova que a origem é a *certa*. É por isso que o controle que resolve esse ataque não é técnico, e sim de processo: **mudança de dados bancários de fornecedor só vale com confirmação por canal independente**, telefone conhecido de cadastro anterior, nunca o número que veio no próprio e-mail.
+
+### Frescor: autenticidade não basta
+
+Uma mensagem legítima, capturada e retransmitida depois, continua sendo autêntica — e é um ataque. É a **repetição** (*replay*): o comando de abertura de cancela gravado por rádio e reenviado à noite; a requisição de transferência interceptada e repetida cinco vezes.
+
+Os antídotos são três, e quase todo protocolo sério usa alguma combinação deles: **nonce** (valor único por transação, que o destinatário recusa se repetido), **carimbo de tempo** com janela estreita de aceitação, e **contador de sequência** monotônico. É por isso que a sincronização de relógio (@sec-cap002) é requisito de segurança e não conveniência operacional: com relógios divergindo minutos, a janela de aceitação precisa ser alargada, e a janela alargada é exatamente a brecha para repetição.
+
+## Não repúdio
+
+**Não repúdio** é a garantia de que quem praticou um ato não consiga negar tê-lo praticado, de forma sustentável perante um terceiro. É a propriedade mais mal-empregada do vocabulário da área, porque exige muito mais do que criptografia.
+
+Para que o não repúdio se sustente, cinco condições precisam valer ao mesmo tempo:
+
+1. **Controle exclusivo da chave.** Se a chave privada estava num servidor a que cinco pessoas tinham acesso administrativo, ou numa planilha, "só o titular poderia ter assinado" é falso. Daí o uso de módulo de segurança em hardware e de cartão com chave não exportável.
+2. **Vínculo confiável entre chave e pessoa.** Alguém precisa ter verificado a identidade do titular antes de emitir o certificado, e essa cadeia precisa ser auditável — é o papel de uma infraestrutura de chaves públicas, tema do Volume 3.
+3. **Carimbo de tempo confiável.** Sem uma marca temporal de terceira parte, não se distingue uma assinatura feita antes da revogação da chave de outra feita depois.
+4. **Integridade do que foi assinado.** A assinatura cobre um documento específico; o documento tem de ser preservado exatamente como assinado.
+5. **Registro do processo.** Como a assinatura foi coletada, com que consentimento, sob que interface.
+
+Falhando qualquer uma, o que resta é uma evidência forte — útil, muitas vezes decisiva — mas não uma impossibilidade de negar. Convém então distinguir dois níveis:
+
+- **Não repúdio técnico**: a propriedade matemática de que só quem detém a chave privada poderia ter produzido aquela assinatura.
+- **Não repúdio jurídico**: a aceitação, por um julgador, de que aquela pessoa praticou aquele ato. Admite contraprova — a alegação de chave roubada, de coação, de vício de consentimento.
+
+Nenhum sistema entrega o segundo automaticamente. O que a engenharia entrega é a evidência que torna a negativa implausível, e o quanto de implausibilidade se consegue é proporcional ao cuidado com as cinco condições acima.
+
+## Responsabilização
+
+**Responsabilização** (*accountability*) é a capacidade de atribuir cada ação relevante a um sujeito identificado, depois do fato. É a propriedade que sustenta investigação de incidente, auditoria, dissuasão interna e cumprimento de obrigação regulatória — e é a que o `admin` compartilhado do caso de abertura destrói por completo.
+
+Seus requisitos são quatro:
+
+**Contas nomeadas e individuais.** Não negociável. Toda credencial pertence a uma pessoa; contas de serviço pertencem a um sistema e têm dono humano registrado. Quando é tecnicamente necessário usar uma conta genérica — equipamento antigo que só aceita um usuário local —, o acesso deve passar por um intermediário que registre quem a usou: servidor de salto, ferramenta de acesso privilegiado, ou ao menos autenticação centralizada via RADIUS/TACACS+.
+
+**Registro suficiente.** Quem, o quê, quando, de onde, com que resultado. Um log que registra "login bem-sucedido" sem o endereço de origem, ou "configuração alterada" sem dizer o quê, ocupa disco sem produzir responsabilização.
+
+**Horário confiável e uniforme.** Correlacionar eventos entre firewall, servidor e aplicação exige que os três concordem sobre que horas são, e sobre qual fuso estão reportando.
+
+**Integridade do próprio registro.** Este é o requisito mais negligenciado: um log que o administrador comprometido pode editar não responsabiliza ninguém. Quem invade um servidor limpa os rastros como parte da rotina. As defesas são o envio imediato para um coletor remoto ao qual a máquina de origem não tem permissão de escrita retroativa, armazenamento imutável, e o **encadeamento por hash** ilustrado na @fig-cadeia-log.
+
+::: {#fig-cadeia-log}
+```{.tikz}
+%%| filename: cadeia-log
+%%| alt: Quatro registros de log encadeados, cada um contendo o hash do anterior, mostrando que alterar um registro invalida todos os seguintes
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{reg/.style={draw=manualblue, thick, fill=manualblue!7, rounded corners=3pt,
+                       align=center, inner sep=5pt, minimum width=2.5cm, minimum height=1.5cm},
+           hash/.style={draw=manualgray, fill=manualgray!12, rounded corners=2pt,
+                        inner sep=2pt, font=\scriptsize}}
+
+  \node[reg] (r1) at (0,0)    {\scriptsize 03:14 login\\\scriptsize mmatos};
+  \node[reg] (r2) at (3.6,0)  {\scriptsize 03:22 sudo\\\scriptsize systemctl};
+  \node[reg] (r3) at (7.2,0)  {\scriptsize 03:40 config\\\scriptsize alterada};
+  \node[reg] (r4) at (10.8,0) {\scriptsize 03:41 sessão\\\scriptsize encerrada};
+
+  \node[hash] (h1) at (0,-1.35)    {$h_1 = H(\text{reg}_1 \parallel h_0)$};
+  \node[hash] (h2) at (3.6,-1.35)  {$h_2 = H(\text{reg}_2 \parallel h_1)$};
+  \node[hash] (h3) at (7.2,-1.35)  {$h_3 = H(\text{reg}_3 \parallel h_2)$};
+  \node[hash] (h4) at (10.8,-1.35) {$h_4 = H(\text{reg}_4 \parallel h_3)$};
+
+  \draw[vetor, manualgray] (h1) -- (r2);
+  \draw[vetor, manualgray] (h2) -- (r3);
+  \draw[vetor, manualgray] (h3) -- (r4);
+  \node[draw=manualred, thick, fill=manualred!8, rounded corners=3pt, align=center,
+        inner sep=5pt] at (5.4,2.1)
+    {\color{manualred}\bfseries Alterar o registro 2 muda $h_2$\\
+     e quebra $h_3$ e $h_4$: a adulteração fica evidente};
+  \draw[destaque, ->,>=stealth] (5.4,1.5) -- (3.6,0.85);
+\end{tikzpicture}
+```
+Log encadeado por hash: cada registro incorpora o resumo do anterior, de modo que uma alteração isolada é detectável.
+:::
+
+Vale registrar o limite dessa técnica: o encadeamento detecta alteração e remoção no meio da cadeia, mas não impede que um atacante com controle total *trunque* o log a partir de certo ponto e recomece a cadeia. Por isso o encadeamento se combina com publicação periódica da âncora — enviar o hash corrente para fora da máquina a cada intervalo — e com o envio remoto em tempo real. É a mesma lógica de defesa em profundidade do @sec-cap001: nenhuma camada isolada basta.
+
+### Segregação de funções
+
+Responsabilização tem uma contraparte preventiva: **segregação de funções**. Quem executa não é quem aprova; quem administra o sistema não é quem audita os logs dele; quem cadastra o fornecedor não é quem libera o pagamento. É a aplicação direta do princípio de separação de privilégios de Saltzer e Schroeder [@saltzer1975], e é o que teria interrompido o golpe de abertura em duas frentes: alteração de dado bancário exigindo aprovação de segunda pessoa, e pagamento acima de um limite exigindo dupla assinatura.
+
+Em equipes pequenas a segregação plena é impossível — três pessoas não se dividem em seis papéis. A alternativa aceita é **compensar por detecção**: se a mesma pessoa cadastra e paga, então um terceiro (o sócio, o contador) revisa mensalmente todos os cadastros bancários alterados. A regra sobrevive com custo diferente; o que não sobrevive é fingir que ela existe.
+
+## Como as seis propriedades se encaixam
+
+A @tbl-seis-propriedades reúne a tríade do @sec-cap002 e as três deste capítulo, com o mecanismo típico de cada uma.
+
+| Propriedade | Pergunta que responde | Mecanismo típico |
+|---|---|---|
+| Confidencialidade | Quem consegue ler? | Controle de acesso, cifragem, minimização |
+| Integridade | Foi alterado? | Hash, restrições, transações, armazenamento imutável |
+| Disponibilidade | Está acessível quando preciso? | Redundância, capacidade, backup testado |
+| Autenticidade | Veio mesmo de quem diz? | HMAC, assinatura digital, certificados, DKIM |
+| Não repúdio | A origem pode negar depois? | Assinatura com chave sob controle exclusivo, carimbo de tempo |
+| Responsabilização | Quem fez o quê? | Conta nomeada, log íntegro, relógio sincronizado, segregação |
+
+: As seis propriedades, a pergunta de cada uma e o mecanismo que a sustenta. {#tbl-seis-propriedades}
+
+A leitura mais útil dessa tabela é diagnóstica: diante de um incidente, perguntar qual das seis linhas falhou costuma apontar o controle ausente mais rápido do que qualquer outra heurística.
+
+## ⚖️ Brasil em Foco
+
+O Brasil construiu, antes da maioria dos países, um arcabouço jurídico para autenticidade e não repúdio de documento eletrônico — e ele tem detalhes que mudam decisões técnicas.
+
+A **Medida Provisória nº 2.200-2/2001** instituiu a ICP-Brasil e é a peça central [@mp2200]. Seu art. 10, §1º estabelece que declarações constantes de documento eletrônico assinado com certificado ICP-Brasil **presumem-se verdadeiras em relação aos signatários**. É presunção relativa — admite prova em contrário —, mas inverte o ônus: quem nega precisa provar que não assinou. O §2º do mesmo artigo é igualmente importante e menos citado: admite outros meios de comprovação de autoria e integridade, **desde que aceitos pelas partes ou pela pessoa a quem for oposto o documento**. Ou seja, assinatura fora da ICP-Brasil vale — só não carrega a presunção legal, e depende de acordo prévio ou de convencimento no caso concreto.
+
+A **Lei nº 14.063/2020** organizou o campo em três níveis [@lei14063]:
+
+| Nível | O que exige | Uso típico |
+|---|---|---|
+| **Simples** | Identifica o signatário e anexa dados em formato eletrônico | Interações de baixo risco; login em serviço público |
+| **Avançada** | Controle exclusivo do signatário, detecção de alteração posterior, vínculo com a identidade — sem exigir ICP-Brasil | Atos de médio risco; assinatura gov.br |
+| **Qualificada** | Certificado ICP-Brasil | Atos de maior risco, registro público, o que a lei exigir |
+
+: Os três níveis de assinatura eletrônica da Lei 14.063/2020. {#tbl-niveis-assinatura}
+
+O **Código de Processo Civil** completa o quadro: o art. 411 dispõe que se considera autêntico o documento quando assinado digitalmente na forma da lei, e o art. 441 admite documentos eletrônicos produzidos e conservados com observância da legislação específica. Na prática forense, log de servidor sem assinatura nem cadeia de custódia não é imprestável, mas seu peso probatório depende inteiramente da credibilidade do processo de coleta — assunto do Volume 13.
+
+Para **responsabilização**, o Marco Civil impõe a guarda de registros (arts. 13 e 15) e submete sua disponibilização a ordem judicial (arts. 10 e 22), exigindo do requerente indícios do ilícito, identificação clara do usuário e período determinado [@marcocivil2014]. O provedor precisa, portanto, conseguir responder *a quem pertencia aquele endereço IP naquele instante* — o que, num cenário de CGNAT, depende de registrar também a porta de origem e o horário com precisão. Registro sem porta em rede com NAT em larga escala responde por centenas de assinantes ao mesmo tempo e não individualiza ninguém.
+
+A **LGPD** trata responsabilização como princípio expresso: o art. 6º, X exige a demonstração da adoção de medidas eficazes de cumprimento (*accountability*), e o art. 37 obriga o controlador e o operador a **manter registro das operações de tratamento** que realizarem [@lgpd2018]. Não é registro técnico apenas — é registro que precisa ser exibível à ANPD.
+
+Do lado penal, a **Lei nº 12.737/2012** e a **Lei nº 14.155/2021** alcançam diretamente a falsidade de origem: o estelionato praticado por meio eletrônico ganhou forma qualificada no art. 171, §2º-A do Código Penal, com pena de reclusão de 4 a 8 anos, e o §2º-B agrava quando praticado contra idoso ou vulnerável [@lei14155]. A fraude do e-mail corporativo do caso de abertura é exatamente essa figura, e a investigação depende dos registros que o Marco Civil obriga a guardar.
+
+Por fim, para quem opera telecomunicações: a Anatel exige identificação inequívoca do assinante no cadastro, e o **Pix** trouxe ao Banco Central um regime em que a autenticidade da ordem de pagamento é responsabilidade da instituição — com o Mecanismo Especial de Devolução para casos de fraude. É o Volume 10 que retoma o tema pelo lado da engenharia social.
+
+## 🛠️ No Campo
+
+**1. Acabar com a conta compartilhada.** É a intervenção de maior retorno deste capítulo. Cada pessoa com sua conta em servidores, roteadores, OLTs, sistema de gestão e painel do provedor de nuvem. Em equipamento de rede, centralizar em RADIUS ou TACACS+ resolve simultaneamente a nomeação, a revogação no desligamento e o registro:
+
+```bash
+# Chaves SSH autorizadas — cada linha deve ter dono identificável no comentário
+for u in $(awk -F: '$3>=1000 {print $1}' /etc/passwd); do
+  f="/home/$u/.ssh/authorized_keys"
+  [ -f "$f" ] && awk -v u="$u" '{print u, $NF}' "$f"
+done
+
+# Quem usou sudo nas últimas 24 h, e para quê
+journalctl _COMM=sudo --since "24 hours ago" -o cat | grep -oP 'USER=\S+ ; COMMAND=.*'
+
+# Contas com senha vazia ou sem expiração definida
+awk -F: '($2 == "" ) {print "SEM SENHA:", $1}' /etc/shadow
+```
+
+**2. Enviar o log para fora da máquina, no ato.** Coletor remoto que a origem não pode reescrever. No `rsyslog`, uma linha basta; o essencial é o coletor **não** aceitar que o cliente apague o que já enviou:
+
+```bash
+# /etc/rsyslog.d/90-remoto.conf — encaminha tudo, com fila em disco se o coletor cair
+*.* action(type="omfwd" target="10.20.0.9" port="6514" protocol="tcp"
+           StreamDriver="gtls" StreamDriverMode="1"
+           queue.type="LinkedList" queue.filename="fwd" queue.saveOnShutdown="on")
+```
+
+**3. Sincronizar o relógio em tudo.** Servidor, roteador, switch, OLT, câmera, controlador de acesso. Diferença de fuso e horário de verão devem ser tratados registrando em UTC e convertendo na exibição:
+
+```bash
+timedatectl set-timezone America/Sao_Paulo
+timedatectl set-ntp true
+chronyc tracking | grep -E 'Reference ID|System time|Stratum'
+```
+
+**4. Autenticar o e-mail do próprio domínio.** SPF, DKIM e DMARC publicados, com política progressiva: começar em `p=none` para colher relatórios, corrigir os remetentes legítimos que falharem e só então subir para `quarantine` e `reject`:
+
+```bash
+dig +short TXT provedor.exemplo.br            # SPF
+dig +short TXT _dmarc.provedor.exemplo.br     # DMARC
+dig +short TXT seletor._domainkey.provedor.exemplo.br  # DKIM
+```
+
+E o complemento defensivo contra o caso de abertura: registrar os domínios parecidos com o seu (troca de hífen, letras trocadas, `.com` por `.com.br`) e monitorar registros novos semelhantes ao seu domínio, que é o que viabiliza a fraude.
+
+**5. Um processo, não um produto, para pagamento.** Alteração de dados bancários de fornecedor confirmada por telefone constante do cadastro anterior, nunca pelo contato informado na própria mensagem. Aprovação por segunda pessoa acima de um limite definido. Revisão mensal, por alguém de fora do processo, de todos os cadastros bancários alterados no período.
+
+**6. Assinar o que precisa sobreviver a uma disputa.** Contrato com assinatura qualificada quando a lei exigir, avançada quando bastar. Pacote e imagem distribuídos para clientes assinados. Em repositório de código, assinar as versões publicadas:
+
+```bash
+# Verificar assinatura de um pacote antes de instalar
+gpg --verify release-2.4.tar.gz.asc release-2.4.tar.gz
+
+# Assinar as próprias tags de versão
+git tag -s v2.4 -m "versão 2.4" && git tag -v v2.4
+```
+
+**7. Testar a responsabilização com uma pergunta.** Escolha uma alteração de configuração feita há três meses num equipamento de borda e tente responder, apenas com o que está registrado: quem fez, de onde, com que autorização, e quem aprovou. Se a resposta não sair em quinze minutos, o problema não é o log — é o desenho do processo.
+
+## Resumo
+
+- **Identificação, autenticação, autorização e responsabilização** são quatro perguntas distintas. Tratar dado de identificação (CPF, número de contrato) como prova de identidade é a raiz de boa parte da fraude por atendimento.
+- **Autenticidade** garante que a origem é quem afirma ser; integridade só garante que nada foi alterado. A diferença é a existência de um segredo detido pela origem — e é por isso que hash publicado ao lado do arquivo não autentica nada.
+- **HMAC** dá autenticidade entre duas partes que compartilham a chave; só a **assinatura digital**, com chave privada sob controle exclusivo, sustenta **não repúdio** perante terceiros.
+- SPF, DKIM e DMARC autenticam o *domínio*, não a *identidade comercial*: um domínio parecido, registrado pelo golpista e corretamente configurado, passa em todos os três. Contra isso, o controle é de processo — confirmação por canal independente.
+- **Não repúdio técnico ≠ jurídico.** Exige controle exclusivo da chave, vínculo auditável com a pessoa, carimbo de tempo, preservação do documento e registro do processo; faltando um, resta evidência forte, não impossibilidade de negar.
+- **Responsabilização** exige conta nomeada, registro suficiente, relógio sincronizado e log íntegro — encadeado por hash e enviado a um coletor remoto que a máquina de origem não pode reescrever. Conta `admin` compartilhada a destrói inteiramente.
+- No Brasil: MP 2.200-2/2001 dá presunção de veracidade à assinatura ICP-Brasil e admite outros meios acordados entre as partes; a Lei 14.063/2020 estabelece os níveis simples, avançada e qualificada; o Marco Civil exige guarda de registros que individualizem o usuário (porta inclusa, sob CGNAT); a LGPD faz da *accountability* princípio e do registro de operações uma obrigação.
