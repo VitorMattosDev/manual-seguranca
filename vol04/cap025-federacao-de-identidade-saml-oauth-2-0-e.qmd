@@ -1,3 +1,396 @@
 # Federação de identidade: SAML, OAuth 2.0 e OpenID Connect {#sec-cap025}
 
-*(em elaboracao)*
+Toda organização de porte médio chega ao mesmo impasse. São quarenta sistemas — ERP, CRM, folha, chamados, monitoramento, três SaaS de marketing, o portal do cliente. Cada um com seu cadastro de usuários, sua política de senha, seu próprio conceito de quem é administrador. Quando alguém é desligado, o RH avisa a TI, a TI desativa o Active Directory, e as outras trinta e nove contas continuam existindo. Ninguém sabe exatamente quantas são, porque o inventário nunca esteve completo.
+
+A federação de identidade resolve esse problema movendo a autenticação para **um lugar só**. As aplicações deixam de guardar senhas e passam a confiar num provedor central de identidade. Desligar alguém vira uma operação, não quarenta. A política de MFA do @sec-cap024 é definida uma vez e vale para tudo.
+
+E cria um problema novo, que é a contrapartida honesta: **quem compromete o provedor de identidade compromete tudo o que confia nele**. A federação concentra o risco na mesma medida em que concentra o controle. Entender os protocolos é entender exatamente onde essa concentração pode ser explorada.
+
+Este capítulo trata dos três padrões que dominam o campo — SAML, OAuth 2.0 e OpenID Connect — e do que costuma dar errado em cada um.
+
+## Os papéis e o vocabulário
+
+Antes dos protocolos, os papéis. Eles são os mesmos nos três, com nomes diferentes:
+
+- **Provedor de identidade** (IdP) — quem autentica a pessoa e emite a afirmação sobre ela. Entra ID, Keycloak, Okta, gov.br, Google.
+- **Provedor de serviço** (SP), ou **parte confiante** (RP), ou **cliente** — a aplicação que confia no IdP em vez de autenticar por conta própria.
+- **Sujeito** — a pessoa, ou o serviço, sobre quem a afirmação fala.
+- **Afirmação** ou **token** — o documento assinado que carrega o resultado da autenticação e os atributos.
+
+E uma distinção que atravessa todo o capítulo, porque confundi-la é a origem de uma classe inteira de vulnerabilidades:
+
+> **Autenticação** responde *quem é esta pessoa*. **Autorização delegada** responde *o que este aplicativo pode fazer em nome dela*.
+
+SAML e OpenID Connect fazem autenticação. **OAuth 2.0, sozinho, não faz** — ele é um protocolo de autorização delegada, e usá-lo como se fosse de autenticação produz falhas reais, não teóricas. Voltaremos a isso.
+
+## SAML 2.0: XML, assinatura e o navegador como intermediário
+
+SAML é de 2005, é XML, é verboso — e é o padrão que sustenta a integração corporativa até hoje, porque funciona e porque está em toda parte [@saml2core].
+
+O fluxo mais usado é o *Web Browser SSO Profile*, iniciado pelo provedor de serviço:
+
+::: {#fig-saml-fluxo}
+```{.tikz}
+%%| filename: saml-web-sso
+%%| alt: Fluxo SAML Web Browser SSO iniciado pelo provedor de serviço, com redirecionamento ao provedor de identidade, autenticação e retorno da afirmação assinada via navegador
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ator/.style={draw, very thick, rounded corners=4pt, align=center, inner sep=4pt,
+                 minimum width=2.6cm, minimum height=0.85cm, font=\scriptsize},
+    fx/.style={->, >=stealth, thick, manualgray},
+    rot/.style={font=\scriptsize, align=center, inner sep=1.5pt},
+    num/.style={circle, draw=manualblue, fill=white, thick, inner sep=0.8pt,
+                font=\tiny\bfseries, minimum size=0.4cm}}
+
+  \node[ator, draw=manualblue,  fill=manualblue!12]  (nav) at (0,0)   {Navegador};
+  \node[ator, draw=manualgreen, fill=manualgreen!12] (sp)  at (5.2,0) {Provedor de\\serviço (SP)};
+  \node[ator, draw=manualred,   fill=manualred!10]   (idp) at (10.4,0){Provedor de\\identidade (IdP)};
+
+  \draw[fx] (0,-0.55) -- node[rot, above]{acessa recurso} (5.2,-0.55);
+  \node[num] at (2.6,-0.55) {1};
+
+  \draw[fx] (5.2,-1.25) -- node[rot, above]{redireciona com \texttt{AuthnRequest}} (0,-1.25);
+  \node[num] at (2.6,-1.25) {2};
+
+  \draw[fx] (0,-1.95) -- node[rot, above]{entrega o pedido} (10.4,-1.95);
+  \node[num] at (5.2,-1.95) {3};
+
+  \draw[fx, manualred] (10.4,-2.65) -- node[rot, above]{autentica (senha + MFA)} (0,-2.65);
+  \node[num] at (5.2,-2.65) {4};
+
+  \draw[fx, manualgreen] (0,-3.35) --
+    node[rot, above]{\texttt{POST} da \texttt{Response} assinada} (5.2,-3.35);
+  \node[num] at (2.6,-3.35) {5};
+
+  \draw[fx, manualgreen] (5.2,-4.05) -- node[rot, above]{sessão local aberta} (0,-4.05);
+  \node[num] at (2.6,-4.05) {6};
+
+  \foreach \x in {0,5.2,10.4} { \draw[manualgray, dashed] (\x,-0.45) -- (\x,-4.35); }
+
+  \node[draw=manualred, thick, fill=manualred!7, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.6cm] at (5.2,-5.4)
+    {\textbf{Toda a afirmação passa pelo navegador do usuário} --- isto é, pelas mãos de quem
+     pode querer alterá-la. É por isso que a \emph{única} coisa que sustenta o SAML é a validação
+     rigorosa da assinatura no passo 5. Falha ali, e o protocolo inteiro cai.};
+\end{tikzpicture}
+```
+Fluxo SAML Web SSO. A afirmação trafega pelo agente do usuário, e a assinatura é a única defesa.
+:::
+
+A afirmação é um documento XML assinado, e as partes que importam:
+
+```xml
+<saml:Assertion ID="_a1b2c3" IssueInstant="2026-07-30T14:22:11Z">
+  <saml:Issuer>https://idp.exemplo.com.br</saml:Issuer>
+  <ds:Signature>...</ds:Signature>          <!-- a única defesa real -->
+  <saml:Subject>
+    <saml:NameID Format="...emailAddress">ana@exemplo.com.br</saml:NameID>
+    <saml:SubjectConfirmation Method="...bearer">
+      <saml:SubjectConfirmationData
+          NotOnOrAfter="2026-07-30T14:27:11Z"
+          Recipient="https://app.exemplo.com.br/saml/acs"
+          InResponseTo="_pedido123"/>       <!-- vincula ao pedido enviado -->
+    </saml:SubjectConfirmation>
+  </saml:Subject>
+  <saml:Conditions NotBefore="2026-07-30T14:22:11Z"
+                   NotOnOrAfter="2026-07-30T14:27:11Z">
+    <saml:AudienceRestriction>
+      <saml:Audience>https://app.exemplo.com.br</saml:Audience>
+    </saml:AudienceRestriction>             <!-- para QUEM esta afirmacao vale -->
+  </saml:Conditions>
+  <saml:AttributeStatement>
+    <saml:Attribute Name="grupos">
+      <saml:AttributeValue>financeiro</saml:AttributeValue>
+    </saml:Attribute>
+  </saml:AttributeStatement>
+</saml:Assertion>
+```
+
+Cada campo existe por causa de um ataque. `Audience` impede que uma afirmação emitida para o sistema A seja apresentada ao sistema B. `NotOnOrAfter` limita a janela de reprodução. `InResponseTo` amarra a resposta ao pedido específico. `Recipient` fixa o destino. **Validar a assinatura e ignorar esses campos é uma implementação incompleta**, e implementações incompletas são a norma.
+
+### As armadilhas do SAML
+
+**Envelopamento de assinatura (XSW).** É a família de ataques mais característica do SAML, e ela explora uma dissociação: o verificador confere a assinatura de um elemento, mas a aplicação lê os dados de **outro** elemento. O atacante mantém a afirmação original assinada — válida, mas em posição ou identificador diferente — e insere uma afirmação forjada que o processador de aplicação acaba lendo. A biblioteca diz "assinatura válida"; a aplicação lê o nome do atacante.
+
+A correção não é conferir a assinatura com mais cuidado: é garantir que **o objeto verificado e o objeto consumido sejam o mesmo**, rejeitar documentos com múltiplas afirmações, processar apenas afirmações cobertas pela assinatura e usar uma biblioteca madura em vez de montar a verificação com um analisador de XML genérico.
+
+**XXE e expansão de entidade.** Processar XML de fonte externa com resolução de entidades habilitada permite leitura de arquivos do servidor e requisições internas (SSRF). Desabilitar DTD e entidades externas no analisador é obrigatório — não é endurecimento opcional.
+
+**Aceitar afirmação não solicitada.** O perfil permite fluxo iniciado pelo IdP, em que a aplicação recebe uma afirmação sem ter pedido nada. É conveniente e amplia a superfície: sem `InResponseTo` para comparar, a defesa contra reprodução fica só nos carimbos de tempo. Onde a operação não exigir, desabilite.
+
+**Metadados e certificado desatualizados.** A confiança está no certificado do IdP configurado no SP. Certificado vencido derruba a integração; certificado antigo mantido aceito depois da rotação prolonga a validade de material que deveria ter saído de circulação. Rotação de certificado de assinatura precisa estar no calendário — é o mesmo problema de ciclo de vida do @sec-cap019.
+
+## OAuth 2.0: delegação, não autenticação
+
+OAuth 2.0 resolve um problema diferente. Você quer que um aplicativo de contabilidade leia suas notas fiscais num sistema, sem entregar a ele sua senha. A solução: o aplicativo recebe um **token de acesso** com escopo limitado e validade curta, emitido pelo servidor de autorização depois que **você** aprovou [@rfc6749].
+
+Os papéis: **dono do recurso** (você), **cliente** (o aplicativo), **servidor de autorização** (emite tokens) e **servidor de recursos** (a API que valida o token).
+
+O fluxo correto — e hoje o único recomendado para praticamente todos os casos — é o **código de autorização com PKCE**:
+
+::: {#fig-oauth-pkce}
+```{.tikz}
+%%| filename: oauth-codigo-pkce
+%%| alt: Fluxo OAuth 2.0 de código de autorização com PKCE, mostrando o desafio derivado do verificador, a troca do código pelo token e o ponto em que o código interceptado se torna inútil
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ator/.style={draw, very thick, rounded corners=4pt, align=center, inner sep=4pt,
+                 minimum width=2.5cm, minimum height=0.85cm, font=\scriptsize},
+    fx/.style={->, >=stealth, thick, manualgray},
+    rot/.style={font=\scriptsize, align=center, inner sep=1.5pt},
+    num/.style={circle, draw=manualblue, fill=white, thick, inner sep=0.8pt,
+                font=\tiny\bfseries, minimum size=0.4cm}}
+
+  \node[ator, draw=manualblue,  fill=manualblue!12]  (cli) at (0,0)   {Cliente\\\scriptsize (app)};
+  \node[ator, draw=manualgray,  fill=white]          (nav) at (4.6,0) {Navegador};
+  \node[ator, draw=manualred,   fill=manualred!10]   (as)  at (9.2,0) {Servidor de\\autorização};
+
+  \draw[fx] (0,-0.7) -- node[rot, above]{gera \texttt{verificador} aleatório}
+                        node[rot, below]{\texttt{desafio = SHA256(verificador)}} (4.6,-0.7);
+  \node[num] at (2.3,-0.7) {1};
+
+  \draw[fx] (4.6,-1.7) -- node[rot, above]{autoriza, envia \texttt{desafio}} (9.2,-1.7);
+  \node[num] at (6.9,-1.7) {2};
+
+  \draw[fx, manualyellow] (9.2,-2.4) -- node[rot, above]{devolve \texttt{código}} (0,-2.4);
+  \node[num] at (4.6,-2.4) {3};
+
+  \draw[fx, manualgreen] (0,-3.1) --
+    node[rot, above]{\texttt{código} + \texttt{verificador} (canal direto, TLS)} (9.2,-3.1);
+  \node[num] at (4.6,-3.1) {4};
+
+  \draw[fx, manualgreen] (9.2,-3.8) -- node[rot, above]{\texttt{access\_token}} (0,-3.8);
+  \node[num] at (4.6,-3.8) {5};
+
+  \foreach \x in {0,4.6,9.2} { \draw[manualgray, dashed] (\x,-0.5) -- (\x,-4.1); }
+
+  \node[draw=manualgreen, thick, fill=manualgreen!8, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.4cm] at (4.6,-5.0)
+    {\textbf{Por que o PKCE resolve.} O \texttt{código} do passo 3 volta pelo navegador e pode ser
+     interceptado --- por aplicativo malicioso registrado no mesmo esquema de URL, por histórico,
+     por registro de proxy. Sozinho, ele não vale nada: no passo 4 o servidor exige o
+     \texttt{verificador}, que nunca trafegou. Só quem gerou o desafio consegue trocar o código
+     por um token. \emph{Obrigatório para todo cliente, público ou confidencial.}};
+\end{tikzpicture}
+```
+Código de autorização com PKCE. O verificador é o que torna o código interceptado inútil.
+:::
+
+```python
+import secrets, hashlib, base64
+
+# Cliente, antes de iniciar o fluxo (RFC 7636)
+verificador = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+desafio = base64.urlsafe_b64encode(
+    hashlib.sha256(verificador.encode()).digest()).rstrip(b"=").decode()
+
+url = (f"{AS}/authorize?response_type=code&client_id={CLIENT_ID}"
+       f"&redirect_uri={REDIRECT}&scope=nfe.leitura"
+       f"&state={secrets.token_urlsafe(16)}"        # anti-CSRF, obrigatorio
+       f"&code_challenge={desafio}&code_challenge_method=S256")
+
+# Depois de receber o codigo: troca no canal direto, com o verificador
+resp = requests.post(f"{AS}/token", data={
+    "grant_type": "authorization_code",
+    "code": codigo_recebido,
+    "redirect_uri": REDIRECT,
+    "client_id": CLIENT_ID,
+    "code_verifier": verificador,      # o que o interceptador nao tem
+}, timeout=10)
+```
+
+### Os fluxos que morreram, e por quê
+
+| Fluxo | Situação | Motivo |
+|---|---|---|
+| Código de autorização + PKCE | **Recomendado** | Código interceptado é inútil sem o verificador |
+| Credenciais de cliente | **Recomendado** (máquina a máquina) | Não há usuário envolvido |
+| Implícito | **Obsoleto** | Token no fragmento da URL: histórico, log, `Referer` |
+| Senha do dono do recurso | **Obsoleto** | A aplicação vê a senha — anula o propósito do OAuth |
+| Dispositivo | Uso específico | TV, console, CLI sem navegador |
+
+: Situação atual dos fluxos OAuth 2.0, conforme a BCP de segurança. {#tbl-fluxos-oauth}
+
+A BCP de segurança do OAuth consolidou essas decisões: PKCE obrigatório sempre, `redirect_uri` comparado por **igualdade exata** (nada de correspondência por prefixo ou curinga), implícito e senha do dono aposentados [@rfc9700; @rfc8252].
+
+### As armadilhas do OAuth
+
+**Redirecionamento aberto.** Se o servidor de autorização aceita `redirect_uri` por prefixo, `https://app.exemplo.com.br.atacante.com` ou `https://app.exemplo.com.br/redir?next=//atacante.com` desviam o código. É a vulnerabilidade mais explorada da família, e a defesa é uma lista branca com comparação exata.
+
+**Ausência de `state`.** O parâmetro `state` é aleatório, ligado à sessão do usuário e conferido no retorno. Sem ele, o atacante induz a vítima a completar um fluxo que vincula a conta dela à conta dele no serviço externo — CSRF de autorização.
+
+**Confusão de destinatário.** Um token emitido para a API A apresentado à API B, que o aceita sem verificar o campo `aud`. Toda API tem de validar emissor, audiência, validade e escopo antes de qualquer coisa.
+
+**Escopos amplos e permanentes.** `scope=full_access` para quem só precisa ler é a versão OAuth do excesso de privilégio do @sec-cap022. E o **token de renovação** é a credencial de vida longa que costuma ser esquecida: sem rotação e sem detecção de reutilização, ele é a chave permanente que sobrevive a toda a política de expiração.
+
+**Revogação.** Esta é a fragilidade estrutural do modelo de capacidade que o @sec-cap022 antecipou: token de acesso autocontido (JWT) é validado por assinatura, sem consulta ao emissor — o que é ótimo para desempenho e péssimo para revogação. Desativar o usuário no IdP **não invalida** um token já emitido; ele vale até expirar. Daí a regra prática: tokens de acesso com vida curta (5 a 15 minutos), revogação real no token de renovação, e introspecção para operações sensíveis.
+
+## OpenID Connect: a camada que faltava
+
+OIDC é uma camada de **autenticação** sobre o OAuth 2.0, e existe precisamente porque tanta gente usou OAuth para autenticar sem perceber a diferença [@oidccore].
+
+O acréscimo central é o **token de identidade** (`id_token`): um JWT assinado que afirma *quem* autenticou, *quem* emitiu, *para quem* vale e *quando* aconteceu.
+
+```json
+{
+  "iss": "https://idp.exemplo.com.br",   // emissor: confirme que é o esperado
+  "sub": "a1b2c3d4",                     // identificador ESTÁVEL do usuário
+  "aud": "cliente-abc",                  // para você — verifique
+  "exp": 1785412800,                     // expira
+  "iat": 1785412500,
+  "nonce": "n-0S6_WzA2Mj",               // amarra ao SEU pedido: anti-reprodução
+  "auth_time": 1785412480,
+  "amr": ["pwd", "hwk"],                 // como autenticou: senha + chave
+  "email": "ana@exemplo.com.br",
+  "email_verified": true                 // sem isto, o e-mail não prova nada
+}
+```
+
+A diferença prática entre OAuth e OIDC merece ser dita sem meias palavras. Com OAuth puro, a aplicação recebe um token de acesso e conclui "a autenticação funcionou". Mas o token de acesso é opaco para o cliente e **não é destinado a ele** — é destinado à API. Um aplicativo malicioso pode obter um token legítimo de um usuário para *seus próprios* fins e apresentá-lo a um terceiro site que o aceite como prova de identidade. É o **problema do confuso deputado**, e produziu falhas reais em implementações de "entrar com" no início da década de 2010.
+
+O `id_token` corrige isso porque é assinado, **destinado explicitamente ao cliente** (`aud`) e amarrado ao pedido específico (`nonce`).
+
+A validação mínima e inegociável:
+
+```python
+import jwt   # PyJWT
+from jwt import PyJWKClient
+
+jwks = PyJWKClient(f"{ISSUER}/.well-known/jwks.json")   # rotação automática
+
+def validar_id_token(token: str, nonce_enviado: str) -> dict:
+    chave = jwks.get_signing_key_from_jwt(token).key
+    dados = jwt.decode(
+        token,
+        chave,
+        algorithms=["RS256"],      # LISTA FIXA — nunca ler do cabeçalho
+        audience=CLIENT_ID,        # aud
+        issuer=ISSUER,             # iss
+        options={"require": ["exp", "iat", "aud", "iss", "sub"]},
+    )
+    if dados.get("nonce") != nonce_enviado:
+        raise ValueError("nonce divergente: possível reprodução")
+    return dados
+```
+
+### As armadilhas do JWT
+
+**`alg: none`.** A falha histórica: a biblioteca lia o algoritmo do cabeçalho do próprio token e, se ele dizia `none`, aceitava sem assinatura. Bibliotecas atuais corrigiram, mas o princípio permanece — **o algoritmo aceito é decisão do verificador, nunca do token**.
+
+**Confusão de algoritmo.** Token emitido com RS256 (assimétrico) e apresentado como HS256 (simétrico), usando a **chave pública** como se fosse segredo HMAC. A chave pública é pública; o atacante forja livremente. A defesa é a mesma: lista fixa de algoritmos no verificador.
+
+**Usar o e-mail como identificador.** Endereços mudam de dono e são reatribuídos. O identificador estável é `sub` **combinado com** `iss`. Ancorar contas no e-mail cria a situação em que o novo titular de um endereço herda a conta do anterior — e, em federação com múltiplos IdPs, permite que um IdP afirme e-mails de domínio que não controla.
+
+**`email_verified` ignorado.** Aceitar `email` sem checar `email_verified` permite que alguém cadastre no IdP um e-mail alheio e assuma a conta correspondente na sua aplicação.
+
+**Token no armazenamento local do navegador.** `localStorage` é legível por qualquer script da página: um XSS vira roubo de token direto. Cookie `HttpOnly`, `Secure` e `SameSite` é a alternativa correta. O Volume 7 desenvolve isso.
+
+## Comparação e escolha
+
+| | SAML 2.0 | OAuth 2.0 | OIDC |
+|---|---|---|---|
+| Propósito | Autenticação | Autorização delegada | Autenticação |
+| Formato | XML assinado | Opaco ou JWT | JWT |
+| Idade | 2005 | 2012 | 2014 |
+| Ponto forte | Onipresente no corporativo | Delegação com escopo | Simples, nativo para móvel e SPA |
+| Fraqueza típica | Complexidade do XML, XSW | Não autentica sozinho | Herda as armadilhas do JWT |
+| Onde usar | SaaS corporativo, integração legada | API, acesso de terceiro | Aplicação nova, móvel, SPA |
+
+: SAML, OAuth 2.0 e OIDC lado a lado. {#tbl-comparacao-federacao}
+
+Regra de decisão que resolve a maioria dos casos: **aplicação nova usa OIDC**; **SaaS corporativo usa o que ele suporta** (frequentemente só SAML); **API para terceiro usa OAuth 2.0 com PKCE**. E, sempre: nunca OAuth puro como prova de identidade.
+
+## Os riscos que a federação cria
+
+Vale enfrentar de frente o que a concentração traz:
+
+**O IdP vira alvo único.** Comprometer o provedor de identidade é comprometer tudo. Consequência prática: o IdP recebe o tratamento de sistema mais crítico da organização — MFA resistente a phishing para seus administradores, acesso privilegiado com elevação temporária, log completo e monitoramento dedicado.
+
+**Roubo de token de sessão contorna todo o resto.** O atacante que rouba o cookie de sessão federada — por malware, por XSS, por proxy de phishing — está autenticado sem passar por senha nem MFA. Ataques de retransmissão em tempo real terminam exatamente aqui. As defesas: vinculação do token ao dispositivo (mTLS ou DPoP), sessões curtas para operação sensível, e detecção de mudança abrupta de dispositivo ou geografia dentro da mesma sessão [@rfc8705; @rfc9449].
+
+**Afirmação forjada.** Quem obtém a chave de assinatura do IdP emite afirmações para qualquer usuário, em qualquer aplicação, sem tocar no IdP. Foi o padrão do incidente Golden SAML da campanha SolarWinds. A defesa é custódia da chave de assinatura em HSM, rotação periódica e alerta sobre qualquer emissão que não corresponda a uma autenticação registrada.
+
+**Confiança transitiva mal delimitada.** Federação entre organizações — matriz e filial, empresa e parceiro — significa aceitar as decisões de autenticação de outra organização. Se o parceiro não exige MFA, seu sistema não exige MFA para os usuários dele. A federação precisa de contrato explícito sobre nível de garantia, e o `amr` do token é o que permite verificar isso em tempo de execução.
+
+**Disponibilidade.** IdP fora do ar é a organização inteira sem acesso. Isso muda a classificação do serviço no plano de continuidade do Volume 14 e exige, no mínimo, um caminho de contingência para os administradores.
+
+## ⚖️ Brasil em Foco
+
+**O gov.br é o maior provedor de identidade federado do país, e usa OIDC.** Milhares de serviços públicos federais, estaduais e municipais autenticam por ele, com os níveis bronze, prata e ouro sinalizando a confiabilidade da identidade. Para quem integra, dois pontos merecem atenção: o nível exigido deve ser compatível com a sensibilidade do serviço — nível bronze para consulta simples, ouro para assinatura ou movimentação — e a validação do `id_token` precisa seguir todas as verificações deste capítulo, especialmente `iss`, `aud` e `nonce` [@govbr2024; @oidccore].
+
+**O Open Finance brasileiro é construído sobre OAuth 2.0 e OIDC com perfil endurecido.** O arranjo regulado pelo Banco Central adota o perfil FAPI, que acrescenta exigências acima do padrão: autenticação mútua por TLS ou assinatura de cliente com chave privada, requisição de autorização assinada, vinculação do token ao certificado e consentimento com escopo e prazo explícitos. É o exemplo mais maduro de federação regulada no Brasil, e o consentimento granular com prazo é a materialização técnica do princípio da finalidade da LGPD [@bcbopenfinance; @rfc8705; @lgpd2018].
+
+**Federação é compartilhamento de dado pessoal e precisa de base legal.** Quando o IdP envia atributos ao provedor de serviço — nome, CPF, e-mail, grupos, cargo —, há tratamento por ambos. Isso exige base legal, minimização (enviar só os atributos necessários àquela aplicação, e não o diretório inteiro) e clareza sobre os papéis de controlador e operador. Configuração de SAML que despeja todos os atributos do usuário para todo SP integrado viola a minimização do art. 6º, III, mesmo que ninguém use os campos extras [@lgpd2018].
+
+**Desligamento e o dever de encerrar o acesso.** A promessa da federação — desativar num lugar e cortar em todos — só se cumpre se o encerramento de sessão for propagado. Token de acesso já emitido continua válido até expirar, e a integração precisa combinar tempo de vida curto com revogação efetiva. Para dado pessoal sob a LGPD, manter acesso ativo de ex-funcionário é falha de medida de segurança sob o art. 46, e a ausência de log dessa transição inviabiliza a demonstração do contrário [@lgpd2018].
+
+**Provedores de conexão e aplicação têm dever de guarda de registros.** O Marco Civil (arts. 13 e 15) impõe a guarda de registros de conexão e de acesso a aplicações, com prazos definidos. Em arquitetura federada, é preciso decidir explicitamente quem registra o quê: o IdP tem o evento de autenticação, o SP tem o evento de acesso ao recurso. Sem correlação entre os dois — por identificador de sessão ou de requisição —, a resposta a uma ordem judicial fica incompleta [@marcocivil2014].
+
+## 🛠️ No Campo
+
+**1. Inventarie as integrações existentes antes de criar a próxima.** Toda organização com federação madura tem aplicações registradas que ninguém reconhece:
+
+```powershell
+# Entra ID: aplicativos empresariais e quando foram usados pela ultima vez
+Get-MgServicePrincipal -All |
+  Select-Object DisplayName, AppId, SignInAudience, ServicePrincipalType |
+  Export-Csv .\apps-federados.csv -NoTypeInformation -Encoding utf8
+
+# Consentimentos amplos concedidos a aplicativos de terceiros — o achado
+Get-MgOauth2PermissionGrant -All |
+  Where-Object { $_.Scope -match 'Mail.Read|Files.ReadWrite|Directory.Read' } |
+  Select-Object ClientId, ConsentType, Scope
+```
+
+Consentimento do tipo `AllPrincipals` (para toda a organização) concedido a um aplicativo desconhecido é achado crítico: é o mecanismo do phishing de consentimento, em que a vítima autoriza um aplicativo malicioso e o atacante obtém acesso persistente sem nunca tocar na senha.
+
+**2. Desligue o consentimento livre de usuário.** Por padrão, muitos ambientes permitem que qualquer pessoa autorize um aplicativo de terceiro a ler seu e-mail. Restrinja a consentimento administrativo, ou a um conjunto de escopos de baixo risco, com fluxo de aprovação para o restante.
+
+**3. Faça a auditoria de configuração de cada integração.** A lista de verificação que pega a maior parte dos problemas:
+
+```bash
+# SAML — no metadado e na configuracao do SP
+#  [ ] assinatura da Response E da Assertion exigidas
+#  [ ] AudienceRestriction confere com a entidade correta
+#  [ ] NotOnOrAfter respeitado, com tolerancia de relogio <= 3 min
+#  [ ] InResponseTo validado (e fluxo iniciado pelo IdP desabilitado)
+#  [ ] certificado do IdP com validade > 60 dias e rotacao agendada
+#  [ ] analisador XML com DTD e entidades externas DESABILITADAS
+#  [ ] biblioteca madura, nao verificacao manual de assinatura
+
+# OAuth / OIDC
+#  [ ] PKCE (S256) obrigatorio, inclusive em cliente confidencial
+#  [ ] redirect_uri por igualdade exata, sem curinga
+#  [ ] state gerado por CSPRNG e conferido no retorno
+#  [ ] nonce gerado, enviado e conferido no id_token
+#  [ ] algoritmos em lista fixa no verificador
+#  [ ] access_token com vida de 5 a 15 min
+#  [ ] refresh_token com rotacao e deteccao de reuso
+#  [ ] token em cookie HttpOnly+Secure+SameSite, nunca em localStorage
+```
+
+**4. Verifique o `redirect_uri` com um teste ativo.** Em homologação, tente registrar e usar variações: subdomínio adicional, sufixo no domínio, caminho extra, `//` no início, codificação de caractere. Se alguma passar, você tem um redirecionamento aberto — a vulnerabilidade mais explorada do OAuth.
+
+**5. Reduza a vida do token e implemente rotação de renovação.** Acesso de 5 a 15 minutos, renovação rotacionada a cada uso, com **detecção de reutilização**: se um token de renovação já usado reaparecer, é sinal de roubo, e toda a família de tokens daquele usuário deve ser invalidada imediatamente.
+
+**6. Minimize os atributos enviados a cada provedor de serviço.** Faça o inventário de quais atributos cada SP realmente consome e corte o resto. A configuração padrão que envia o diretório inteiro é comum, viola a minimização e amplia o dano de qualquer comprometimento do SP.
+
+**7. Proteja a chave de assinatura do IdP como o ativo mais crítico que ela é.** HSM ou serviço gerenciado de chaves, rotação periódica com sobreposição planejada, e alerta sobre emissão de afirmação sem evento de autenticação correspondente — o sinal de Golden SAML.
+
+**8. Registre e correlacione os dois lados.** O IdP registra a autenticação; o SP registra o acesso. Sem um identificador comum de sessão ou requisição atravessando os dois, a investigação de "quem acessou o quê e como autenticou" não fecha. Defina esse identificador na integração, não durante o incidente.
+
+**9. Monitore os eventos que indicam abuso de federação.** Registro de novo aplicativo ou de nova credencial de cliente, alteração de configuração de confiança, consentimento amplo concedido, emissão de token para escopo administrativo, e uso do mesmo token a partir de origens geograficamente incompatíveis.
+
+**10. Planeje a indisponibilidade do IdP.** Defina o caminho de contingência para administradores — contas locais de emergência, com credencial forte, guardadas em cofre físico, monitoradas em uso e testadas semestralmente. Sem isso, uma falha do provedor de identidade tranca a organização fora da própria infraestrutura no exato momento em que ela precisa agir.
+
+## Resumo
+
+- **Federação concentra controle e risco na mesma medida.** Um lugar para desligar acesso, um lugar para comprometer tudo — o IdP passa a ser o sistema mais crítico da organização.
+- **SAML autentica, OAuth delega, OIDC autentica sobre OAuth.** Usar OAuth puro como prova de identidade é a confusão que produz falhas reais, e é exatamente o que o `id_token` do OIDC corrige.
+- Em **SAML**, tudo depende da validação da assinatura, porque a afirmação passa pelo navegador. Envelopamento de assinatura, XXE, afirmação não solicitada e certificado desatualizado são as armadilhas; validar `Audience`, `NotOnOrAfter`, `InResponseTo` e `Recipient` é tão obrigatório quanto validar a assinatura.
+- Em **OAuth 2.0**, o único fluxo recomendado para usuário é **código de autorização com PKCE**. Implícito e senha do dono do recurso estão obsoletos; `redirect_uri` compara-se por igualdade exata; `state` é obrigatório.
+- Em **OIDC**, o `id_token` precisa ser validado com lista fixa de algoritmos, `iss`, `aud`, `exp` e `nonce` conferidos. O identificador estável é `sub` + `iss`, nunca o e-mail — e `email_verified` não é opcional.
+- **Revogação é a fragilidade estrutural do modelo de token**: desativar o usuário não invalida token já emitido. A compensação é vida curta no acesso, rotação com detecção de reuso no renovação e introspecção em operação sensível.
+- **Roubo de token de sessão contorna senha e MFA.** Vinculação ao dispositivo (mTLS, DPoP), sessão curta em operação sensível e detecção de anomalia dentro da sessão são as defesas.
+- **Comprometer a chave de assinatura do IdP permite forjar identidade sem tocar no IdP** (Golden SAML). HSM, rotação e alerta sobre emissão sem autenticação correspondente.
+- No Brasil, o gov.br federa serviços públicos por OIDC com níveis de confiabilidade; o Open Finance usa OAuth com perfil FAPI e consentimento granular; e a federação é compartilhamento de dado pessoal, sujeito a base legal e minimização de atributos.
