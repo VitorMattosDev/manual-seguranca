@@ -1,3 +1,337 @@
 # A pilha TCP/IP sob a ótica do atacante e do defensor {#sec-cap008}
 
-*(em elaboracao)*
+Numa terça-feira de manhã, o setor financeiro de uma empresa cliente de um provedor regional começa a reclamar de avisos de certificado inválido ao acessar o internet banking. O navegador diz que a identidade do site não pôde ser verificada. O suporte de primeiro nível manda limpar o cache, trocar de navegador, reiniciar o computador. Nada resolve, e o problema atinge somente as máquinas daquele andar.
+
+O técnico de rede sobe, conecta o notebook na mesma VLAN e captura trinta segundos de tráfego. O que ele vê não tem nada de sofisticado: um mesmo endereço MAC respondendo a consultas ARP para dois endereços IP diferentes — o do gateway e o do servidor de arquivos. Alguém plugou um dispositivo na rede e o colocou entre todas as máquinas do andar e o resto do mundo. O aviso de certificado não era falha do banco: era o único sinal visível de um ataque que já durava dias.
+
+O que torna esse ataque possível não é uma vulnerabilidade de software. É uma decisão de projeto tomada nos anos 1970: o protocolo ARP acredita em qualquer resposta que receba. A pilha TCP/IP inteira foi desenhada para funcionar entre pares que confiavam uns nos outros, e a segurança foi acrescentada depois, camada por camada, remendo por remendo. Entender **onde** a confiança foi presumida é entender onde os ataques moram — e onde as defesas precisam ser instaladas.
+
+Este é o primeiro capítulo do Volume 2, que constrói a base técnica sobre a qual o resto do manual se apoia. O @sec-cap004 e o @sec-cap005 ensinaram a enxergar ativos e ameaças de forma abstrata. Aqui a abstração encosta no fio.
+
+## Duas pilhas, um vocabulário
+
+A literatura usa dois modelos de camadas, e a confusão entre eles atrapalha conversas técnicas todo dia. O **modelo OSI**, de sete camadas, é referência conceitual e nomenclatura: quando alguém diz "problema de camada 2" ou "firewall de camada 7", está falando OSI. O **modelo TCP/IP**, de quatro camadas, é o que a internet realmente implementa [@kurose2021].
+
+A @fig-pilhas mostra os dois lado a lado, com o que trafega em cada nível e a unidade de dados correspondente.
+
+::: {#fig-pilhas}
+```{.tikz}
+%%| filename: pilhas-osi-tcpip
+%%| alt: Comparação entre o modelo OSI de sete camadas e o modelo TCP/IP de quatro camadas, com protocolos e unidades de dados de cada nível
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cam/.style={draw=manualgray, thick, fill=manualgray!6, rounded corners=2pt,
+                align=center, inner sep=4pt, minimum width=3.2cm, minimum height=0.85cm},
+    tcp/.style={draw=manualblue, thick, fill=manualblue!10, rounded corners=2pt,
+                align=center, inner sep=4pt, minimum width=3.4cm},
+    rot/.style={align=center, font=\scriptsize, manualgray}}
+
+  \node[font=\bfseries\small] at (0,7.5) {OSI};
+  \node[font=\bfseries\small] at (4.6,7.5) {TCP/IP};
+  \node[font=\bfseries\small] at (9.2,7.5) {Exemplos};
+  \node[font=\bfseries\small] at (13.2,7.5) {Unidade};
+
+  \node[cam] (l7) at (0,6.6) {7 --- Aplicação};
+  \node[cam] (l6) at (0,5.7) {6 --- Apresentação};
+  \node[cam] (l5) at (0,4.8) {5 --- Sessão};
+  \node[cam] (l4) at (0,3.9) {4 --- Transporte};
+  \node[cam] (l3) at (0,3.0) {3 --- Rede};
+  \node[cam] (l2) at (0,2.1) {2 --- Enlace};
+  \node[cam] (l1) at (0,1.2) {1 --- Física};
+
+  \node[tcp, minimum height=2.75cm] (t4) at (4.6,5.7) {\textbf{Aplicação}};
+  \node[tcp, minimum height=0.85cm] (t3) at (4.6,3.9) {\textbf{Transporte}};
+  \node[tcp, minimum height=0.85cm] (t2) at (4.6,3.0) {\textbf{Internet}};
+  \node[tcp, minimum height=1.75cm] (t1) at (4.6,1.65) {\textbf{Acesso à rede}};
+
+  \node[rot] at (9.2,5.7) {HTTP, DNS, SMTP,\\SSH, TLS};
+  \node[rot] at (9.2,3.9) {TCP, UDP, QUIC};
+  \node[rot] at (9.2,3.0) {IP, ICMP, IPsec};
+  \node[rot] at (9.2,1.65) {Ethernet, ARP, Wi-Fi,\\fibra, par trançado};
+
+  \node[rot] at (13.2,5.7) {dados / mensagem};
+  \node[rot] at (13.2,3.9) {segmento (TCP)\\datagrama (UDP)};
+  \node[rot] at (13.2,3.0) {pacote};
+  \node[rot] at (13.2,1.65) {quadro / bits};
+
+  \draw[manualgray, dashed] (1.65,7.03) -- (2.9,7.03);
+  \draw[manualgray, dashed] (1.65,4.33) -- (2.9,4.33);
+  \draw[manualgray, dashed] (1.65,3.43) -- (2.9,3.43);
+  \draw[manualgray, dashed] (1.65,2.53) -- (2.9,2.53);
+  \draw[manualgray, dashed] (1.65,0.78) -- (2.9,0.78);
+\end{tikzpicture}
+```
+Os dois modelos. O OSI dá o vocabulário; o TCP/IP é o que roda.
+:::
+
+Vale guardar a correspondência, porque quase todo produto de segurança se descreve em termos de camada: um filtro de pacotes atua em 3 e 4, um WAF em 7, um controle de porta em 2.
+
+### Encapsulamento: quem envolve quem
+
+Quando um navegador pede uma página, o dado desce a pilha e cada camada acrescenta seu próprio cabeçalho ao que veio de cima. Chegando ao destino, o processo se inverte. Esse empacotamento sucessivo é o **encapsulamento**, e tem duas consequências diretas para segurança.
+
+A primeira: **um cabeçalho só é lido por quem opera naquela camada**. Um switch comum olha o cabeçalho Ethernet e ignora o resto. Um roteador olha o cabeçalho IP. Um firewall de estado olha até o TCP. Cada equipamento no caminho enxerga uma fatia diferente do mesmo pacote, e a defesa precisa ser posicionada na camada onde o ataque acontece — um firewall de rede não vê injeção de SQL, e um WAF não vê ARP spoofing.
+
+A segunda: **o que uma camada cifra, a de baixo não entende**. O TLS protege o conteúdo da camada de aplicação, mas os cabeçalhos IP e TCP continuam em claro. Quem observa o tráfego não lê a senha digitada, mas sabe com quais servidores a máquina falou, quando, por quanto tempo e com que volume. Esses **metadados** são frequentemente tão reveladores quanto o conteúdo — tema que o Volume 16 retoma ao tratar de privacidade e vigilância.
+
+## Camada 2: onde a confiança é total
+
+A camada de enlace entrega quadros dentro de um mesmo segmento de rede. É a camada com menos verificação de todas e, por isso, a mais explorada por quem já conseguiu um ponto de presença interno.
+
+### ARP: o protocolo que acredita em tudo
+
+Para enviar um quadro a um endereço IP na mesma rede, a máquina precisa descobrir o endereço MAC correspondente. O ARP resolve isso com uma pergunta em difusão — "quem tem 192.0.2.1?" — e aceita a primeira resposta que chegar. Não há autenticação, não há verificação, e respostas não solicitadas (*gratuitous ARP*) são aceitas e usadas para atualizar a tabela.
+
+O ataque decorre diretamente disso. O invasor responde às consultas da vítima afirmando ser o gateway, e às do gateway afirmando ser a vítima. As duas tabelas ARP passam a apontar para o MAC dele, e todo o tráfego entre a vítima e o mundo atravessa sua máquina — o cenário de abertura deste capítulo. É o **ataque de intermediário** (*man in the middle*) em sua forma mais barata: não requer exploração de falha nenhuma, apenas acesso à rede local.
+
+O que o invasor consegue depois disso depende do que trafega. Protocolos em claro entregam credenciais direto. Com HTTPS, ele pode tentar *downgrade* — interceptar a primeira requisição HTTP e impedir o redirecionamento para HTTPS — ou apresentar um certificado próprio, gerando exatamente o aviso que o setor financeiro do caso de abertura via na tela. **O aviso de certificado é o controle funcionando**; o problema é que anos de avisos espúrios ensinaram os usuários a clicar em "prosseguir".
+
+As defesas moram no switch, não no computador:
+
+- **Dynamic ARP Inspection (DAI)**, que valida respostas ARP contra a tabela de DHCP snooping e descarta as inconsistentes;
+- **DHCP snooping**, que constrói essa tabela e bloqueia servidores DHCP não autorizados;
+- **Port security**, limitando quantos MACs podem aparecer em cada porta de acesso;
+- **HSTS** no lado do servidor, que elimina a janela de *downgrade* ao instruir o navegador a nunca usar HTTP naquele domínio.
+
+### Os outros ataques de camada 2
+
+**MAC flooding.** A tabela CAM do switch — que associa MAC a porta — tem tamanho finito. Inundá-la com milhares de endereços forjados faz o switch, em muitos modelos, passar a inundar quadros por todas as portas, degradando-o ao comportamento de um hub e permitindo captura passiva. *Port security* limita o número de MACs por porta e resolve.
+
+**VLAN hopping.** Duas variantes. Na primeira, o atacante negocia entroncamento com um switch que tem DTP habilitado e passa a receber o tráfego de todas as VLANs. Na segunda, marcação dupla (*double tagging*), ele insere duas etiquetas 802.1Q; a primeira é removida pelo switch de entrada e o quadro é entregue numa VLAN à qual ele não deveria ter acesso. As defesas são configuração explícita: desabilitar DTP nas portas de acesso, não usar a VLAN 1 para nada e definir uma VLAN nativa sem uso em todos os entroncamentos.
+
+**STP e o root bridge forjado.** Anunciando-se como raiz da árvore de spanning tree, o atacante reposiciona o fluxo lógico da rede para passar por ele. As proteções chamam-se BPDU Guard e Root Guard, e devem estar ligadas em toda porta de acesso.
+
+**DHCP rogue.** Um servidor DHCP falso entrega às vítimas o gateway e o DNS do atacante — resultado equivalente ao ARP spoofing, com menos esforço. DHCP snooping bloqueia respostas vindas de portas não confiáveis.
+
+Um padrão emerge: **todas as defesas de camada 2 são configurações do switch que vêm desligadas de fábrica**. Rede montada com o padrão do equipamento é rede sem nenhuma dessas proteções.
+
+## Camada 3: endereços que ninguém verifica
+
+A camada de rede leva pacotes de uma rede a outra. Seu cabeçalho carrega origem, destino, TTL, protocolo encapsulado e informações de fragmentação — e o campo de origem **não é verificado por ninguém no caminho**.
+
+### Falsificação de endereço de origem
+
+Escrever um endereço de origem falso num pacote IP é trivial. As consequências dependem do protocolo acima.
+
+Com **UDP**, que não exige resposta, a falsificação funciona plenamente. É a base dos ataques de **amplificação e reflexão**: o atacante envia consultas pequenas a servidores mal configurados — DNS recursivos abertos, NTP com `monlist`, memcached exposto — usando como origem o endereço da vítima. Os servidores respondem à vítima com pacotes dezenas ou centenas de vezes maiores. Um atacante com 1 Gbps de banda gera dezenas de Gbps contra o alvo, e o tráfego chega de milhares de servidores legítimos, o que dificulta o bloqueio por origem.
+
+Com **TCP**, a falsificação é bem mais difícil, porque o atacante não recebe a resposta e precisaria adivinhar o número de sequência inicial escolhido pelo servidor. Pilhas modernas geram esse número de forma imprevisível — o que nem sempre foi verdade, e a história do TCP está cheia de ataques de predição de sequência.
+
+A defesa contra falsificação de origem não é do lado da vítima: é de quem opera a rede de origem. A **BCP 38** (RFC 2827) recomenda que todo operador filtre, na borda, pacotes cuja origem não pertença ao bloco do cliente [@rfc2827]. Um provedor que aplica filtragem de entrada impede que sua rede seja usada como plataforma de reflexão. Um provedor que não aplica é parte do problema — e no Brasil essa é orientação de longa data do CERT.br e do NIC.br.
+
+### Fragmentação, ICMP e TTL
+
+**Fragmentação.** Pacotes maiores que a MTU do enlace são divididos e remontados no destino. Historicamente isso foi usado para evadir inspeção: fragmentos sobrepostos, remontados de formas diferentes pelo IDS e pelo sistema-alvo, permitiam esconder o conteúdo real. Ataques clássicos como o *ping of death* e o *teardrop* exploravam falhas na remontagem. Firewalls e IDS modernos remontam antes de inspecionar, e a orientação prática é descartar fragmentos sobrepostos.
+
+**ICMP.** Muito além do `ping`. `Echo` mapeia hosts vivos; `Time exceeded` alimenta o `traceroute` e revela a topologia; `Destination unreachable` com "fragmentation needed" é essencial à descoberta de MTU de caminho; `Redirect` pode alterar a rota de um host. Bloquear ICMP inteiramente é erro comum: quebra a descoberta de MTU e produz conexões que abrem e travam sem explicação. A postura correta é seletiva — permitir os tipos 3 e 11 e o `echo reply`, filtrar `redirect` e limitar a taxa do resto.
+
+**TTL.** Decrementado a cada salto, existe para matar pacotes em laço. Como efeito colateral, seu valor inicial denuncia o sistema operacional de origem (64 em Linux, 128 em Windows, 255 em muitos equipamentos de rede) e a diferença entre o valor inicial esperado e o observado dá a distância em saltos. É um dos sinais que ferramentas de identificação passiva de sistema operacional usam — e um dos que denunciam um dispositivo intruso se apresentando como outra coisa.
+
+## Camada 4: o aperto de mão e seus abusos
+
+O TCP oferece entrega confiável e ordenada sobre uma camada de rede que não garante nada. Faz isso mantendo **estado** — e estado é recurso finito, o que é exatamente a superfície de ataque.
+
+### O handshake de três vias
+
+A @fig-handshake-tcp mostra a abertura normal de conexão e, ao lado, o que o SYN flood faz com ela.
+
+::: {#fig-handshake-tcp}
+```{.tikz}
+%%| filename: handshake-tcp
+%%| alt: Comparação entre o handshake TCP de três vias normal e o ataque SYN flood que deixa conexões em estado semiaberto
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ator/.style={draw=manualblue, thick, fill=manualblue!8, rounded corners=2pt,
+                 align=center, inner sep=4pt, minimum width=2.1cm},
+    mal/.style={draw=manualred, thick, fill=manualred!8, rounded corners=2pt,
+                align=center, inner sep=4pt, minimum width=2.1cm},
+    msg/.style={->,>=stealth, thick, manualgray},
+    rot/.style={font=\scriptsize, align=center}}
+
+  \node[ator] (c1) at (0,5.2) {\textbf{Cliente}};
+  \node[ator] (s1) at (5.4,5.2) {\textbf{Servidor}};
+  \draw[manualgray, dashed] (0,4.75) -- (0,0.6);
+  \draw[manualgray, dashed] (5.4,4.75) -- (5.4,0.6);
+
+  \draw[msg] (0,4.3) -- node[above, rot] {SYN, seq=$x$} (5.4,4.3);
+  \draw[msg] (5.4,3.4) -- node[above, rot] {SYN-ACK, seq=$y$, ack=$x{+}1$} (0,3.4);
+  \draw[msg] (0,2.5) -- node[above, rot] {ACK, ack=$y{+}1$} (5.4,2.5);
+  \node[rot, manualgreen] at (2.7,1.7) {\textbf{ESTABLISHED}};
+  \node[rot, manualgray] at (6.4,3.9) {estado\\alocado};
+  \node[rot] at (2.7,0.1) {\textbf{Abertura normal}};
+
+  \node[mal] (c2) at (9.4,5.2) {\textbf{Atacante}};
+  \node[ator] (s2) at (14.8,5.2) {\textbf{Servidor}};
+  \draw[manualgray, dashed] (9.4,4.75) -- (9.4,0.6);
+  \draw[manualgray, dashed] (14.8,4.75) -- (14.8,0.6);
+
+  \draw[msg, manualred] (9.4,4.3) -- node[above, rot] {SYN, origem forjada} (14.8,4.3);
+  \draw[msg, manualred] (9.4,3.7) -- node[above, rot] {SYN, origem forjada} (14.8,3.7);
+  \draw[msg, manualred] (9.4,3.1) -- node[above, rot] {SYN, origem forjada} (14.8,3.1);
+  \draw[msg, manualgray, dashed] (14.8,2.4) -- node[above, rot] {SYN-ACK sem resposta} (9.4,2.4);
+  \node[rot, manualred] at (12.1,1.7) {\textbf{SYN\_RECV} até o tempo esgotar};
+  \node[rot, manualred] at (12.1,1.15) {fila de conexões semiabertas lotada};
+  \node[rot] at (12.1,0.1) {\textbf{SYN flood}};
+\end{tikzpicture}
+```
+O handshake de três vias e o abuso do estado que ele obriga o servidor a manter.
+:::
+
+O ataque é elegante na sua economia: cada SYN custa ao atacante um pacote de algumas dezenas de bytes e custa ao servidor uma entrada de estado mantida por dezenas de segundos. A defesa clássica são os **SYN cookies**, que codificam o estado dentro do próprio número de sequência do SYN-ACK, permitindo ao servidor não alocar nada até que o ACK final chegue. No Linux é `net.ipv4.tcp_syncookies=1`, ligado por padrão nas distribuições atuais.
+
+### Flags, RST e a varredura
+
+As bandeiras do cabeçalho TCP são a linguagem que as ferramentas de varredura falam, e as diferentes técnicas de escaneamento — que o @sec-cap014 vai colocar em laboratório e o Volume 9 vai detalhar — são combinações delas.
+
+| Técnica | O que envia | Interpretação | Rastro deixado |
+|---|---|---|---|
+| SYN scan | SYN, e RST antes de completar | SYN-ACK = aberta; RST = fechada | Conexão não completa; pouco log de aplicação |
+| Connect scan | Handshake completo | Conexão bem-sucedida = aberta | Registro em todo log de aplicação |
+| FIN, NULL, Xmas | Flags anômalas sem conexão | Silêncio = aberta ou filtrada; RST = fechada | Falha contra Windows, que sempre responde RST |
+| ACK scan | Apenas ACK | Mapeia regra de firewall, não porta aberta | Discreto, mas informativo |
+| UDP scan | Datagrama vazio ou específico | ICMP porta inalcançável = fechada | Lento; limitação de taxa distorce o resultado |
+
+: Técnicas de varredura e o que cada uma revela. {#tbl-tecnicas-varredura}
+
+O **RST** merece atenção separada. Um pacote RST forjado, com os números de sequência corretos, derruba uma conexão TCP estabelecida. Quem está no caminho — um provedor, um equipamento de inspeção, um atacante em posição de intermediário — consegue injetá-lo. Historicamente foi usado tanto para censura quanto para gestão abusiva de tráfego. A proteção real é criptográfica: o TLS não impede o RST, mas impede que o conteúdo seja lido ou alterado, e protocolos sobre QUIC — que roda em UDP com autenticação de cabeçalho — resistem bem melhor a essa injeção.
+
+### UDP e QUIC
+
+O UDP não tem handshake, não tem estado, não tem entrega garantida. Isso o torna adequado para DNS, VoIP, jogos e streaming — e conveniente para amplificação, como já visto. Do ponto de vista defensivo, a ausência de estado significa que o firewall também não tem estado real para acompanhar: o que ele faz é manter uma pseudo-sessão por tempo limitado após ver o primeiro datagrama.
+
+O **QUIC**, padronizado na RFC 9000 e base do HTTP/3, muda o quadro. Roda sobre UDP na porta 443, integra o handshake TLS 1.3 ao estabelecimento da conexão e cifra a maior parte dos próprios metadados de transporte [@rfc9000]. Para o operador de rede isso significa **menos visibilidade**: números de sequência, confirmações e controle de congestionamento — tudo o que um analisador de tráfego usava para diagnosticar desempenho — deixam de ser legíveis. É a tensão recorrente entre privacidade do usuário e observabilidade da rede, e ela reaparece no Volume 5.
+
+## O pecado original: confiança presumida
+
+Recuando um passo, o padrão fica visível. A @tbl-confianca lista, camada por camada, o que a pilha original simplesmente presumiu — e o que foi criado depois para consertar.
+
+| Camada | O que o projeto original presumiu | Ataque decorrente | Remendo posterior |
+|---|---|---|---|
+| Enlace | Quem está na rede é legítimo | ARP spoofing, DHCP rogue, VLAN hopping | 802.1X, DAI, DHCP snooping, port security |
+| Rede | O endereço de origem é verdadeiro | Falsificação, amplificação, reflexão | BCP 38, uRPF, IPsec |
+| Transporte | Os pares seguem o protocolo | SYN flood, injeção de RST | SYN cookies, TLS, QUIC |
+| Aplicação | O nome resolvido é o servidor certo | Envenenamento de DNS, phishing | DNSSEC, TLS com validação de certificado, HSTS |
+
+: A confiança presumida em cada camada e o que veio depois para compensar. {#tbl-confianca}
+
+Duas leituras importam. A primeira é histórica e generosa: a ARPANET ligava algumas dezenas de instituições que se conheciam, e autenticar cada quadro seria custo sem benefício. A segunda é operacional e menos generosa: **todos os remendos da coluna da direita são opcionais e a maioria vem desligada**. A internet insegura não é acidente inevitável — é o valor padrão que ninguém mudou.
+
+Essa é também a razão pela qual a arquitetura Zero Trust, tema do Volume 4, ganhou tração: ela parte de negar a premissa de que estar dentro da rede significa alguma coisa.
+
+## Onde cada defesa mora
+
+Encerrando com o mapa que a operação usa. Cada tecnologia de segurança atua numa camada específica e é cega para as demais:
+
+- **Camada 2** — 802.1X (autenticação de porta), MACsec, port security, DAI, DHCP snooping, segmentação por VLAN.
+- **Camada 3** — filtragem de pacotes, listas de acesso, IPsec, uRPF, roteamento com RPKI, anti-spoofing na borda.
+- **Camada 4** — firewall de estado, SYN cookies, limitação de taxa por fluxo, balanceamento com verificação de saúde.
+- **Camada 7** — TLS, WAF, filtro de DNS, gateway de e-mail, proxy com inspeção, autenticação de aplicação.
+
+A pergunta que essa lista responde é a mais comum na resposta a incidentes: *o controle que eu tenho conseguiria enxergar esse ataque?* Um WAF caríssimo não vê um dispositivo intruso fazendo ARP spoofing no andar do financeiro. Um switch com DAI ligado vê — e teria evitado o caso de abertura antes que qualquer aviso de certificado aparecesse.
+
+## ⚖️ Brasil em Foco
+
+**Captura de tráfego é atividade regulada, não neutra.** O diagnóstico do caso de abertura envolveu capturar pacotes de uma rede corporativa. Isso é lícito quando há autorização de quem opera a rede e finalidade técnica definida, mas o @sec-cap007 já fixou a régua: a Lei 9.296/1996 tipifica a interceptação de comunicação sem autorização judicial [@lei9296], e capturar conteúdo alheio "para diagnosticar" sem autorização escrita é risco real. A prática correta é capturar o mínimo necessário, preferir cabeçalhos a conteúdo e ter autorização documentada antes de conectar o analisador.
+
+**A LGPD alcança o arquivo de captura.** Um `.pcap` de rede corporativa contém endereços IP, nomes de máquina, credenciais em protocolos legados e frequentemente conteúdo de e-mail e navegação — dados pessoais no sentido do art. 5º, I da LGPD [@lgpd2018]. Capturas precisam de prazo de retenção, armazenamento restrito e descarte definido. Aquele `captura-financeiro.pcap` guardado por dois anos na pasta compartilhada do suporte é um incidente esperando por um momento oportuno.
+
+**BCP 38 é a contribuição mais concreta que um provedor brasileiro pode dar.** O NIC.br e o CERT.br mantêm há anos o programa de boas práticas para operadores, e a filtragem anti-spoofing na borda é o item de maior impacto coletivo. Um provedor que não filtra permite que seus clientes participem de ataques de reflexão contra terceiros — inclusive contra outros provedores brasileiros. Há testes públicos que permitem verificar externamente se a própria rede está filtrando.
+
+**Anatel e a resiliência da rede.** A Resolução 740/2020 estabelece requisitos de segurança cibernética aplicáveis a produtos de telecomunicações e às redes das prestadoras [@anatel740]. Na prática, configurações básicas de camada 2 e 3 — controle de acesso à administração dos equipamentos, filtragem de borda, registro de eventos — deixaram de ser boa vontade e passaram a compor obrigação regulatória, com fiscalização possível.
+
+**Marco Civil e a inspeção de tráfego.** O art. 9º do Marco Civil consagra a neutralidade de rede e restringe a discriminação de tráfego a requisitos técnicos indispensáveis e à priorização de serviços de emergência [@marcocivil2014]. Bloquear ou degradar tráfego de uma aplicação específica por decisão comercial é vedado; aplicar mitigação de ataque volumétrico é requisito técnico legítimo. A diferença entre as duas coisas precisa estar documentada na política de gestão de tráfego do provedor.
+
+## 🛠️ No Campo
+
+**1. Ligar as proteções de camada 2 que vieram desligadas.** É o item de melhor relação entre esforço e resultado em toda a rede de acesso. Em equipamento com sintaxe Cisco-like:
+
+```text
+! Em todas as portas de acesso
+interface range GigabitEthernet0/1-46
+ switchport mode access
+ switchport nonegotiate                 ! desliga DTP, mata VLAN hopping
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ spanning-tree portfast
+ spanning-tree bpduguard enable         ! ninguém vira root bridge
+
+! Globais
+ip dhcp snooping
+ip dhcp snooping vlan 10,20,30
+ip arp inspection vlan 10,20,30         ! depende do snooping acima
+```
+
+**2. Verificar a tabela ARP quando o sintoma for "certificado inválido em vários micros".** Dois IPs com o mesmo MAC é o padrão que denuncia o intermediário:
+
+```bash
+# Linux: agrupa vizinhos por MAC e mostra os repetidos
+ip neigh show | awk '$5 != "" {print $5}' | sort | uniq -c | sort -rn | head
+```
+
+```powershell
+# Windows: MACs que respondem por mais de um IP
+Get-NetNeighbor -AddressFamily IPv4 |
+  Where-Object State -ne 'Unreachable' |
+  Group-Object LinkLayerAddress |
+  Where-Object Count -gt 1
+```
+
+**3. Aplicar filtragem anti-spoofing na borda.** Em roteador com sintaxe Cisco-like, o caminho curto é o uRPF; em Linux, uma regra de saída equivalente:
+
+```text
+interface GigabitEthernet0/0
+ description Cliente - bloco 198.51.100.0/24
+ ip verify unicast source reachable-via rx
+```
+
+```bash
+# Linux: só deixa sair o que tem origem no bloco do cliente
+nft add rule inet filter forward iifname "eth1" \
+  ip saddr != 198.51.100.0/24 counter drop
+```
+
+**4. Confirmar que os SYN cookies estão ativos e a fila é adequada.** Custa dois comandos e evita indisponibilidade por um ataque de baixo volume:
+
+```bash
+sysctl net.ipv4.tcp_syncookies net.ipv4.tcp_max_syn_backlog net.core.somaxconn
+# Conexões semiabertas agora — número alto e crescente é sintoma
+ss -tan state syn-recv | wc -l
+```
+
+**5. Filtrar ICMP com bisturi, não com machado.** Bloqueio total quebra a descoberta de MTU e gera chamados insolúveis de "o site abre e trava":
+
+```bash
+nft add rule inet filter input icmp type { echo-reply, destination-unreachable, time-exceeded } accept
+nft add rule inet filter input icmp type echo-request limit rate 10/second accept
+nft add rule inet filter input icmp type redirect drop
+```
+
+**6. Fechar os amplificadores da própria rede.** Antes de se preocupar em ser vítima, garantir que não se é plataforma. Recursão de DNS aberta ao mundo, NTP com `monlist`, memcached e SNMP expostos:
+
+```bash
+# O que responde recursão vindo de fora? (executar de fora da rede)
+dig @198.51.100.53 example.com A +short
+# NTP: a consulta de modo 7 deve falhar
+ntpq -c rv 198.51.100.10
+```
+
+**7. Padronizar a captura de tráfego.** Um procedimento de uma página: quem autoriza, o que se captura (preferir `-s 96` para limitar a carga útil), onde se guarda, por quanto tempo e como se apaga:
+
+```bash
+# Cabeçalhos apenas, rotação a cada 5 minutos, 10 arquivos no máximo
+tcpdump -i eth0 -s 96 -w /var/captura/rede-%Y%m%d-%H%M.pcap -G 300 -W 10 \
+  'not port 22'
+```
+
+**8. Documentar a política de gestão de tráfego.** Uma página que separa, para o Marco Civil e para a Anatel, o que é requisito técnico (mitigação de ataque, controle de congestionamento) do que seria discriminação comercial. Escrita antes do incidente, é defesa; escrita depois, é justificativa.
+
+## Resumo
+
+- Os dois modelos convivem: **OSI dá o vocabulário** (camada 2, camada 7) e **TCP/IP é o que roda**. Cada equipamento no caminho lê apenas os cabeçalhos da sua camada, e por isso a defesa precisa estar na camada onde o ataque ocorre.
+- A **camada 2 não verifica nada**. ARP spoofing, DHCP rogue, MAC flooding, VLAN hopping e root bridge forjado exploram a mesma premissa de que quem está na rede é legítimo. Todas as defesas — DAI, DHCP snooping, port security, BPDU Guard, 802.1X — são configurações de switch **desligadas de fábrica**.
+- O **endereço de origem IP não é verificado por ninguém**. Com UDP isso viabiliza amplificação e reflexão; com TCP é limitado pela imprevisibilidade dos números de sequência. A defesa é a filtragem na borda de quem origina o tráfego (**BCP 38**), não do lado da vítima.
+- O TCP mantém **estado**, e estado finito é superfície de ataque: o SYN flood custa dezenas de bytes ao atacante e uma entrada de tabela ao servidor. **SYN cookies** resolvem. Injeção de RST derruba conexões estabelecidas e só é neutralizada por criptografia.
+- **QUIC muda o equilíbrio**: cifra os metadados de transporte, ganhando privacidade e reduzindo a visibilidade que operadores usavam para diagnóstico.
+- O padrão que atravessa a pilha é a **confiança presumida** por um projeto feito para uma rede entre pares conhecidos. Todos os remendos posteriores são opcionais — a insegurança padrão é escolha de configuração, não fatalidade.
+- No Brasil, capturar tráfego exige autorização e cuidado com a Lei 9.296/1996; o `.pcap` resultante é dado pessoal sob a LGPD; e a filtragem anti-spoofing na borda é a contribuição coletiva mais concreta de um provedor.
