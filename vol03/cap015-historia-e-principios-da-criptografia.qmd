@@ -1,3 +1,269 @@
 # História e princípios da criptografia {#sec-cap015}
 
-*(em elaboracao)*
+A máquina Enigma não foi quebrada porque alguém descobriu como ela funcionava. Os Aliados sabiam como ela funcionava desde 1932, quando matemáticos poloneses — Marian Rejewski à frente — reconstruíram a lógica interna a partir de material de inteligência e de análise pura. A máquina era conhecida, exemplares foram capturados, o esquema de rotores estava documentado. E mesmo assim as mensagens continuavam secretas, porque o segredo não estava na máquina: estava na configuração diária dos rotores, dos anéis e do painel de conexões.
+
+O que abriu o tráfego alemão foi outra coisa. Foi o operador que repetia a chave de mensagem duas vezes no preâmbulo. Foi o posto meteorológico que transmitia todo dia, no mesmo horário, uma mensagem de estrutura previsível. Foi a unidade que, sem nada a relatar, mandava `Keine besonderen Ereignisse` — "sem ocorrências especiais" — e com isso entregava a Bletchley Park um trecho de texto claro conhecido para casar contra o texto cifrado. Foi a regra de projeto que impedia uma letra de ser cifrada nela mesma, o que eliminava candidatos aos milhares. A matemática do Enigma resistiu razoavelmente bem. O **uso** do Enigma foi o que ruiu.
+
+Essa é a tese deste volume inteiro, e vale enunciá-la agora, antes de qualquer fórmula: **a criptografia moderna quase nunca falha pela matemática**. AES não foi quebrado. RSA com chave adequada não foi quebrado. SHA-256 não foi quebrado. O que se quebra, todos os dias, é o modo de operação escolhido sem entender o que ele garante, o vetor de inicialização reaproveitado, a chave no repositório do Git, o certificado que ninguém valida, o gerador de números aleatórios que não era aleatório. O @sec-cap021 fecha este volume catalogando exatamente esses erros — e nenhum deles é um problema de teoria dos números.
+
+Este capítulo estabelece o vocabulário, os princípios e os limites que tornam os seis capítulos seguintes compreensíveis.
+
+## O vocabulário mínimo
+
+Quatro objetos e duas operações sustentam tudo o que vem depois.
+
+O **texto claro** ($M$, de *message*) é a informação em sua forma utilizável. O **texto cifrado** ($C$) é o resultado da transformação. A **chave** ($K$) é o parâmetro secreto que determina qual transformação, entre todas as possíveis, foi aplicada. O **algoritmo** (ou cifra) é a função pública que combina os três.
+
+Cifrar é $C = E_K(M)$. Decifrar é $M = D_K(C)$. A propriedade que faz o sistema útil é trivial de enunciar e difícil de garantir: $D_K(E_K(M)) = M$ para quem tem $K$, e obter $M$ a partir de $C$ deve ser inviável para quem não tem.
+
+**Inviável** é a palavra que carrega o peso. Não significa impossível — significa que o custo de conseguir supera o valor do que se obtém, por uma margem confortável e por tempo suficiente. Uma chave AES de 128 bits admite $2^{128}$ valores; percorrê-los não é impossível em teoria e é absolutamente impossível em prática, com qualquer energia disponível neste planeta. Já uma chave DES de 56 bits também era "inviável" em 1977 e hoje é quebrada por hardware acessível em horas. **Segurança criptográfica tem prazo de validade**, e reavaliá-la periodicamente é parte da operação — assunto que o NIST trata como transição de algoritmos [@nistsp800131a].
+
+A @fig-modelo-cripto fixa o modelo com que se raciocina sobre qualquer sistema criptográfico.
+
+::: {#fig-modelo-cripto}
+```{.tikz}
+%%| filename: modelo-criptografico
+%%| alt: Modelo geral de um sistema criptográfico, com emissor, canal inseguro sob observação de um adversário, receptor, e a chave como único elemento secreto
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    parte/.style={draw=manualblue, thick, fill=manualblue!8, rounded corners=3pt,
+                  align=center, inner sep=5pt, minimum width=2.0cm, minimum height=1.0cm},
+    caixa/.style={draw=manualgreen, very thick, fill=manualgreen!10, rounded corners=3pt,
+                  align=center, inner sep=5pt, minimum width=2.2cm, minimum height=1.2cm},
+    adv/.style={draw=manualred, very thick, fill=manualred!10, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=2.8cm, minimum height=1.1cm},
+    chave/.style={draw=manualyellow, very thick, fill=manualyellow!15, rounded corners=3pt,
+                  align=center, inner sep=4pt, font=\scriptsize},
+    et/.style={font=\scriptsize, align=center, manualgray}}
+
+  \node[parte] (alice) at (0,0) {\textbf{Alice}};
+  \node[caixa] (enc) at (3.0,0) {\textbf{Cifrar}\\$E_K(M)$};
+  \node[caixa] (dec) at (9.8,0) {\textbf{Decifrar}\\$D_K(C)$};
+  \node[parte] (bob) at (12.8,0) {\textbf{Bob}};
+
+  \draw[destaque, ->, >=stealth] (alice) -- node[et, above] {$M$} (enc);
+  \draw[destaque, ->, >=stealth] (dec) -- node[et, above] {$M$} (bob);
+
+  \draw[draw=manualgray, thick, dashed, rounded corners=5pt] (4.4,-1.2) rectangle (8.4,1.2);
+  \node[et] at (6.4,0.85) {\textbf{canal inseguro}};
+  \draw[destaque, ->, >=stealth] (enc) -- node[et, above] {$C$} (dec);
+
+  \node[adv] (eve) at (6.4,-2.6) {\textbf{Adversário}\\\scriptsize observa, altera, injeta};
+  \draw[auxiliar, manualred, ->, >=stealth] (eve) -- (6.4,-1.2);
+
+  \node[chave] (k1) at (3.0,2.2) {\textbf{Chave} $K$\\\scriptsize o único segredo};
+  \node[chave] (k2) at (9.8,2.2) {\textbf{Chave} $K$\\\scriptsize o único segredo};
+  \draw[auxiliar, manualyellow, ->, >=stealth] (k1) -- (enc);
+  \draw[auxiliar, manualyellow, ->, >=stealth] (k2) -- (dec);
+
+  \node[et, align=center] at (6.4,2.4)
+    {\textbf{Princípio de Kerckhoffs}\\$E$ e $D$ são públicos e auditados.\\Trocar $K$ restaura a segurança;\\trocar o algoritmo é um projeto.};
+\end{tikzpicture}
+```
+Modelo geral de um sistema criptográfico. O algoritmo é público; a chave é o único segredo.
+:::
+
+## Da substituição à análise de frequência
+
+A cifra de César desloca cada letra um número fixo de posições no alfabeto. Com deslocamento 3, `ATAQUE` vira `DWDTXH`. O espaço de chaves tem 25 valores úteis, e a cifra é quebrada por inspeção antes do café esfriar.
+
+O interessante não é a fragilidade — é **por que** ela é frágil. A cifra de César é uma **substituição monoalfabética**: cada letra do texto claro corresponde sempre à mesma letra no texto cifrado. Isso preserva integralmente a estatística do idioma. Em português, `A` e `E` respondem juntas por mais de um quarto do texto; `Q` é quase sempre seguido de `U`; digramas como `DE`, `RA` e `ES` são frequentíssimos. A substituição embaralha os rótulos e mantém intacta a estrutura por baixo. Contar frequências devolve o alfabeto.
+
+Generalizar a substituição não salva. Uma substituição monoalfabética arbitrária tem $26!$ chaves — cerca de $4 \times 10^{26}$, espaço grande o bastante para tornar a força bruta irrelevante. E é resolvida em minutos por análise de frequência, porque o tamanho do espaço de chaves **não é** a medida da segurança. É apenas o piso: um espaço pequeno garante fracasso, um espaço grande não garante nada. A lição sobrevive intacta na criptografia moderna, onde uma chave RSA de 2048 bits oferece segurança comparável à de uma chave simétrica de 112 bits — porque os ataques contra RSA não são busca exaustiva.
+
+A resposta histórica à análise de frequência foi a **substituição polialfabética**: usar vários alfabetos em rodízio. A cifra de Vigenère, do século XVI, faz isso com uma palavra-chave que determina o deslocamento de cada posição. Resistiu por trezentos anos e foi chamada de *le chiffre indéchiffrable*, até que Friedrich Kasiski publicou, em 1863, o método que a desmonta: repetições no texto cifrado revelam o comprimento da chave, e uma vez conhecido esse comprimento a cifra se decompõe em várias cifras de César, cada uma atacável por frequência.
+
+Duas lições permanentes saem daí. A primeira: **repetição vaza informação**. Todo padrão que sobrevive à cifragem é uma alça para o atacante — é exatamente o que torna o modo ECB inaceitável, como o @sec-cap016 mostra. A segunda: **"ninguém quebrou em 300 anos" não é evidência de segurança**, é evidência de que ninguém publicou. Confiança em cifra decorre de análise pública sustentada, não de silêncio.
+
+## O princípio de Kerckhoffs
+
+Em 1883, Auguste Kerckhoffs enunciou seis requisitos para cifras militares [@kerckhoffs1883]. O segundo atravessou o tempo e virou lei de projeto: **o sistema não deve exigir sigilo e deve poder cair nas mãos do inimigo sem inconveniente**.
+
+Ou, na formulação de Shannon: projete supondo que o adversário conhece o sistema. Tudo, menos a chave.
+
+O argumento é prático, não filosófico. Algoritmo secreto não recebe análise independente, e criptografia é uma disciplina em que a única evidência de solidez é a resistência a ataque de gente competente e motivada. Além disso, segredo de algoritmo **não escala e não se recupera**: uma vez vazado — por engenharia reversa, por funcionário ou por captura de equipamento — todo o sistema morre, e substituí-lo é um projeto de infraestrutura. Chave vazada se troca numa tarde.
+
+A história é implacável com quem ignorou isso. A cifra A5/1 do GSM, mantida secreta, foi reconstruída por engenharia reversa e quebrada. O sistema de proteção de DVD, o CSS, caiu em dias após a análise do binário. O MIFARE Classic, usado em bilhetes de transporte no mundo inteiro — inclusive no Brasil —, embutia um algoritmo proprietário chamado Crypto-1 que sucumbiu assim que pesquisadores holandeses reconstruíram sua lógica. Em todos os casos o padrão se repete: o sigilo do algoritmo era o único obstáculo, e obstáculos únicos caem.
+
+Convém separar duas coisas que se confundem. **Segurança por obscuridade como única defesa é falha de projeto**; obscuridade como camada adicional sobre uma base sólida é legítima e às vezes útil. Mover o SSH da porta 22 não é segurança — mas reduz ruído de varredura automatizada e, sobre uma configuração que já usa chave e nega senha, é um ganho operacional barato. O erro está em confundir redução de ruído com controle.
+
+## Shannon: sigilo perfeito e seu preço
+
+Claude Shannon deu à criptografia sua primeira fundamentação matemática [@shannon1949] e provou que sigilo absoluto existe — sob condições que quase sempre inviabilizam o uso.
+
+O **one-time pad** combina cada bit da mensagem com um bit de uma chave verdadeiramente aleatória, por XOR. Se a chave for aleatória, tiver o mesmo comprimento da mensagem e for usada **uma única vez**, o texto cifrado não revela absolutamente nada sobre o texto claro além do comprimento. A prova é elegante: para qualquer texto cifrado de $n$ bits existe uma chave que o transforma em qualquer texto claro de $n$ bits. `ATACAR` e `RECUAR` são igualmente compatíveis com o que o adversário vê. Não há o que computar; poder computacional infinito não ajuda.
+
+E, no entanto, praticamente ninguém usa. As três condições são o obstáculo:
+
+- **Chave do tamanho da mensagem.** Proteger 10 GB exige distribuir 10 GB de chave. Se existe canal seguro para transportar isso, ele poderia transportar a mensagem.
+- **Aleatoriedade verdadeira.** Não pseudoaleatoriedade. Saída de gerador determinístico não serve — o pad herda a entropia da semente, não do seu comprimento.
+- **Uso único.** Duas mensagens cifradas com o mesmo pad colapsam: o XOR dos dois textos cifrados é o XOR dos dois textos claros, e a chave desaparece da equação.
+
+Essa terceira condição não é hipótese de sala de aula. O projeto Venona, conduzido pelos Estados Unidos entre 1943 e 1980, decifrou milhares de mensagens diplomáticas soviéticas porque, sob pressão de guerra, blocos de pad foram duplicados e reutilizados. A criptografia estava matematicamente perfeita; a operação, não. É o Enigma outra vez, com outro sotaque.
+
+A criptografia moderna faz então uma troca deliberada: abandona o sigilo perfeito e busca **segurança computacional** — não é impossível quebrar, é inviável com os recursos que existem. Em troca, chaves curtas e fixas protegem volumes arbitrários de dados. É a troca certa, e é a razão de o resto deste volume existir.
+
+## Confusão, difusão e o que uma boa cifra faz
+
+Shannon também nomeou as duas propriedades que uma cifra de bloco precisa entregar, e elas continuam sendo o critério de projeto do AES:
+
+**Confusão** é tornar opaca a relação entre a chave e o texto cifrado. Cada bit do texto cifrado deve depender de vários bits da chave, de forma não linear. Sem confusão, observar pares de entrada e saída permite montar equações e resolver para a chave.
+
+**Difusão** é espalhar a estrutura do texto claro por todo o texto cifrado. Mudar **um** bit da entrada deve alterar, em média, metade dos bits da saída — o **efeito avalanche**. Sem difusão, padrões do texto claro sobrevivem à cifragem e a análise estatística volta a funcionar, exatamente como nas cifras clássicas.
+
+O efeito avalanche é fácil de verificar na prática, e vale fazer no laboratório do @sec-cap014: cifrar duas mensagens que diferem em um único caractere e comparar as saídas bit a bit. Numa cifra decente, o resultado é indistinguível de duas saídas independentes.
+
+## O que o adversário pode fazer
+
+Dizer que uma cifra é "segura" sem dizer contra o quê é dizer pouco. A criptografia trabalha com modelos de ataque explícitos, ordenados por poder crescente:
+
+| Modelo | O que o adversário tem | Situação real correspondente |
+|---|---|---|
+| Somente texto cifrado (COA) | Textos cifrados interceptados | Captura passiva de tráfego |
+| Texto claro conhecido (KPA) | Pares claro/cifrado | Cabeçalhos fixos, formatos previsíveis |
+| Texto claro escolhido (CPA) | Pode cifrar o que quiser | Serviço que cifra dados enviados pelo usuário |
+| Texto cifrado escolhido (CCA) | Pode submeter cifrados e observar o resultado | API que decifra e reage ao erro |
+
+: Modelos de ataque em ordem crescente de poder do adversário. {#tbl-modelos-ataque}
+
+O padrão moderno exige resistência a **CCA**, o modelo mais forte — e não por preciosismo acadêmico. Um servidor web que decifra o que o cliente envia e responde de maneira distinguível conforme o resultado é, literalmente, o oráculo do modelo CCA. Foi assim que o *padding oracle* de Vaudenay [@vaudenay2002] derrubou implementações de SSL e IPsec, e é por isso que o @sec-cap016 insiste que cifrar sem autenticar é erro de projeto.
+
+Também vale precisar o que significa **"quebrado"** no vocabulário da área, porque a manchete e o artigo raramente coincidem. Uma cifra é considerada academicamente quebrada quando existe qualquer ataque mais rápido que a busca exaustiva, ainda que absurdamente caro. Um ataque a AES-256 que custasse $2^{254}$ operações seria uma quebra — e não teria consequência prática nenhuma. Já colisões em MD5 saíram do teórico para "segundos num notebook", e isso tem consequência todo dia. **A pergunta útil não é "foi quebrado?", é "o ataque é praticável e o meu uso depende da propriedade atacada?"** — o @sec-cap017 mostra por que MD5 é catastrófico para assinatura e irrelevante para detectar corrupção de download.
+
+## As três famílias de primitivas
+
+A criptografia aplicada se organiza em três famílias, e o restante do volume percorre uma a uma. A @fig-familias-cripto resume o que cada uma entrega em relação aos pilares do @sec-cap002 e do @sec-cap003.
+
+::: {#fig-familias-cripto}
+```{.tikz}
+%%| filename: familias-criptograficas
+%%| alt: As três famílias de primitivas criptográficas — simétrica, assimétrica e funções hash — com exemplos e as propriedades de segurança que cada uma entrega
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fam/.style={draw=manualblue, very thick, fill=manualblue!8, rounded corners=4pt,
+                align=center, inner sep=6pt, minimum width=4.2cm, minimum height=1.4cm},
+    exemplo/.style={draw=manualgray, thick, fill=white, rounded corners=3pt,
+                    align=center, inner sep=5pt, minimum width=4.2cm, font=\scriptsize},
+    prop/.style={draw=manualgreen, thick, fill=manualgreen!10, rounded corners=3pt,
+                 align=center, inner sep=5pt, minimum width=4.2cm, minimum height=1.3cm,
+                 font=\scriptsize}}
+
+  \node[fam] (sim) at (0,0) {\textbf{Simétrica}\\\scriptsize uma chave, os dois lados};
+  \node[fam] (asim) at (5.2,0) {\textbf{Assimétrica}\\\scriptsize par de chaves};
+  \node[fam] (hash) at (10.4,0) {\textbf{Hash e MAC}\\\scriptsize sem chave ou com chave};
+
+  \node[exemplo] (sime) at (0,-2.0) {AES-GCM\\ChaCha20-Poly1305};
+  \node[exemplo] (asime) at (5.2,-2.0) {RSA, Diffie-Hellman\\ECDSA, Ed25519, X25519};
+  \node[exemplo] (hashe) at (10.4,-2.0) {SHA-256, SHA-3, BLAKE2\\HMAC, Argon2};
+
+  \node[prop] (simp) at (0,-4.2) {\textbf{Confidencialidade}\\em volume, muito rápida};
+  \node[prop] (asimp) at (5.2,-4.2) {\textbf{Acordo de chave}\\\textbf{Autenticidade}\\\textbf{Não repúdio}};
+  \node[prop] (hashp) at (10.4,-4.2) {\textbf{Integridade}\\\textbf{Autenticidade} com chave};
+
+  \foreach \a/\b in {sim/sime, asim/asime, hash/hashe, sime/simp, asime/asimp, hashe/hashp}
+    \draw[auxiliar, manualgray, ->, >=stealth] (\a) -- (\b);
+
+  \node[draw=manualyellow, very thick, fill=manualyellow!12, rounded corners=4pt,
+        align=center, inner sep=6pt, font=\scriptsize, minimum width=13.5cm] at (5.2,-6.4)
+    {\textbf{Na prática, sempre combinadas: o sistema híbrido}\\
+     Assimétrica acorda a chave e autentica $\rightarrow$ simétrica protege os dados $\rightarrow$ MAC garante integridade.\\
+     É exatamente o que o TLS, o SSH e o Signal fazem.};
+\end{tikzpicture}
+```
+As três famílias de primitivas, o que cada uma entrega e por que nenhuma é usada sozinha.
+:::
+
+O ponto central da figura merece destaque: **nenhuma família é usada isolada em sistema real**. A criptografia assimétrica é ordens de grandeza mais lenta que a simétrica e não serve para volume; a simétrica não resolve a distribuição de chave entre partes que nunca se encontraram; nenhuma das duas, sozinha, garante integridade. A **construção híbrida** — assimétrica para acordar a chave e autenticar, simétrica para os dados, MAC para a integridade — é a arquitetura de todo protocolo seguro em uso, do TLS ao SSH, do Signal ao Pix.
+
+## Aleatoriedade: a matéria-prima
+
+Toda chave é, na origem, um número aleatório. Se esse número for previsível, nada do que vem depois importa — e este é, disparadamente, o modo mais comum de um sistema criptograficamente correto no papel falhar na prática.
+
+A distinção que precisa estar clara é entre dois tipos de gerador. O **PRNG comum** (`rand()` em C, `Math.random()` em JavaScript, `random.random()` em Python) é otimizado para velocidade e boa distribuição estatística, e é **completamente previsível** para quem observa saídas suficientes: o estado interno é reconstruível. O **CSPRNG** é projetado para que, mesmo conhecendo saídas anteriores, seja inviável prever a próxima ou recuperar o estado. No sistema operacional, é `getrandom()` e `/dev/urandom` no Linux, e `BCryptGenRandom` no Windows — alimentados pela entropia física coletada pelo núcleo, como o @sec-cap011 descreveu. As construções recomendadas estão em [@nistsp80090a].
+
+A regra operacional é curta: **para qualquer coisa criptográfica, use a API criptográfica do sistema ou da biblioteca**, nunca o gerador de propósito geral da linguagem. `secrets` em vez de `random` no Python; `crypto.randomBytes` em vez de `Math.random` no Node; `SecureRandom` no Java; `getrandom()` em C.
+
+O caso que melhor ilustra o custo é o do Debian em 2008: uma alteração bem-intencionada removeu do OpenSSL a linha que alimentava o *pool* de entropia, e o gerador passou a depender essencialmente do identificador do processo. O resultado foi um espaço de apenas 32.767 chaves possíveis. Durante quase dois anos, todas as chaves SSH e TLS geradas em sistemas Debian e derivados eram enumeráveis em minutos. Nenhum algoritmo foi quebrado. A entrada estava errada, e isso bastou.
+
+## O que a criptografia não resolve
+
+Fechar o capítulo delimitando o alcance evita a expectativa que produz decisões ruins.
+
+**Criptografia não resolve autorização.** Cifrar um banco de dados não impede que a aplicação, com credencial legítima, devolva o registro de outro usuário. O dado é decifrado exatamente como deveria; quem errou foi o controle de acesso, tema do Volume 4.
+
+**Criptografia em repouso não protege dado em uso.** Disco cifrado protege contra roubo do disco e descarte inadequado do hardware. Com o sistema ligado e o volume montado, o dado está claro para todo processo autorizado — e para o invasor que obteve execução. A frase "o banco é criptografado" só faz sentido acompanhada de "em repouso, contra este cenário de ameaça".
+
+**Criptografia não esconde metadados.** O conteúdo de uma conexão TLS é opaco; quem falou com quem, quando, por quanto tempo e com que volume, não é. Análise de tráfego funciona sobre canais perfeitamente cifrados, e o Volume 16 mostra o quanto ela revela.
+
+**Criptografia não substitui a validação de identidade.** Um canal cifrado com quem não se verificou é um canal cifrado com o atacante. Diffie-Hellman sem autenticação estabelece uma chave excelente — com quem estiver no meio. É por isso que o @sec-cap019 existe, e o @sec-cap018 chega ao mesmo ponto por outro caminho.
+
+**Criptografia mal aplicada dá pior resultado que a ausência dela**, porque cria a convicção de que o problema foi resolvido. Um campo em Base64 chamado `encrypted_token` já produziu mais dano do que o mesmo campo em texto claro produziria — o segundo teria sido revisado.
+
+## ⚖️ Brasil em Foco
+
+**Usar criptografia forte é legal, e o Brasil nunca exigiu porta dos fundos.** Não há, no ordenamento brasileiro, restrição ao uso de criptografia forte por cidadãos ou empresas, nem obrigação de depósito de chaves. Os bloqueios judiciais do WhatsApp entre 2015 e 2016 — motivados pela impossibilidade técnica de entregar conteúdo protegido por criptografia de ponta a ponta — foram derrubados em instâncias superiores, e o tema tramita no Supremo Tribunal Federal na ADI 5527 e na ADPF 403. O argumento técnico que sustentou a defesa é o mesmo do @sec-cap003: em sistema com sigilo encaminhado, **o provedor não detém as chaves**, e ordem judicial não cria capacidade técnica que não existe.
+
+**A LGPD trata criptografia como salvaguarda com efeito jurídico concreto.** O art. 46 exige medidas técnicas aptas a proteger dados pessoais, e o art. 48 obriga a comunicação de incidente que possa acarretar risco relevante. A conexão entre os dois é o que importa na prática: dado adequadamente cifrado, com a chave comprovadamente não comprometida, tende a reduzir — e em alguns cenários a afastar — a caracterização de risco relevante ao titular. A Resolução CD/ANPD 15/2024 estruturou o procedimento de comunicação, e a existência de salvaguarda criptográfica documentada pesa na avaliação. Isso transforma registro de configuração, de gestão de chaves e de escopo de cifragem em ativo jurídico, não só técnico [@lgpd2018; @anpd2024res15].
+
+**Cuidado com "hash é anonimização" — não é.** A LGPD distingue dado anonimizado, fora do escopo da lei, de dado pseudonimizado, dentro dela. Aplicar SHA-256 a um CPF **não** anonimiza: o espaço de CPFs válidos tem cerca de $1{,}1 \times 10^{10}$ elementos, e percorrê-lo inteiro em hardware comum leva minutos. A tabela reversa completa é construível por qualquer pessoa. O @sec-cap017 detalha por que hash de domínio pequeno não protege nada, e o equívoco já apareceu em incidentes brasileiros noticiados como envolvendo "dados anonimizados".
+
+**A assinatura digital tem base legal específica e uma infraestrutura estatal.** A MP 2.200-2/2001 instituiu a ICP-Brasil e conferiu presunção de veracidade às assinaturas feitas com certificado emitido em sua cadeia. A Lei 14.063/2020 escalonou as assinaturas eletrônicas em simples, avançada e qualificada — esta última exigindo certificado ICP-Brasil — e definiu para quais atos cada nível serve. É a razão de o e-CNPJ ser obrigatório para NF-e, de o e-CPF aparecer em peticionamento eletrônico e de o gov.br ter níveis de conta com valor jurídico distinto. O @sec-cap018 trata da matemática e o @sec-cap019 da cadeia de confiança que sustenta tudo isso [@mp2200; @lei14063].
+
+**No setor financeiro, criptografia é requisito regulatório explícito.** A Resolução BCB 4.893/2021 estabelece a política de segurança cibernética das instituições autorizadas, e o arranjo do Pix impõe autenticação mútua com certificado em toda comunicação com o SPI. Não é boa prática opcional: é condição de participação, verificada em homologação. O @sec-cap020 mostra a configuração de TLS mútuo que materializa essa exigência [@bcb4893].
+
+## 🛠️ No Campo
+
+**1. Nunca implemente primitiva criptográfica.** A regra que mais economiza incidentes. Use `libsodium`, a biblioteca padrão da plataforma ou implementações consagradas e auditadas. Implementação própria falha em canal lateral, em tempo de execução variável e em tratamento de erro — nada disso aparece nos testes de unidade, e tudo isso aparece no ataque.
+
+**2. Saiba responder três perguntas sobre qualquer sistema que use criptografia.** Qual algoritmo e modo? De onde vem a chave e onde ela vive? O que garante que a mensagem não foi alterada? Quem não responde às três não tem sistema criptográfico — tem uma chamada de biblioteca.
+
+**3. Inventarie os algoritmos em uso antes de discutir melhorias.** Não se gere o que não se conhece:
+
+```bash
+# Certificados: algoritmo de assinatura e tamanho de chave
+find /etc/ssl /etc/pki -name '*.crt' -o -name '*.pem' 2>/dev/null | while read -r c; do
+  echo "== $c"
+  openssl x509 -in "$c" -noout -subject -dates 2>/dev/null
+  openssl x509 -in "$c" -noout -text 2>/dev/null | grep -E 'Signature Algorithm|Public-Key'
+done
+
+# Chaves SSH ainda autorizadas, por tipo
+awk '{print $1}' ~/.ssh/authorized_keys 2>/dev/null | sort | uniq -c
+```
+
+**4. Verifique o efeito avalanche com as próprias mãos.** Exercício de dez minutos que ancora a intuição de difusão:
+
+```bash
+printf 'ataque ao amanhecer' | sha256sum
+printf 'ataque ao amanhecel' | sha256sum   # um caractere de diferença na entrada
+# As saídas não guardam relação visível alguma.
+```
+
+**5. Trate origem de aleatoriedade como item de revisão de código.** Procurar geradores de propósito geral onde deveria haver CSPRNG é uma varredura barata e de retorno alto:
+
+```bash
+grep -rnE 'Math\.random|new Random\(|[^s]rand\(\)|srand\(|random\.random\(' \
+     --include='*.js' --include='*.java' --include='*.py' --include='*.c' . \
+  | grep -viE 'test|spec|mock|benchmark'
+```
+
+Cada ocorrência num caminho que gere chave, token, identificador de sessão ou senha temporária é achado de severidade alta.
+
+**6. Documente a validade dos algoritmos, não só a configuração.** Uma tabela com algoritmo, uso, tamanho de chave, data de adoção e data prevista de reavaliação. É o que transforma "estamos seguros" em afirmação verificável, e o que evita descobrir SHA-1 em produção durante uma auditoria. As tabelas de transição do NIST [@nistsp800131a] e as recomendações de gestão de chaves [@nistsp80057] servem de referência.
+
+**7. Rejeite algoritmo proprietário sem análise pública.** Fornecedor que descreve a criptografia como "algoritmo proprietário de alta segurança" e se recusa a detalhar está descrevendo o oposto do princípio de Kerckhoffs. As perguntas certas em processo de aquisição: qual algoritmo padrão, qual modo, qual tamanho de chave e qual auditoria independente já passou.
+
+**8. Separe cifragem de gestão de chaves no desenho e no orçamento.** Escolher AES-256-GCM leva cinco minutos; decidir onde a chave nasce, quem a acessa, como ela roda e o que acontece quando vaza é o trabalho de verdade. O Volume 8 trata de cofres e KMS, mas a decisão de arquitetura começa aqui — e chave em variável de ambiente de contêiner não é solução, é adiamento.
+
+## Resumo
+
+- **A criptografia moderna raramente falha pela matemática.** O Enigma caiu por erro operacional, o Venona por reúso de pad, o Debian por entropia removida. Algoritmo é a parte fácil; uso e gestão de chave são onde os sistemas quebram.
+- O **princípio de Kerckhoffs** é lei de projeto: algoritmo público e auditado, chave como único segredo. Segredo de algoritmo não escala, não se recupera e nunca recebeu análise independente.
+- **Espaço de chaves grande não é sinônimo de segurança.** A substituição monoalfabética tem $26!$ chaves e cai por análise de frequência. O tamanho da chave é piso, não medida.
+- O **one-time pad** oferece sigilo perfeito sob três condições — chave aleatória, do tamanho da mensagem e usada uma única vez — que na prática o inviabilizam. A criptografia moderna troca sigilo perfeito por **segurança computacional**, e é a troca certa.
+- **Confusão e difusão** são os critérios de projeto de uma cifra de bloco; o efeito avalanche é a difusão observável, e verificável em dois comandos.
+- O padrão atual exige resistência ao modelo **CCA**, porque servidores que decifram e reagem a erro são, literalmente, oráculos de decifragem. "Quebrado" na academia e "explorável" na prática são coisas diferentes: a pergunta útil é se o ataque é praticável e se o seu uso depende da propriedade atacada.
+- As três famílias — **simétrica, assimétrica e hash/MAC** — nunca aparecem sozinhas em sistema real. Toda arquitetura séria é **híbrida**, e o TLS é o exemplo canônico.
+- **Aleatoriedade previsível derruba tudo o que vem depois.** CSPRNG do sistema, sempre; gerador de propósito geral da linguagem, nunca, em caminho criptográfico.
+- Criptografia **não** resolve autorização, não protege dado em uso, não esconde metadados e não substitui validação de identidade. Mal aplicada, é pior que ausente, porque encerra a discussão.
+- No Brasil, o uso de criptografia forte é livre, a LGPD a trata como salvaguarda com efeito jurídico concreto e a assinatura digital tem infraestrutura estatal própria na ICP-Brasil. **Hash de CPF não é anonimização.**

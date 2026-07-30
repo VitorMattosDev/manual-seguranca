@@ -30,7 +30,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 3 — Criptografia Aplicada
 
-- [ ] **cap 015** - História e princípios da criptografia - `vol03/cap015-historia-e-principios-da-criptografia.qmd`
+- [x] **cap 015** - História e princípios da criptografia - `vol03/cap015-historia-e-principios-da-criptografia.qmd`
 - [ ] **cap 016** - Criptografia simétrica: AES, modos de operação e AEAD - `vol03/cap016-criptografia-simetrica-aes-modos-de-operacao.qmd`
 - [ ] **cap 017** - Funções hash, HMAC e integridade - `vol03/cap017-funcoes-hash-hmac-e-integridade.qmd`
 - [ ] **cap 018** - Criptografia assimétrica: RSA, Diffie-Hellman e curvas elípticas - `vol03/cap018-criptografia-assimetrica-rsa-diffie-hellman-e.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (14 concluidos).
+**Total:** 107 capitulos em 16 volumes (15 concluidos).
 
