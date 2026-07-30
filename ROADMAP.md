@@ -26,7 +26,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 011** - Fundamentos de sistemas operacionais: processos, permissões e memória - `vol02/cap011-fundamentos-de-sistemas-operacionais.qmd`
 - [x] **cap 012** - Linux essencial para segurança - `vol02/cap012-linux-essencial-para-seguranca.qmd`
 - [x] **cap 013** - Windows e Active Directory essencial - `vol02/cap013-windows-e-active-directory-essencial.qmd`
-- [ ] **cap 014** - Virtualização e montagem do laboratório de estudos - `vol02/cap014-virtualizacao-e-montagem-do-laboratorio-de.qmd`
+- [x] **cap 014** - Virtualização e montagem do laboratório de estudos - `vol02/cap014-virtualizacao-e-montagem-do-laboratorio-de.qmd`
 
 ### Volume 3 — Criptografia Aplicada
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (7 concluidos).
+**Total:** 107 capitulos em 16 volumes (14 concluidos).
 

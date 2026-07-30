@@ -1,3 +1,263 @@
 # Virtualização e montagem do laboratório de estudos {#sec-cap014}
 
-*(em elaboracao)*
+Um estudante de segurança quer entender ARP spoofing. Leu o @sec-cap008, entendeu a teoria, e agora quer ver acontecer. Instala a ferramenta na própria máquina, aponta para o gateway de casa e executa. Funciona: a conexão da família cai, a irmã reclama que o vídeo travou, e ele não aprende quase nada — porque não tinha como observar os dois lados, não podia repetir em condições controladas e não podia errar sem consequência.
+
+Duas semanas depois, o mesmo estudante monta três máquinas virtuais numa rede isolada: uma vítima, um atacante e um gateway. Executa o mesmo ataque. Captura o tráfego dos três pontos ao mesmo tempo. Vê a tabela ARP da vítima mudar em tempo real. Liga Dynamic ARP Inspection num switch virtual e vê o ataque falhar. Restaura o *snapshot* e repete de outro jeito. Em uma tarde, entende mais do que em um mês de leitura.
+
+A diferença não é conhecimento nem ferramenta: é **ambiente**. O laboratório é o que separa quem sabe descrever um ataque de quem sabe reconhecê-lo, detectá-lo e contê-lo. E ele tem uma segunda função, igualmente importante: **é o único lugar onde a prática é inequivocamente legal**, o que o @sec-cap007 fixou como fronteira da profissão.
+
+Este capítulo fecha o Volume 2 construindo esse ambiente. É também o capítulo mais prático do manual até aqui, e o que torna utilizáveis os próximos volumes.
+
+## Virtualização: o que a fronteira realmente vale
+
+Um **hipervisor** cria máquinas virtuais, cada uma com seu núcleo, sua memória e seus discos virtuais. Há dois tipos, e a diferença importa mais para desempenho do que para segurança: o **tipo 1** roda direto no hardware (Proxmox VE, ESXi, Hyper-V, XCP-ng); o **tipo 2** roda sobre um sistema operacional hospedeiro (VirtualBox, VMware Workstation, Hyper-V no Windows cliente).
+
+Para segurança, o que interessa é a **força do isolamento**, e a comparação com contêineres é o ponto central:
+
+| Aspecto | Máquina virtual | Contêiner |
+|---|---|---|
+| Núcleo | Um por VM | Compartilhado com o hospedeiro |
+| Fronteira | Hipervisor (superfície pequena) | Chamadas de sistema (superfície grande) |
+| Escape | Raro, alto valor, corrigido com urgência | Mais frequente; erro de configuração basta |
+| Arranque | Segundos a minutos | Milissegundos |
+| Custo de recursos | Alto | Baixo |
+| Uso em laboratório | Análise de código malicioso, sistemas completos | Serviços vulneráveis, alvos web |
+
+: Máquina virtual e contêiner como fronteiras de isolamento. {#tbl-vm-container}
+
+A regra prática que decorre disso: **contêiner para conveniência, máquina virtual para contenção**. Rodar um alvo web deliberadamente vulnerável em contêiner é adequado. Executar código malicioso desconhecido em contêiner **não é** — o Volume 11, ao tratar de análise dinâmica, trabalha com máquina virtual isolada, com instantâneo e sem rede, precisamente por isso.
+
+Vale ainda registrar que o isolamento do hipervisor, embora forte, não é absoluto. Escapes existem e são corrigidos com urgência máxima; e há canais laterais em CPU compartilhada que atravessam fronteiras de VM, o que importa muito em nuvem multi-inquilino — assunto do Volume 8 — e pouco num laboratório doméstico. As orientações do NIST sobre virtualização segura [@nistsp800125] resumem o quadro: a VM é uma fronteira forte, não uma garantia.
+
+## O laboratório mínimo
+
+A pergunta mais comum de quem começa é sobre hardware. A resposta honesta: **8 GB de RAM já permitem estudar**, 16 GB tornam a experiência confortável, 32 GB permitem simular um domínio Windows completo. Disco SSD importa mais que processador, porque o gargalo real é entrada e saída — e um disco de 256 GB dedicado a máquinas virtuais é suficiente para começar.
+
+A @fig-topologia-lab mostra a topologia que serve de base para tudo o que vem nos próximos volumes.
+
+::: {#fig-topologia-lab}
+```{.tikz}
+%%| filename: topologia-laboratorio
+%%| alt: Topologia do laboratório de estudos com três redes virtuais isoladas, máquinas de ataque, alvos e defesa, e o pfSense entre elas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    vm/.style={draw=manualblue, thick, fill=manualblue!8, rounded corners=3pt,
+               align=center, inner sep=4pt, minimum width=2.9cm, minimum height=1.15cm,
+               font=\scriptsize},
+    alvo/.style={draw=manualred, thick, fill=manualred!8, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=2.9cm, minimum height=1.15cm,
+                 font=\scriptsize},
+    def/.style={draw=manualgreen, thick, fill=manualgreen!10, rounded corners=3pt,
+                align=center, inner sep=4pt, minimum width=2.9cm, minimum height=1.15cm,
+                font=\scriptsize},
+    fw/.style={draw=manualyellow, very thick, fill=manualyellow!12, rounded corners=3pt,
+               align=center, inner sep=5pt, minimum width=2.6cm, minimum height=3.6cm},
+    rede/.style={draw=manualgray, thick, dashed, rounded corners=6pt},
+    et/.style={font=\scriptsize, align=center, manualgray}}
+
+  \draw[rede, fill=manualblue!3] (-1.7,3.0) rectangle (1.7,7.9);
+  \node[et, manualblue] at (0,7.55) {\textbf{LAN-ATAQUE}\\10.10.10.0/24};
+  \node[vm] (kali) at (0,6.3) {\textbf{Kali Linux}\\ferramentas ofensivas};
+  \node[vm] (win)  at (0,4.6) {\textbf{Windows 11}\\estação de teste};
+
+  \node[fw] (pf) at (4.6,5.0) {\textbf{pfSense}\\\scriptsize firewall\\\scriptsize e roteador\\[4pt]
+                               \scriptsize 3 interfaces\\\scriptsize regras entre\\\scriptsize os segmentos};
+
+  \draw[rede, fill=manualred!3] (7.5,2.2) rectangle (10.9,7.9);
+  \node[et, manualred] at (9.2,7.55) {\textbf{LAN-ALVOS}\\10.10.20.0/24};
+  \node[alvo] (meta) at (9.2,6.3) {\textbf{Metasploitable}\\serviços legados};
+  \node[alvo] (juice) at (9.2,4.6) {\textbf{Juice Shop}\\alvo web (contêiner)};
+  \node[alvo] (dc)   at (9.2,2.9) {\textbf{Windows Server}\\controlador de domínio};
+
+  \draw[rede, fill=manualgreen!3] (12.7,3.8) rectangle (16.1,7.9);
+  \node[et, manualgreen] at (14.4,7.55) {\textbf{LAN-DEFESA}\\10.10.30.0/24};
+  \node[def] (siem) at (14.4,6.3) {\textbf{Wazuh / SIEM}\\coleta e correlação};
+  \node[def] (ids)  at (14.4,4.6) {\textbf{Suricata / Zeek}\\sensor de rede};
+
+  \draw[thick, manualgray] (1.7,5.0) -- (pf.west);
+  \draw[thick, manualgray] (pf.east) -- (7.5,5.0);
+  \draw[thick, manualgray] (10.9,5.5) -- (12.7,5.5);
+
+  \node[draw=manualred, very thick, fill=manualred!10, rounded corners=3pt,
+        align=center, inner sep=5pt, font=\scriptsize] at (4.6,1.6)
+    {\textbf{Sem NAT para a internet}\\Atualizar? Liga-se a saída,\\atualiza-se, e desliga de novo.};
+  \draw[destaque, manualred, ->,>=stealth] (4.6,2.4) -- (4.6,3.1);
+\end{tikzpicture}
+```
+Topologia do laboratório. Três segmentos separados por um firewall, sem rota para a internet no uso normal.
+:::
+
+### Os três segmentos e por que separá-los
+
+**LAN-ATAQUE** hospeda as ferramentas ofensivas. **LAN-ALVOS** hospeda os sistemas deliberadamente vulneráveis. **LAN-DEFESA** hospeda a coleta e a detecção. A separação não é preciosismo: ela permite escrever regras de firewall entre os segmentos e **observar o efeito delas** — que é justamente o que se quer aprender. Um laboratório com tudo numa única rede plana ensina metade.
+
+### A regra inegociável do isolamento
+
+Um alvo deliberadamente vulnerável **é** uma máquina vulnerável. Se ela tiver rota para a internet, será comprometida — não hipoteticamente: sistemas como o Metasploitable são varridos e explorados em minutos quando expostos. E aí o laboratório deixa de ser laboratório e passa a ser um problema seu, do seu provedor e de terceiros.
+
+Quatro regras que não têm exceção:
+
+1. **Rede interna ou apenas hospedeiro**, nunca em ponte com a rede doméstica ou corporativa.
+2. **Sem NAT no uso normal.** Precisa atualizar um alvo? Liga a saída, atualiza, desliga. Nunca deixa ligada.
+3. **Alvos vulneráveis jamais expostos**, nem "só por cinco minutos para testar de fora".
+4. **Instantâneo antes de qualquer coisa interessante**, e restauração depois. É o que permite errar à vontade.
+
+E uma regra que decorre do @sec-cap007: **o alvo é sempre seu**. O laboratório existe justamente para que a resposta à pergunta "eu tenho autorização?" seja trivialmente sim.
+
+## O que instalar, em que ordem
+
+A tentação de montar tudo de uma vez leva ao abandono. A ordem abaixo entrega valor a cada etapa e cada uma leva algumas horas.
+
+### Etapa 1 — Hipervisor e a primeira máquina
+
+Em máquina dedicada, **Proxmox VE** é a melhor escolha: gratuito, robusto, com interface web, instantâneos, contêineres LXC e rede virtual configurável. Em notebook de uso diário, **VirtualBox** ou **VMware Workstation** resolvem sem reinstalar nada.
+
+A primeira VM deve ser uma distribuição Linux comum — Debian ou Ubuntu Server — e não uma distribuição de segurança. O objetivo é praticar o @sec-cap012 num sistema que se administra de verdade: montagens, `systemd`, `auditd`, SSH com chave, `nftables`.
+
+### Etapa 2 — Atacante e alvo, uma rede
+
+**Kali Linux** ou **Parrot OS** de um lado, **Metasploitable 2** do outro, ambos em rede interna. Com apenas essas duas máquinas já se pratica varredura, enumeração, análise de serviço e captura de tráfego — a base dos Volumes 5 e 9.
+
+### Etapa 3 — Alvos web
+
+**OWASP Juice Shop** e **DVWA**, ambos disponíveis como contêiner, cobrem praticamente todo o Volume 7. O Juice Shop é moderno e tem progressão em forma de desafios; o DVWA tem níveis de dificuldade que permitem ver a mesma falha com e sem correção — recurso didático que poucos alvos oferecem.
+
+```bash
+# Dois alvos web em minutos, na rede isolada do laboratório
+docker run -d --name juice --network lab-alvos -p 3000:3000 bkimminich/juice-shop
+docker run -d --name dvwa  --network lab-alvos -p 8080:80  vulnerables/web-dvwa
+```
+
+### Etapa 4 — Firewall e segmentação
+
+**pfSense** ou **OPNsense** como roteador entre os segmentos. É aqui que se aprende de verdade o que o @sec-cap008 e o @sec-cap009 descreveram: escrever regra, testar, ver o registro, entender por que o pacote não passou. É também a base do Volume 5.
+
+### Etapa 5 — Domínio Windows
+
+Um **Windows Server** como controlador de domínio, com duas estações associadas. Exige 16 GB de RAM para ficar confortável, e é o que torna praticável o @sec-cap013: criar contas de serviço com SPN, observar Kerberoasting no registro de eventos, implantar LAPS, aplicar GPO e ver o efeito. As versões de avaliação são gratuitas por 180 dias e podem ser reinstaladas.
+
+### Etapa 6 — Defesa e visibilidade
+
+O passo que a maioria pula, e o que mais ensina. **Wazuh** (ou uma pilha de coleta equivalente) recebendo registros das máquinas; **Suricata** ou **Zeek** observando o tráfego; **Security Onion** se a máquina aguentar, por trazer tudo pronto.
+
+O exercício que fecha o ciclo é sempre o mesmo, e vale mais que qualquer leitura: **executar um ataque conhecido e ir procurar o rastro que ele deixou**. Quem já tentou detectar o próprio ataque entende, de uma vez, por que o Volume 12 existe.
+
+## Plataformas de treino: o complemento
+
+O laboratório próprio ensina a **construir**; as plataformas de treino ensinam a **resolver**. Ambas são necessárias, e todas as citadas têm autorização explícita nos termos de uso:
+
+- **TryHackMe** — trilhas guiadas, boa porta de entrada, com material em progressão.
+- **Hack The Box** — máquinas sem orientação, mais próximas da realidade; a academia associada é estruturada.
+- **PortSwigger Web Security Academy** — gratuita e a melhor referência prática para o Volume 7.
+- **PicoCTF** e competições brasileiras — formato CTF, excelente para fundamentos.
+- **Blue Team Labs / CyberDefenders** — o lado defensivo, com investigação de incidentes reais simulados.
+
+A ordem que funciona: fundamentos em plataforma guiada, prática no laboratório próprio para entender a infraestrutura, e só então máquinas sem orientação.
+
+## Um roteiro de exercícios que percorre o volume
+
+Fecha o capítulo — e o volume — um conjunto de exercícios que usa o laboratório para fixar o que os seis capítulos anteriores apresentaram. Cada um leva de uma a três horas.
+
+| Exercício | O que pratica | Capítulo |
+|---|---|---|
+| Capturar um handshake TCP completo e identificar cada flag | Camada 4 na prática | @sec-cap008 |
+| Executar ARP spoofing entre duas VMs e observar as tabelas dos dois lados | Camada 2 e MITM | @sec-cap008 |
+| Segmentar o laboratório em três VLANs e escrever as regras entre elas | Endereçamento e filtragem | @sec-cap009 |
+| Configurar DNS interno e observar o efeito de uma resposta forjada | Resolução e envenenamento | @sec-cap010 |
+| Publicar SPF, DKIM e DMARC num domínio de teste e verificar a rejeição | Autenticidade de e-mail | @sec-cap010 |
+| Encontrar todos os binários SUID e explicar por que cada um existe | Privilégio e escalada | @sec-cap011 |
+| Ligar `auditd`, executar comandos privilegiados e achá-los no registro | Registro e responsabilização | @sec-cap012 |
+| Criar conta de serviço com SPN e senha fraca; observar o pedido de TGS no evento 4769 | Kerberos e detecção | @sec-cap013 |
+| Enviar todos os registros ao coletor e escrever um alerta que dispare | Visibilidade fim a fim | Volume 12 |
+
+: Roteiro de exercícios do laboratório para o Volume 2. {#tbl-exercicios-lab}
+
+O último exercício é o mais importante, e por isso está no fim: **um ataque que você executou e não conseguiu detectar é a medida exata da lacuna de visibilidade** da sua operação. Essa constatação, feita no laboratório, custa uma tarde. Feita em produção, custa um incidente.
+
+## ⚖️ Brasil em Foco
+
+**O laboratório é a resposta à ausência de porto seguro legal.** O @sec-cap007 registrou que o Brasil não tem salvaguarda explícita para pesquisa de segurança de boa-fé: quem reporta depende da decisão da vítima de não representar. Enquanto isso não muda, o ambiente próprio e isolado é o único lugar onde a prática ofensiva não depende da boa vontade de terceiros. Não é limitação didática — é a diferença entre estudar e cometer o crime do art. 154-A do Código Penal.
+
+**Cuidado com o que entra no laboratório.** Baixar amostra real de código malicioso para análise é atividade legítima de estudo, e o Volume 11 trata do procedimento. Duas cautelas valem desde já: a amostra pode conter dados pessoais de vítimas — cujo tratamento tem de ser justificado sob a LGPD [@lgpd2018] — e o isolamento precisa ser real, porque uma amostra que escapa e ataca terceiros gera responsabilidade de quem a executou. Máquina virtual dedicada, sem rede, com instantâneo e descartada ao fim.
+
+**Alvo vulnerável exposto tem consequência para o provedor.** Uma máquina do laboratório acessível pela internet e comprometida passa a atacar terceiros a partir do bloco do provedor. O resultado prático é notificação do CERT.br ao contato de abuso [@cert2024praticas], entrada do bloco em listas de reputação e prejuízo para todos os assinantes daquele bloco. Para quem estuda a partir de uma conexão residencial, o contrato de serviço tipicamente veda uso que gere abuso — e a responsabilidade civil por dano a terceiro independe da cláusula contratual.
+
+**Licenças e as versões de avaliação.** Windows Server e Windows cliente têm versões de avaliação legítimas e gratuitas por prazo determinado, e usá-las em laboratório está dentro dos termos. Recorrer a ativação irregular é violação de direito autoral (Lei 9.610/1998) e crime previsto no art. 184 do Código Penal — e ainda contamina o laboratório com binários de origem desconhecida, o que compromete qualquer conclusão obtida ali.
+
+**Documentar o laboratório também é prática profissional.** Um documento simples com topologia, endereçamento, finalidade e a declaração de que os alvos são próprios e isolados serve a dois propósitos: organiza o estudo e, se algum tráfego for questionado pelo empregador ou pelo provedor, demonstra a natureza da atividade. É a versão pessoal do princípio de autorização documentada do @sec-cap007.
+
+## 🛠️ No Campo
+
+**1. Criar as redes isoladas antes de criar qualquer VM.** No Proxmox, três pontes sem interface física associada:
+
+```bash
+# /etc/network/interfaces — pontes isoladas, sem porta física
+auto vmbr10
+iface vmbr10 inet manual
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0
+#   LAN-ATAQUE 10.10.10.0/24
+
+auto vmbr20
+iface vmbr20 inet manual
+    bridge-ports none
+#   LAN-ALVOS 10.10.20.0/24
+
+auto vmbr30
+iface vmbr30 inet manual
+    bridge-ports none
+#   LAN-DEFESA 10.10.30.0/24
+```
+
+```bash
+# VirtualBox: rede interna nomeada, sem NAT e sem ponte
+VBoxManage modifyvm "alvo-metasploitable" --nic1 intnet --intnet1 "lab-alvos"
+VBoxManage modifyvm "kali" --nic1 intnet --intnet1 "lab-ataque"
+```
+
+**2. Verificar o isolamento antes de ligar o primeiro alvo.** Trinta segundos que evitam o problema inteiro:
+
+```bash
+# De dentro do alvo vulnerável: as três devem falhar
+ping -c2 8.8.8.8
+ping -c2 192.168.0.1          # gateway da rede doméstica
+curl -m5 -sI https://example.com
+```
+
+**3. Automatizar o instantâneo antes de cada sessão.** O hábito que transforma o laboratório em ambiente de experimentação real:
+
+```bash
+# Proxmox: instantâneo com data em todas as VMs do laboratório
+for id in 101 102 103 104; do
+  qm snapshot $id "limpo-$(date +%Y%m%d)" --description "estado antes da sessao"
+done
+qm rollback 102 limpo-20260730        # voltar em segundos
+```
+
+**4. Manter uma janela de atualização controlada.** Os alvos precisam de correção eventual, e a saída não pode ficar aberta:
+
+```text
+No pfSense, uma regra desabilitada e pronta:
+  LAN-ALVOS → any  (allow)  [desabilitada]
+Habilitar, atualizar, desabilitar. Nunca deixar habilitada entre sessões.
+```
+
+**5. Documentar o laboratório numa página.** Topologia, endereçamento por segmento, finalidade, sistema e versão de cada VM, e a declaração de propriedade e isolamento. Atualizada a cada mudança relevante.
+
+**6. Praticar a restauração, não só o instantâneo.** Instantâneo que nunca foi restaurado é backup que nunca foi testado — a mesma lição que o Volume 14 aplica à continuidade de negócio. Restaurar de propósito, uma vez, e cronometrar.
+
+**7. Fechar o ciclo em todo exercício.** A regra que multiplica o valor do laboratório: para cada ataque executado, **procurar o rastro**. No registro do alvo, no sensor de rede, no coletor. O que não deixou rastro é lacuna de visibilidade identificada — e é a partir dessa lista que o Volume 12 faz sentido.
+
+**8. Registrar o que aprendeu no próprio laboratório.** Um arquivo por exercício com o que foi feito, o comando exato, o resultado e o rastro encontrado. Além de fixar o aprendizado, é o embrião do relatório técnico que o Volume 9 vai exigir — e escrever bem é parte do ofício, não acessório.
+
+## Resumo
+
+- **Contêiner para conveniência, máquina virtual para contenção.** O contêiner compartilha o núcleo com o hospedeiro e tem superfície de escape muito maior; código malicioso desconhecido só se executa em VM isolada, com instantâneo e sem rede.
+- O laboratório mínimo cabe em **8 GB de RAM**; 16 GB tornam confortável e 32 GB permitem um domínio Windows completo. SSD importa mais que processador.
+- A topologia base tem **três segmentos** — ataque, alvos e defesa — separados por um firewall. A separação é o que permite escrever regras e observar seu efeito; rede plana ensina metade.
+- Quatro regras de isolamento sem exceção: **rede interna, nunca em ponte**; sem NAT no uso normal; alvos vulneráveis jamais expostos; instantâneo antes de qualquer coisa interessante. Um alvo deliberadamente vulnerável exposto é comprometido em minutos.
+- A montagem funciona **em etapas**: hipervisor e Linux comum, atacante e alvo, alvos web em contêiner, firewall e segmentação, domínio Windows, e por fim coleta e detecção.
+- A **etapa de defesa é a que a maioria pula e a que mais ensina**. O exercício que fecha o ciclo é executar um ataque conhecido e ir procurar o rastro: o que não deixou rastro é a medida exata da lacuna de visibilidade.
+- Plataformas de treino complementam o laboratório próprio — ele ensina a construir, elas ensinam a resolver — e todas trazem a autorização nos termos de uso.
+- No Brasil, onde **não há porto seguro legal para pesquisa de boa-fé**, o laboratório próprio é o único ambiente em que a prática ofensiva não depende de terceiros. Documentá-lo é a versão pessoal do princípio de autorização escrita.
