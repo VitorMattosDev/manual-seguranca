@@ -1,3 +1,341 @@
 # Gestão de risco: análise qualitativa e quantitativa {#sec-cap006}
 
-*(em elaboracao)*
+A reunião tem quarenta minutos e três itens na pauta. O terceiro é a proposta de contratar um segundo link de trânsito, de outra operadora, entrando por rota física distinta: R$ 4.800 por mês, R$ 57.600 no ano.
+
+O coordenador de rede é a favor: já houve dois rompimentos de fibra em dezoito meses, um deles de onze horas. O diretor financeiro é contra: é o equivalente a três salários, num ano em que a meta é cortar custo. O sócio pergunta se não dá para negociar um desconto com a operadora atual. A discussão dura vinte minutos, sobe de tom duas vezes, e termina com "vamos deixar para revisar no próximo trimestre" — que é como se registra, em ata, a decisão de aceitar o risco sem nunca ter dito que se estava aceitando um risco.
+
+O que faltou ali não foi um argumento melhor. Faltou um número. Onze horas fora do ar custam quanto? Qual a chance de acontecer de novo no ano? Quanto dessa perda o segundo link elimina de fato? Nenhuma dessas perguntas exige precisão contábil — exigem apenas uma estimativa honesta, com sua incerteza explícita. Com elas na mesa, a conversa deixa de ser sobre quem fala mais alto e passa a ser sobre se R$ 57.600 compram ou não mais do que custam.
+
+Gestão de risco é o método que produz esses números e as decisões que decorrem deles. Este capítulo cobre o processo, as duas famílias de análise — qualitativa e quantitativa —, suas armadilhas, e como escolher entre elas.
+
+## O processo
+
+As normas convergem para o mesmo ciclo. A ISO 31000 dá o arcabouço geral de gestão de risco [@iso31000], a ISO/IEC 27005 o especializa para segurança da informação [@iso27005] e o NIST SP 800-30 detalha a etapa de avaliação [@nistsp80030]. A @fig-ciclo-risco resume.
+
+::: {#fig-ciclo-risco}
+```{.tikz}
+%%| filename: ciclo-risco
+%%| alt: Ciclo de gestão de risco com seis etapas encadeadas — contexto, identificação, análise, avaliação, tratamento e monitoramento — atravessado por comunicação contínua
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{etp/.style={thick, rounded corners=3pt, align=center, inner sep=5pt,
+                       minimum width=2.9cm, minimum height=1.3cm}}
+
+  \node[etp, draw=manualgray, fill=manualgray!10] (ctx) at (0,0)
+    {\textbf{1. Contexto}\\\scriptsize escopo, critérios,\\\scriptsize apetite a risco};
+  \node[etp, draw=manualblue, fill=manualblue!8] (idf) at (3.6,0)
+    {\textbf{2. Identificação}\\\scriptsize ativos, ameaças,\\\scriptsize vulnerabilidades};
+  \node[etp, draw=manualblue, fill=manualblue!8] (anl) at (7.2,0)
+    {\textbf{3. Análise}\\\scriptsize probabilidade\\\scriptsize e impacto};
+  \node[etp, draw=manualyellow, fill=manualyellow!10] (avl) at (10.8,0)
+    {\textbf{4. Avaliação}\\\scriptsize comparar com\\\scriptsize os critérios};
+  \node[etp, draw=manualgreen, fill=manualgreen!8] (trt) at (14.4,0)
+    {\textbf{5. Tratamento}\\\scriptsize reduzir, transferir,\\\scriptsize evitar, aceitar};
+
+  \draw[vetor, manualgray] (ctx) -- (idf);
+  \draw[vetor, manualgray] (idf) -- (anl);
+  \draw[vetor, manualgray] (anl) -- (avl);
+  \draw[vetor, manualgray] (avl) -- (trt);
+
+  \node[etp, draw=manualred, fill=manualred!8, minimum width=5.2cm] (mon) at (7.2,-3.0)
+    {\textbf{6. Monitoramento e análise crítica}\\\scriptsize o risco mudou? o controle funciona?};
+
+  \draw[vetor, manualred] (trt) |- (mon);
+  \draw[vetor, manualred] (mon) -| (ctx);
+
+  \node[draw=manualgray, thick, dashed, fill=manualgray!5, rounded corners=3pt,
+        align=center, inner sep=4pt, minimum width=5.2cm] at (7.2,2.4)
+    {\textbf{Comunicação e consulta}\\\scriptsize atravessa todas as etapas};
+\end{tikzpicture}
+```
+O ciclo de gestão de risco. A sexta etapa é a que quase sempre falta: risco avaliado e nunca revisitado envelhece junto com o ambiente.
+:::
+
+Vale insistir em duas etapas que a prática costuma pular.
+
+A **etapa 1** define os critérios *antes* de olhar qualquer risco específico — escala de impacto, escala de probabilidade, e o **apetite a risco**: quanto a organização está disposta a tolerar. Definir isso depois é como escolher a régua depois de ver o resultado, e o efeito é previsível: os riscos que dão trabalho corrigir acabam classificados como aceitáveis.
+
+A **etapa 4** é distinta da 3 e frequentemente fundida com ela. Analisar é estimar probabilidade e impacto; avaliar é **comparar com o critério** e decidir se está dentro ou fora do aceitável. Sem critério declarado, não há avaliação — há opinião com aparência de método.
+
+## Análise qualitativa
+
+A análise qualitativa classifica probabilidade e impacto em escalas ordinais e combina as duas numa matriz. É rápida, exige poucos dados e comunica bem — por isso domina a prática.
+
+Também é onde mora a maior parte dos erros. E o principal deles não está na matriz: está nas escalas. Uma escala com rótulos vagos — "raro", "possível", "provável" — significa coisas diferentes para cada pessoa da sala. A correção é barata: **ancorar cada nível em número e em consequência concreta**.
+
+| Nível | Probabilidade (ancorada) | Impacto (ancorado no contexto do provedor) |
+|---|---|---|
+| 1 — Muito baixo | Menos de 1 vez em 10 anos | Até R$ 5 mil; sem efeito perceptível ao assinante |
+| 2 — Baixo | Cerca de 1 vez em 5 anos | R$ 5 mil a R$ 30 mil; degradação localizada |
+| 3 — Médio | Cerca de 1 vez em 2 anos | R$ 30 mil a R$ 150 mil; parada de um serviço por horas |
+| 4 — Alto | Cerca de 1 vez por ano | R$ 150 mil a R$ 500 mil; parada geral por um dia, notificação à ANPD |
+| 5 — Muito alto | Mais de 1 vez por ano | Acima de R$ 500 mil; risco de continuidade do negócio |
+
+: Escalas ancoradas de probabilidade e impacto. Os valores são ilustrativos e devem ser calibrados ao porte de cada organização. {#tbl-escalas-ancoradas}
+
+Com as escalas ancoradas, a matriz de calor (@fig-matriz-risco) vira instrumento de comunicação legítimo — um mapa que a direção lê em segundos.
+
+::: {#fig-matriz-risco}
+```{.tikz}
+%%| filename: matriz-risco
+%%| alt: Matriz de calor cinco por cinco cruzando probabilidade e impacto, com faixas verde, amarela, laranja e vermelha, e três riscos posicionados como exemplo
+\begin{tikzpicture}[font=\footnotesize, x=2.1cm, y=1.5cm]
+  % células: gradiente contínuo de verde a vermelho conforme o produto dos índices
+  \foreach \px in {1,2,3,4,5}{
+    \foreach \iy in {1,2,3,4,5}{
+      \pgfmathtruncatemacro{\sev}{\px*\iy}
+      \pgfmathsetmacro{\mix}{100*(\sev-1)/24}
+      \fill[manualred!\mix!manualgreen, opacity=0.30]
+        (\px-0.5,\iy-0.5) rectangle (\px+0.5,\iy+0.5);
+      \draw[manualgray, thin] (\px-0.5,\iy-0.5) rectangle (\px+0.5,\iy+0.5);
+      \node[manualgray, font=\tiny] at (\px+0.36,\iy-0.36) {\sev};
+    }
+  }
+
+  \foreach \px/\lbl in {1/{muito\\baixa}, 2/baixa, 3/média, 4/alta, 5/{muito\\alta}}{
+    \node[anchor=north, align=center, font=\scriptsize] at (\px,0.4) {\lbl};
+  }
+  \foreach \iy/\lbl in {1/{muito\\baixo}, 2/baixo, 3/médio, 4/alto, 5/{muito\\alto}}{
+    \node[anchor=east, align=right, font=\scriptsize] at (0.4,\iy) {\lbl};
+  }
+
+  \node[anchor=north, font=\small] at (3,-0.25) {\textbf{Probabilidade}};
+  \node[anchor=south, rotate=90, font=\small] at (-0.5,3) {\textbf{Impacto}};
+
+  \node[ponto, manualred, fill=manualred] at (4,4) {};
+  \node[anchor=south west, manualred, font=\scriptsize, align=left] at (4.05,4.08)
+    {R-01 ransomware\\no ERP};
+
+  \node[ponto, manualblue, fill=manualblue] at (3,3) {};
+  \node[anchor=south west, manualblue, font=\scriptsize, align=left] at (3.05,3.08)
+    {R-02 rompimento\\de fibra};
+
+  \node[ponto, black] at (2,5) {};
+  \node[anchor=south west, font=\scriptsize, align=left] at (2.05,5.08)
+    {R-03 vazamento\\da base cadastral};
+\end{tikzpicture}
+```
+Matriz de risco 5×5 com riscos posicionados. O número em cada célula é o produto dos índices — e é exatamente esse produto que exige cautela.
+:::
+
+### As armadilhas da matriz
+
+A matriz é útil e tem quatro problemas conhecidos que convém enfrentar de frente:
+
+**Multiplicar números ordinais.** "Probabilidade 4 × impacto 3 = 12" trata rótulos de ordem como se fossem quantidades. Não são: o salto de 3 para 4 na escala de impacto da @tbl-escalas-ancoradas é de R$ 120 mil, e o de 4 para 5 é aberto e ilimitado. O produto é uma conveniência visual, não uma conta.
+
+**Compressão da cauda.** Todo evento acima de meio milhão cai no nível 5. Ransomware que para a empresa por seis dias e vazamento que gera sanção da ANPD ficam indistinguíveis, quando podem diferir por uma ordem de grandeza.
+
+**Inversão de ordenação.** Duas células diferentes podem receber a mesma cor, e a cor esconde que o valor esperado de uma é várias vezes o da outra. Risco frequente e barato e risco raro e catastrófico não são a mesma decisão, ainda que pintem de laranja igual.
+
+**Vieses de estimativa.** Ancoragem no primeiro número dito, disponibilidade (o incidente recente domina a percepção), excesso de confiança, e a pressão social de convergir com a opinião de quem tem mais autoridade na sala. Mitiga-se com estimativa **individual e anônima antes da discussão**, seguida de debate sobre as divergências.
+
+Nenhuma dessas críticas invalida a análise qualitativa. Elas definem seu uso correto: **triagem**. A matriz separa o que merece atenção do que não merece. Para o que sobe ao topo — e para toda decisão que envolve gastar dinheiro relevante — vale o esforço de quantificar.
+
+## Análise quantitativa
+
+A análise quantitativa estima o risco em unidades monetárias. O vocabulário clássico tem quatro termos:
+
+- **AV** (*asset value*) — valor do ativo.
+- **EF** (*exposure factor*) — fração do valor perdida se o evento ocorrer.
+- **SLE** (*single loss expectancy*) — perda esperada por ocorrência: $\text{SLE} = \text{AV} \times \text{EF}$.
+- **ARO** (*annualized rate of occurrence*) — frequência anual esperada.
+- **ALE** (*annualized loss expectancy*) — perda anual esperada: $\text{ALE} = \text{SLE} \times \text{ARO}$.
+
+Aplicando ao caso de abertura. O provedor fatura R$ 780 mil por mês. Um rompimento de fibra sem link redundante custa, por hora de parada, uma combinação de: crédito contratual e abatimento em fatura, chamados extras no suporte, cancelamentos atribuíveis nos trinta dias seguintes e horas extras da equipe de campo. A equipe estimou R$ 3.900 por hora, e a duração média histórica em 6 horas.
+
+$$
+\text{SLE} = 6\ \text{h} \times \text{R\$}\ 3.900/\text{h} = \text{R\$}\ 23.400
+$$
+
+Com dois eventos em dezoito meses, $\text{ARO} \approx 1{,}33$ por ano:
+
+$$
+\text{ALE} = \text{R\$}\ 23.400 \times 1{,}33 \approx \text{R\$}\ 31.100\ \text{por ano}
+$$
+
+O segundo link não elimina a perda: rompimento continua havendo, mas a comutação leva minutos em vez de horas, e a parada residual foi estimada em 0,4 hora por evento — reduzindo a ALE para cerca de R$ 2.100. O **retorno sobre o investimento em segurança** é então:
+
+$$
+\text{ROSI} = \frac{(\text{ALE}_{\text{antes}} - \text{ALE}_{\text{depois}}) - \text{custo}}{\text{custo}}
+= \frac{(31.100 - 2.100) - 57.600}{57.600} \approx -0{,}50
+$$
+
+O número é negativo. Pelo critério estrito de perda esperada, **o segundo link não se paga** — e essa conclusão, que contraria a intuição do coordenador de rede, é exatamente o tipo de resultado que justifica fazer a conta.
+
+Mas a análise não termina aí, e é aqui que a maior parte das apresentações de gestão de risco erra. Três considerações mudam a decisão e precisam ir para a mesa junto com o número:
+
+1. **A média esconde a cauda.** A conta usa 6 horas de duração média. Um rompimento em trecho de difícil acesso, num feriado, com equipe reduzida, é um evento de 30 horas — e a perda cresce mais que proporcionalmente, porque cancelamentos disparam a partir de certo limiar de paciência do assinante.
+2. **Há benefício fora do cálculo.** Segundo link com operadora distinta protege também contra falha da operadora atual, permite manutenção programada sem janela noturna e é argumento comercial para contratos empresariais — receita nova que não entra na conta de perda evitada.
+3. **O critério pode não ser o valor esperado.** Se uma parada longa ameaça contratos que representam parcela relevante da receita, a empresa pode racionalmente pagar acima do valor esperado para eliminar a cauda. É o mesmo raciocínio de comprar seguro, que tem valor esperado negativo por construção e ainda assim é decisão sensata.
+
+A conclusão prática é que a quantificação **não substitui o julgamento — ela o organiza**. Com os números na mesa, a decisão passa a ser "estamos pagando R$ 57,6 mil por ano para eliminar R$ 29 mil de perda esperada e comprar proteção contra o cenário de cauda", que é uma frase que a direção consegue aprovar ou recusar de forma consciente. Sem eles, decide-se por tom de voz.
+
+## Lidando com a incerteza: intervalos em vez de pontos
+
+O ponto fraco de $\text{ALE} = \text{SLE} \times \text{ARO}$ é fingir precisão que não existe. "R$ 3.900 por hora" é uma estimativa com incerteza grande, e o resultado herda essa incerteza sem mostrá-la.
+
+A alternativa, defendida por Hubbard e Seiersen [@hubbard2016] e formalizada pelo método FAIR [@freund2014], é estimar **intervalos de confiança de 90%** em vez de valores únicos, e propagar a incerteza por simulação. Em vez de "custa R$ 3.900 por hora", a pergunta é: *qual intervalo você acredita, com 90% de confiança, que contém o custo horário real?* — digamos R$ 1.800 a R$ 9.000.
+
+Sorteando milhares de cenários dentro desses intervalos, obtém-se não um número, mas uma distribuição de perda anual. Vinte linhas de Python bastam:
+
+```python
+import numpy as np
+
+rng = np.random.default_rng(42)
+N = 100_000
+
+# Intervalos de 90% de confiança, convertidos em lognormais.
+# Para uma lognormal, o intervalo [lo, hi] de 90% implica:
+def lognormal_90(lo, hi, n):
+    mu = (np.log(lo) + np.log(hi)) / 2
+    sigma = (np.log(hi) - np.log(lo)) / 3.29   # 3.29 = 2 x 1.645
+    return rng.lognormal(mu, sigma, n)
+
+custo_hora = lognormal_90(1_800, 9_000, N)     # R$/hora de parada
+duracao    = lognormal_90(1.5, 30, N)          # horas por evento
+eventos    = rng.poisson(1.33, N)              # ocorrências no ano
+
+perda_anual = eventos * custo_hora * duracao
+
+for p in (50, 80, 90, 95, 99):
+    print(f"P{p}: R$ {np.percentile(perda_anual, p):>12,.0f}")
+print(f"média: R$ {perda_anual.mean():>10,.0f}")
+print(f"P(perda > 57.600) = {(perda_anual > 57_600).mean():.1%}")
+```
+
+O resultado não é um número, é a **curva de excedência de perda** da @fig-curva-excedencia: para cada valor, a probabilidade de a perda anual superá-lo.
+
+::: {#fig-curva-excedencia}
+```{.tikz}
+%%| filename: curva-excedencia
+%%| alt: Curva de excedência de perda anual, mostrando a probabilidade de a perda superar cada valor, com e sem o link redundante, e a linha do apetite a risco
+\begin{tikzpicture}[font=\footnotesize]
+\begin{axis}[
+  width=13cm, height=7.6cm,
+  axis lines=left,
+  xlabel={Perda anual (R\$ mil)},
+  ylabel={Probabilidade de superar},
+  xmin=0, xmax=400, ymin=0, ymax=1.0,
+  ytick={0,0.2,0.4,0.6,0.8,1.0},
+  yticklabels={0\%,20\%,40\%,60\%,80\%,100\%},
+  legend style={at={(0.97,0.97)}, anchor=north east, draw=manualgray, font=\scriptsize},
+  legend cell align=left,
+  grid=major, grid style={manualgray!25, very thin},
+]
+\addplot[manualred, very thick, domain=1:400, samples=200]{exp(-x/70)};
+\addlegendentry{sem link redundante}
+\addplot[manualgreen, very thick, domain=1:400, samples=200]{exp(-x/13)};
+\addlegendentry{com link redundante}
+
+\addplot[manualblue, thick, dashed, domain=0:400, samples=2]{0.1};
+\addlegendentry{apetite: no máximo 10\% ao ano}
+
+\draw[auxiliar, manualred] (axis cs:161,0) -- (axis cs:161,0.1);
+\node[anchor=south west, manualred, font=\scriptsize] at (axis cs:163,0.11) {R\$ 161 mil};
+\draw[auxiliar, manualgreen] (axis cs:30,0) -- (axis cs:30,0.1);
+\node[anchor=south west, manualgreen, font=\scriptsize] at (axis cs:32,0.02) {R\$ 30 mil};
+\end{axis}
+\end{tikzpicture}
+```
+Curva de excedência de perda. Onde a curva cruza a linha do apetite está a perda que se aceita ter 10% de chance de superar no ano.
+:::
+
+A leitura é direta e é o que torna o método superior à matriz: com o link redundante, a perda que se tem 10% de chance de superar cai de R$ 161 mil para R$ 30 mil. A decisão deixa de ser sobre um valor esperado e passa a ser sobre **onde a cauda é cortada** — que é o que a diretoria de fato quer saber.
+
+Uma objeção previsível: "não temos dados para isso". A resposta é que o método não exige dados históricos, exige **estimativas calibradas** — e calibração é habilidade treinável. Pessoas treinadas para acertar 90% de suas faixas de 90% produzem intervalos honestos sobre grandezas que nunca mediram. E o ponto decisivo é comparativo: a alternativa não é uma estimativa melhor, é o palpite implícito de quem fala mais alto na reunião.
+
+## Escolher entre as duas
+
+| Critério | Qualitativa | Quantitativa |
+|---|---|---|
+| Custo do exercício | Horas | Dias |
+| Dado necessário | Julgamento de especialista | Julgamento calibrado, idealmente com histórico |
+| Comparabilidade entre riscos | Frágil (escala ordinal) | Direta (mesma unidade monetária) |
+| Suporta decisão de investimento | Mal | Bem (ROSI, curva de excedência) |
+| Comunica à direção | Bem (mapa visual) | Muito bem (em reais) |
+| Risco de falsa precisão | Baixo | Alto se a incerteza não for mostrada |
+
+: Quando usar cada abordagem. {#tbl-qual-vs-quant}
+
+Na prática, a combinação vence: **qualitativa para triar todo o inventário de riscos, quantitativa para os dez ou quinze do topo** e para toda decisão que envolva gasto relevante. É a proporção que respeita o custo do método.
+
+## Tratamento e risco residual
+
+Analisado e avaliado o risco, restam quatro opções — as mesmas do @sec-cap005, agora com o número que as sustenta:
+
+**Reduzir.** Implantar controle que diminua probabilidade ou impacto. É a escolha padrão. O critério de aceitação é a comparação entre custo do controle e redução de ALE, temperada pela análise da cauda.
+
+**Transferir.** Seguro cibernético, cláusula contratual, terceirização para fornecedor especializado. Três ressalvas importam: apólices excluem o que a empresa deixou de fazer (ausência de segundo fator e de correção em dia são exclusões comuns); a indenização cobre prejuízo financeiro, não a obrigação perante a ANPD nem a confiança do assinante; e transferir exige demonstrar controles para conseguir preço razoável — o seguro pressupõe higiene, não a substitui.
+
+**Evitar.** Não fazer, ou parar de fazer, a atividade que gera o risco. Desativar a funcionalidade pouco usada, não coletar o dado que não é necessário, encerrar a integração legada. É a opção mais subestimada e a única com eficácia integral.
+
+**Aceitar.** Conviver conscientemente. Só é aceitação legítima se: estiver **registrada**, com o número que a justifica; for decidida por **quem tem autoridade** para comprometer a organização naquele valor; e tiver **data de revisão**. Aceitação sem esses três elementos é omissão com outro nome.
+
+O que sobra depois do tratamento é o **risco residual** — e o produto final de todo o processo é uma lista curta de riscos residuais que a direção conhece e aceitou formalmente. Um programa de segurança maduro não se distingue por ter menos risco, mas por saber qual risco tem.
+
+### O registro de risco
+
+O artefato que sustenta tudo isso cabe numa planilha. Dez colunas: identificador, descrição do cenário (ativo + ameaça + vulnerabilidade + consequência), impacto estimado, probabilidade estimada, risco inerente, controles existentes, risco residual, decisão de tratamento, dono, data de revisão.
+
+Duas regras que decidem se o registro vive ou morre: descrever o **cenário completo**, não o rótulo — "ransomware" não é risco, "cifragem do banco do ERP por acesso via VPN sem segundo fator, com parada de faturamento por seis dias" é; e **cada linha tem um dono nomeado**, porque risco de todos é risco de ninguém.
+
+### Indicadores que antecipam
+
+Monitoramento (etapa 6) não é reler a planilha em dezembro. São indicadores que se movem antes do incidente: percentual de servidores com correção crítica pendente há mais de 30 dias, contas privilegiadas sem segundo fator, restaurações de backup testadas no trimestre, tempo médio até detecção, serviços administrativos alcançáveis da internet. Cada um deles tem um limite que, ultrapassado, dispara reavaliação do risco correspondente — e essa é a diferença entre gestão de risco e documentação de risco.
+
+## ⚖️ Brasil em Foco
+
+A gestão de risco é a espinha dorsal do modelo brasileiro de conformidade em proteção de dados, e entender isso muda a forma de investir.
+
+A **LGPD** não traz lista fechada de controles obrigatórios. O art. 46 exige medidas "aptas a proteger" os dados, considerando o estado da técnica, a natureza da informação e os riscos; o art. 50 fala em regras de boas práticas que levem em conta "a natureza, o escopo, a finalidade, a probabilidade e a gravidade dos riscos"; o art. 38 prevê o relatório de impacto [@lgpd2018]. É um regime **baseado em risco**: a conformidade se demonstra pelo processo — inventário, avaliação, decisão registrada, revisão — e não pela posse de determinados produtos. Uma empresa com firewall de última geração e nenhum registro de avaliação de risco está em posição pior, diante da ANPD, que outra com controles modestos e um registro de risco bem mantido.
+
+O art. 52, §1º da LGPD fixa os critérios de dosimetria das sanções, entre os quais figuram a **adoção de política de boas práticas e governança**, as **medidas adotadas para reverter ou mitigar** os efeitos do incidente e a **pronta adoção de medidas corretivas** — todos elementos que só existem se houver processo prévio. Na prática, o registro de risco é peça de defesa administrativa.
+
+Para **agentes de pequeno porte**, a Resolução CD/ANPD nº 2/2022 e o guia orientativo da autoridade estabelecem tratamento proporcional [@anpd2023guia]. A ANPD não espera de um provedor com quarenta funcionários o processo de uma instituição financeira — espera evidência de que os riscos foram identificados e as decisões tomadas de forma consciente. Uma planilha de dez linhas revisada semestralmente atende.
+
+No **setor financeiro e de pagamentos**, a exigência é explícita e mais rígida: a Resolução CMN nº 4.893/2021 obriga política de segurança cibernética com avaliação de riscos, classificação de dados por relevância, controles proporcionais, plano de resposta a incidentes, testes e relatório anual submetido à alta administração — além de gestão de risco sobre serviços relevantes de terceiros [@bcb4893]. Para telecomunicações, a Resolução Anatel nº 740/2020 exige tratamento de vulnerabilidades em produtos, o que pressupõe avaliação de criticidade [@anatel740].
+
+Do lado das normas técnicas, as versões brasileiras estão disponíveis pela ABNT: a **NBR ISO 31000** para o arcabouço de gestão de risco e a **NBR ISO/IEC 27005** para a aplicação à segurança da informação. Adotar a terminologia dessas normas no registro de risco tem valor prático em auditoria e em processo administrativo: usa o vocabulário que o auditor e o regulador esperam.
+
+Sobre **seguro cibernético**, o mercado brasileiro é regulado pela SUSEP e vem crescendo, com apólices que costumam cobrir custo de resposta, perícia, notificação a titulares e defesa administrativa. Duas cautelas: multa administrativa da ANPD tem cobertura limitada ou vedada em várias apólices, e o questionário de contratação funciona como auditoria — declarar controles que não existem compromete o pagamento do sinistro.
+
+## 🛠️ No Campo
+
+**1. Escrever os critérios antes de olhar o primeiro risco.** Uma página: escala de impacto ancorada em reais e em consequência operacional, escala de probabilidade ancorada em frequência, e a linha do apetite ("não aceitamos risco com mais de 10% de chance de perda anual superior a R$ 50 mil"). Aprovada pela direção, ela resolve antecipadamente metade das discussões.
+
+**2. Levantar dez riscos, não cem.** Uma sessão de duas horas com a equipe técnica e alguém do negócio produz os dez cenários que importam. Descrever cada um como cenário completo. Os cem virão depois, se vierem.
+
+**3. Estimar o custo da hora parada — o número que falta em quase toda empresa.** Ele destrava todas as demais contas:
+
+```bash
+# Insumos para a estimativa, a partir do que já se mede
+# 1. Receita por hora
+echo "scale=2; 780000 / (30*24)" | bc      # faturamento mensal / horas do mês
+
+# 2. Histórico real de indisponibilidade dos últimos 12 meses
+journalctl --list-boots | wc -l
+last -x shutdown reboot | head -30
+
+# 3. Volume de chamados por evento de parada (correlacionar com a data)
+grep -c "" /var/log/suporte/chamados-2026-*.csv
+```
+
+Some receita não faturada, crédito contratual, horas extras, chamados extras e cancelamentos atribuíveis nos trinta dias seguintes. O resultado não precisa ser exato; precisa ser defensável.
+
+**4. Quantificar os três do topo, não todos.** Para cada um: intervalo de 90% para o custo do evento, intervalo para a frequência, e a simulação de vinte linhas mostrada acima. O resultado em uma frase — "temos 10% de chance de perder mais de R$ X este ano com este cenário" — é o que a direção compra ou recusa.
+
+**5. Levar decisões, não relatórios.** A pauta certa tem três colunas: risco, opção recomendada com custo, e o que acontece se não fizermos nada. Uma página, três riscos. Relatório de quarenta páginas não é lido e não gera decisão.
+
+**6. Registrar a aceitação por escrito.** Quando a decisão for aceitar — e será, com frequência —, uma linha na ata com o valor em risco, quem aceitou e a data de revisão. É proteção do técnico que alertou, é insumo de defesa administrativa, e é o que faz o assunto voltar à pauta antes de voltar como incidente.
+
+**7. Acompanhar cinco indicadores, e só cinco.** Correções críticas pendentes há mais de 30 dias; contas privilegiadas sem segundo fator; restaurações testadas no trimestre; serviços administrativos alcançáveis da internet; tempo médio até detecção. Painel mensal, cada um com um limite que dispara reavaliação. Mais que cinco vira relatório que ninguém lê.
+
+## Resumo
+
+- O ciclo é **contexto → identificação → análise → avaliação → tratamento → monitoramento**, com comunicação atravessando tudo. As etapas mais puladas são a primeira (definir critérios e apetite *antes*) e a última (revisitar).
+- Na análise **qualitativa**, o erro não está na matriz e sim nas escalas: níveis com rótulos vagos significam coisas diferentes para cada pessoa. Ancorar cada nível em faixa numérica e consequência concreta é a correção mais barata que existe.
+- A matriz sofre de multiplicação de ordinais, compressão da cauda, inversão de ordenação e vieses de estimativa. Isso a torna instrumento de **triagem**, não de decisão de investimento.
+- A análise **quantitativa** usa $\text{SLE} = \text{AV} \times \text{EF}$ e $\text{ALE} = \text{SLE} \times \text{ARO}$, e o ROSI compara redução de perda esperada com custo do controle. O resultado pode contrariar a intuição — e é para isso que serve.
+- Valor esperado esconde a cauda. Estimar **intervalos de 90%** e simular produz a **curva de excedência de perda**, que responde à pergunta que a direção realmente faz: quanto podemos perder no pior ano plausível, e quanto o controle corta disso.
+- O tratamento é reduzir, transferir, evitar ou aceitar. Seguro transfere prejuízo financeiro, nunca a responsabilidade perante o titular; **evitar** é a opção mais subestimada; e aceitação só é legítima se registrada, decidida por quem tem autoridade e com data de revisão.
+- No Brasil o regime é **baseado em risco**: a LGPD (arts. 38, 46, 50 e 52) demonstra conformidade pelo processo, não pela posse de produtos — e o registro de risco é peça de defesa administrativa. Setor financeiro (Res. CMN 4.893/2021) e telecomunicações (Res. Anatel 740/2020) acrescentam exigências específicas.
