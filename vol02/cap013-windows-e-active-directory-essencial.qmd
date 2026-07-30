@@ -1,3 +1,293 @@
 # Windows e Active Directory essencial {#sec-cap013}
 
-*(em elaboracao)*
+Uma rede corporativa de 300 estações. Um funcionário do setor comercial abre uma planilha recebida por e-mail e habilita as macros. Nada visível acontece. Em quatro horas, o atacante é administrador do domínio inteiro — e nenhuma vulnerabilidade de software foi explorada em nenhum momento do caminho.
+
+A cadeia, reconstruída depois, tem cinco passos. A macro executou como o usuário comercial, uma conta comum. Da memória do processo de autenticação da estação, o atacante extraiu o hash da senha de uma conta de suporte técnico que havia feito login naquela máquina na semana anterior — porque o Windows guardava aquela credencial em memória. Com esse hash, autenticou-se em outras estações sem jamais precisar da senha em texto claro. Numa delas encontrou uma conta de serviço com privilégio de administrador local em todo o parque, porque a instalação de um sistema pedia isso. Essa conta de serviço tinha um SPN registrado, e sua senha — definida em 2019 e nunca trocada — resistiu duas horas a uma quebra a partir do bilhete Kerberos obtido legitimamente por qualquer usuário autenticado. Aquela senha era a mesma de uma conta com direito de replicação no diretório.
+
+Cada passo usou o Active Directory exatamente como ele foi projetado para funcionar. É essa a razão de o AD ser o alvo central em quase todo incidente corporativo relevante: **não é um sistema com falhas, é um sistema com padrões perigosos e uma superfície de confiança enorme**.
+
+O @sec-cap012 mapeou o Linux. Este faz o mesmo para o Windows e para o serviço de diretório que organiza a maior parte das redes corporativas brasileiras.
+
+## Como o Windows pensa
+
+Três conceitos explicam quase todo comportamento de segurança do sistema.
+
+**Tudo é um objeto com um descritor de segurança.** Arquivos, chaves de registro, processos, serviços, impressoras, objetos do diretório — cada um carrega dono, lista de permissões (DACL) e lista de auditoria (SACL). A consequência prática é que permissões existem em lugares onde ninguém pensa em procurar: a permissão de um serviço pode permitir que um usuário comum altere seu binário; a permissão de uma chave de registro pode permitir que ele altere o que executa no arranque.
+
+**A identidade é o SID, não o nome.** Cada conta tem um identificador único e imutável. Renomear a conta `Administrador` não muda seu SID, que termina em `-500` — e é por isso que renomear administrador como medida de segurança é teatro: qualquer ferramenta localiza a conta pelo sufixo. Os SIDs bem conhecidos merecem reconhecimento imediato: `-500` (administrador local), `-512` (Admins. do Domínio), `-519` (Admins. da Empresa), `-518` (Admins. do Esquema).
+
+**A autorização acontece por token.** Ao autenticar, o usuário recebe um token com seu SID, os SIDs de todos os grupos e a lista de privilégios nomeados. Toda verificação posterior consulta esse token — o que produz um efeito que confunde muita gente: **incluir alguém num grupo não tem efeito até que ele saia e entre de novo**, porque o token só é montado na autenticação.
+
+Os privilégios que equivalem a administração, já introduzidos no @sec-cap011, valem repetição: `SeDebugPrivilege` (ler a memória de qualquer processo), `SeImpersonatePrivilege` (assumir outra identidade), `SeBackupPrivilege` e `SeRestorePrivilege` (ler e escrever qualquer arquivo ignorando permissões), `SeTakeOwnershipPrivilege` e `SeLoadDriverPrivilege` (carregar código em anel 0). Uma conta de serviço com qualquer um deles é administrador por via indireta.
+
+### UAC não é fronteira de segurança
+
+O Controle de Conta de Usuário divide o token de um administrador em dois: um restrito para uso comum e um completo, ativado pela elevação. Isso reduz danos acidentais, e a própria Microsoft o documenta como recurso de conveniência — **não como limite de segurança**. Existem caminhos conhecidos de elevação automática que dispensam o consentimento do usuário.
+
+A consequência operacional é a que importa: **usuário administrador local é usuário administrador local, com ou sem UAC**. A separação real é ter contas distintas — uma comum para o dia a dia, outra administrativa usada apenas quando necessário e jamais para navegar ou ler e-mail.
+
+## Active Directory: o mapa da confiança
+
+O AD é um banco de dados hierárquico com autenticação. Cinco termos organizam tudo:
+
+- **Domínio** — fronteira administrativa e de replicação, com seus usuários, grupos e computadores.
+- **Floresta** — conjunto de domínios com esquema comum. É a **verdadeira fronteira de segurança**: comprometer um domínio compromete a floresta, porque as relações de confiança internas não são barreiras defensivas.
+- **Unidade organizacional (OU)** — contêiner para organizar objetos e aplicar política. Não é grupo de segurança.
+- **GPO** — política aplicada a OUs, sites ou domínio, que configura estações e servidores em massa.
+- **Controlador de domínio (DC)** — servidor que guarda o `NTDS.dit`, o arquivo com todas as credenciais do domínio. Comprometer um DC é comprometer tudo.
+
+A confusão mais cara aqui é entre floresta e domínio: separar departamentos em domínios distintos "por segurança" não cria isolamento. Se o requisito é isolamento real, a resposta é floresta separada.
+
+## Autenticação: NTLM, Kerberos e a memória da estação
+
+### NTLM e o problema de projeto
+
+O NTLM autentica por desafio e resposta, usando o hash da senha. O ponto que sustenta metade dos ataques em rede Windows é este: **o hash funciona como a senha**. Quem o obtém autentica-se sem nunca conhecer a senha em texto claro — a técnica conhecida como *pass the hash*, o segundo passo do caso de abertura.
+
+Além disso, o NTLM não autentica o servidor, o que viabiliza retransmissão: o atacante induz uma máquina a autenticar-se contra ele e repassa a autenticação a um terceiro serviço, agindo como a vítima. Os protocolos de resolução de nomes de contingência — LLMNR, NBT-NS e mDNS — são o gatilho clássico: quando o DNS falha, a estação pergunta em difusão "quem é `servidorx`?", e qualquer máquina na rede pode responder "eu sou". **Desabilitar LLMNR e NBT-NS por GPO é uma das medidas de melhor relação custo-benefício em todo o Windows.**
+
+A direção correta é reduzir o NTLM ao mínimo, exigir assinatura SMB e LDAP (o que quebra a retransmissão) e caminhar para bloqueá-lo — com o cuidado de auditar antes, porque sistemas antigos ainda dependem dele.
+
+### Kerberos e seus dois ataques clássicos
+
+O Kerberos é o protocolo padrão no domínio, baseado em bilhetes emitidos por um centro de distribuição de chaves que roda no DC. A @fig-kerberos mostra o fluxo normal e onde os dois abusos mais comuns se encaixam.
+
+::: {#fig-kerberos}
+```{.tikz}
+%%| filename: fluxo-kerberos
+%%| alt: Fluxo de autenticação Kerberos entre cliente, controlador de domínio e servidor de serviço, com os pontos onde ocorrem os ataques de Kerberoasting e AS-REP roasting
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ent/.style={draw=manualblue, thick, fill=manualblue!8, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=3.0cm, minimum height=1.15cm},
+    fl/.style={->,>=stealth, thick, manualgray},
+    atk/.style={draw=manualred, thick, fill=manualred!8, rounded corners=2pt,
+                align=left, inner sep=4pt, font=\scriptsize, text width=5.8cm},
+    et/.style={font=\scriptsize, align=center}}
+
+  \node[ent] (cli) at (0,6.4)   {\textbf{Cliente}\\\scriptsize usuário autenticado};
+  \node[ent] (dc)  at (6.0,6.4) {\textbf{DC (KDC)}\\\scriptsize emite os bilhetes};
+  \node[ent] (srv) at (12.0,6.4) {\textbf{Servidor}\\\scriptsize serviço com SPN};
+
+  \draw[manualgray, dashed] (0,5.8) -- (0,2.9);
+  \draw[manualgray, dashed] (6.0,5.8) -- (6.0,2.9);
+  \draw[manualgray, dashed] (12.0,5.8) -- (12.0,2.9);
+
+  \draw[fl] (0,5.4) -- node[above, et] {1. AS-REQ: pede TGT} (6.0,5.4);
+  \draw[fl] (6.0,4.8) -- node[above, et] {2. TGT, cifrado com a chave de \texttt{krbtgt}} (0,4.8);
+  \draw[fl] (0,4.2) -- node[above, et] {3. TGS-REQ: pede bilhete para o SPN} (6.0,4.2);
+  \draw[fl] (6.0,3.6) -- node[above, et] {4. TGS, cifrado com a senha da conta de serviço} (0,3.6);
+  \draw[fl] (0,3.0) -- node[above, et] {5. apresenta o TGS ao serviço} (12.0,3.0);
+
+  \node[atk] (a1) at (2.9,1.4)
+    {\textbf{AS-REP roasting} --- na etapa 1, conta com pré-autenticação desabilitada devolve material cifrado com a senha a \emph{qualquer} solicitante.};
+  \node[atk] (a2) at (9.6,1.4)
+    {\textbf{Kerberoasting} --- na etapa 4, qualquer usuário autenticado pede o TGS e tenta quebrá-lo fora da rede, sem gerar falha de autenticação.};
+
+  \draw[destaque, manualred, ->,>=stealth] (2.9,2.2) -- (2.9,5.2);
+  \draw[destaque, manualred, ->,>=stealth] (9.6,2.2) -- (9.6,3.45) -- (6.6,3.45);
+
+  \node[et, manualgreen, text width=13cm, align=center] at (6.0,0.0)
+    {\textbf{Defesa comum aos dois:} senha longa e aleatória em conta de serviço (ou gMSA, que rotaciona sozinha), pré-autenticação sempre habilitada, e alerta sobre pedido de TGS em volume anômalo.};
+\end{tikzpicture}
+```
+Fluxo Kerberos e os dois abusos que dispensam qualquer vulnerabilidade de software.
+:::
+
+O **Kerberoasting** foi o terceiro passo do caso de abertura, e é insidioso porque cada etapa é legítima: pedir um bilhete de serviço é o que todo cliente faz. A tentativa de quebra ocorre **fora da rede**, sem gerar falha de autenticação e sem disparar bloqueio de conta. A defesa, portanto, não é bloquear o pedido — é tornar a quebra inviável, com senhas longas e aleatórias, idealmente através de contas de serviço gerenciadas por grupo (gMSA), que trocam a senha automaticamente.
+
+Dois outros abusos merecem menção, porque aparecem em qualquer relatório de teste de invasão: a **delegação irrestrita**, em que um servidor configurado assim guarda em memória os TGTs de todos que o acessam — incluindo administradores —, e o **bilhete dourado**, forjado a partir do hash da conta `krbtgt`, que dá acesso perpétuo até que essa conta seja trocada duas vezes.
+
+### Por que a estação guarda credenciais
+
+O passo que costuma surpreender é o primeiro: como a macro executada por um usuário comum obteve a credencial de um técnico de suporte? Porque o processo de autenticação do Windows mantinha em memória o material de autenticação de todas as sessões ativas ou recentes na máquina — necessário para o *logon* único funcionar sem pedir senha a cada acesso a recurso de rede.
+
+Daí decorrem três controles que se reforçam:
+
+**Credential Guard**, que isola esses segredos num ambiente protegido por virtualização, inacessível mesmo ao núcleo comprometido. É a mitigação mais efetiva e exige hardware moderno.
+
+**Camadas administrativas** (o modelo de níveis): a credencial de administrador de domínio **nunca** é usada numa estação de trabalho. Administração de servidores a partir de servidores; administração de domínio a partir de estações administrativas dedicadas. A regra que resume o modelo: *uma credencial só deve ser usada em máquinas do seu nível ou superior*.
+
+**LAPS**, que dá a cada estação uma senha de administrador local diferente, aleatória e rotacionada, guardada no diretório. Elimina a reutilização que permite pular de máquina em máquina — o segundo passo do caso de abertura.
+
+## Os caminhos de escalada que existem sem falha nenhuma
+
+O que torna o AD difícil de defender é que os privilégios se compõem por relações, e não por listas. Um usuário pode não ser administrador e ainda assim ter um caminho até o domínio através de uma cadeia de permissões individualmente razoáveis. A @fig-cadeia-ad refaz a cadeia do caso de abertura, marcando o controle que interrompe cada elo.
+
+::: {#fig-cadeia-ad}
+```{.tikz}
+%%| filename: cadeia-ad
+%%| alt: Cadeia de cinco passos de comprometimento de um domínio Active Directory, com o controle que interrompe cada elo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    passo/.style={draw=manualred, thick, fill=manualred!8, rounded corners=3pt,
+                  align=center, inner sep=4pt, minimum width=2.5cm, minimum height=1.5cm,
+                  font=\scriptsize},
+    ctrl/.style={draw=manualgreen, thick, fill=manualgreen!10, rounded corners=2pt,
+                 align=center, inner sep=4pt, minimum width=2.5cm, font=\scriptsize},
+    fl/.style={->,>=stealth, very thick, manualred}}
+
+  \node[passo] (p1) at (0,3.2)    {\textbf{1. Acesso}\\macro executa\\como usuário\\comum};
+  \node[passo] (p2) at (3.3,3.2)  {\textbf{2. Credencial}\\hash de conta\\de suporte lido\\da memória};
+  \node[passo] (p3) at (6.6,3.2)  {\textbf{3. Lateral}\\\emph{pass the hash}\\em outras\\estações};
+  \node[passo] (p4) at (9.9,3.2)  {\textbf{4. Escalada}\\Kerberoasting\\de conta de\\serviço};
+  \node[passo] (p5) at (13.2,3.2) {\textbf{5. Domínio}\\senha reusada\\com direito de\\replicação};
+
+  \foreach \a/\b in {p1/p2, p2/p3, p3/p4, p4/p5} { \draw[fl] (\a) -- (\b); }
+
+  \node[ctrl] (c1) at (0,1.1)    {Macros\\bloqueadas};
+  \node[ctrl] (c2) at (3.3,1.1)  {Credential\\Guard};
+  \node[ctrl] (c3) at (6.6,1.1)  {LAPS};
+  \node[ctrl] (c4) at (9.9,1.1)  {gMSA};
+  \node[ctrl] (c5) at (13.2,1.1) {Camadas\\administrativas};
+
+  \foreach \a/\b in {c1/p1, c2/p2, c3/p3, c4/p4, c5/p5} {
+    \draw[destaque, manualgreen, ->,>=stealth] (\a) -- (\b); }
+
+  \node[align=center, font=\scriptsize, manualgray] at (6.6,0.0)
+    {Nenhum passo explorou vulnerabilidade de software. \textbf{Qualquer um dos cinco controles quebra a cadeia.}};
+\end{tikzpicture}
+```
+A cadeia do caso de abertura e o controle que interrompe cada elo.
+:::
+
+Os padrões recorrentes por trás dessa e de outras cadeias:
+
+| Caminho | Como funciona | Correção |
+|---|---|---|
+| Senha reutilizada de admin. local | Mesma senha em todo o parque; hash serve em todas | LAPS |
+| Conta de serviço com privilégio excessivo | Instalação pediu admin. de domínio e ninguém revisou | Conta dedicada, gMSA, privilégio mínimo |
+| Senha em GPO ou em script de logon | `SYSVOL` é legível por qualquer usuário do domínio | Remover; trocar a credencial exposta |
+| Grupos administrativos inchados | Dezenas de membros herdados de anos | Revisão trimestral; administração temporária |
+| Permissão delegada esquecida | Direito de trocar senha ou escrever em objeto | Auditoria de ACL do diretório |
+| Delegação irrestrita | Servidor acumula TGTs de quem o acessa | Migrar para delegação restrita |
+| Conta com senha sem expiração e sem MFA | Força bruta lenta e discreta ao longo de meses | Política de senha e MFA |
+
+: Caminhos de escalada em AD que não dependem de vulnerabilidade de software. {#tbl-caminhos-ad}
+
+**A descoberta desses caminhos é automatizável**, e é exatamente isso que ferramentas de análise de grafo do diretório fazem — inclusive as usadas defensivamente. Rodar essa análise contra o próprio ambiente, com autorização documentada nos termos do @sec-cap007, é o exercício mais revelador que uma equipe de infraestrutura pode fazer, e costuma encontrar caminhos de cinco saltos que ninguém imaginava.
+
+## Registros e detecção: o que ligar antes de precisar
+
+O Windows registra muito por padrão — e quase nada do que interessa. Os eventos que efetivamente sustentam detecção precisam ser habilitados por política de auditoria e, em alguns casos, por instalação adicional:
+
+| Evento | O que indica |
+|---|---|
+| 4624 / 4625 | Logon bem-sucedido / falho, com o **tipo** (3 = rede, 10 = RDP) |
+| 4648 | Logon com credencial explícita — sinal de movimentação lateral |
+| 4672 | Atribuição de privilégio especial na sessão |
+| 4720, 4728, 4732 | Conta criada; membro adicionado a grupo global e local |
+| 4768 / 4769 | Bilhete Kerberos pedido — o 4769 em volume é indício de Kerberoasting |
+| 4698 | Tarefa agendada criada — persistência |
+| 7045 | Serviço instalado — persistência e execução remota |
+| 1102 | **Registro de segurança apagado** — sempre investigar |
+| 4104 | Bloco de script PowerShell registrado (exige registro de blocos ligado) |
+
+: Eventos do Windows que sustentam detecção. {#tbl-eventos-windows}
+
+Três configurações mudam o patamar de visibilidade e não custam licença: **registro de linha de comando na criação de processo** (evento 4688 com o comando completo), **registro de blocos e transcrição do PowerShell**, e **aumento do tamanho do registro de segurança**, que no padrão gira em horas numa máquina movimentada e apaga a evidência antes que alguém a leia. Sobre isso, vale a mesma regra do @sec-cap012: **remessa para um coletor externo**, porque quem vira administrador apaga o registro local — e é justamente esse apagamento que o evento 1102 denuncia.
+
+## ⚖️ Brasil em Foco
+
+**Licenciamento e sistema fora de suporte.** Parque com Windows sem suporte — e ainda há muito Windows 7 e Server 2008 em operação no país — não recebe correção e não suporta os controles modernos deste capítulo. Sob os arts. 46 e 47 da LGPD [@lgpd2018], manter dados pessoais em sistema sem manutenção é falha em medida de segurança esperada, e a ANPD já indicou atualização como item básico em sua orientação a agentes de pequeno porte [@anpd2023guia]. O inventário com data de fim de suporte é documento de conformidade.
+
+**Ransomware entra pelo AD.** Os ataques que pararam hospitais, prefeituras e empresas brasileiras seguiram, quase sempre, a cadeia deste capítulo: acesso inicial por phishing ou RDP exposto, roubo de credencial em memória, movimentação lateral com hash, escalada até administrador do domínio e, por fim, distribuição da carga por GPO ou por ferramenta de administração remota — usando a própria infraestrutura de gerência contra a organização. Como incidente de segurança com dados pessoais, dispara a comunicação prevista na Resolução CD/ANPD nº 15/2024 [@anpd2024res15], com prazo e conteúdo definidos. O Volume 11 trata da anatomia completa.
+
+**RDP exposto à internet é o vetor mais comum e o mais evitável.** Uma varredura de qualquer bloco brasileiro encontra milhares de portas 3389 abertas. Expor administração remota diretamente é decisão que precisa ser eliminada — VPN, gateway com MFA ou acesso por bastião —, e sua manutenção dificilmente se sustenta numa avaliação de diligência após um incidente.
+
+**Registro de acesso e responsabilização.** O @sec-cap003 tratou de não repúdio; em ambiente Windows isso significa contas administrativas nominais, jamais compartilhadas, com auditoria ligada e remessa externa. Uma apuração interna ou uma resposta a ofício que dependa de saber "quem executou o quê" fracassa quando três pessoas usam a mesma conta `Administrador`.
+
+**Dados pessoais no diretório.** O AD guarda nome, matrícula, cargo, telefone, e-mail e frequentemente CPF em atributos personalizados — base de dados pessoais sob a LGPD, com necessidade de controle de acesso. Vale lembrar que **qualquer usuário autenticado lê a maior parte do diretório por padrão**: a lista completa de funcionários, sua estrutura hierárquica e seus contatos estão disponíveis a qualquer conta comprometida.
+
+## 🛠️ No Campo
+
+**1. Desabilitar LLMNR e NBT-NS por GPO.** Corta a retransmissão NTLM na origem, e é a medida de melhor relação custo-benefício do capítulo:
+
+```text
+Configuração do Computador > Modelos Administrativos > Rede > Cliente DNS
+  → "Desativar a resolução de nomes multicast" = Habilitado
+
+NBT-NS: nas propriedades de TCP/IPv4 de cada adaptador, ou por script na imagem:
+  Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\*' `
+    -Name NetbiosOptions -Value 2
+```
+
+**2. Implantar LAPS.** Elimina a senha de administrador local reutilizada em todo o parque:
+
+```powershell
+# Windows LAPS (integrado às versões atuais) — conferir aplicação
+Get-LapsADPassword -Identity ESTACAO-042 -AsPlainText
+Get-CimInstance Win32_ComputerSystem | Select-Object Name, Domain
+```
+
+**3. Caçar contas de serviço com SPN e senha antiga.** É o vetor do Kerberoasting, e a consulta leva segundos:
+
+```powershell
+Get-ADUser -Filter 'ServicePrincipalName -like "*"' `
+  -Properties ServicePrincipalName, PasswordLastSet, AdminCount |
+  Select-Object Name, PasswordLastSet, AdminCount, @{n='SPN';e={$_.ServicePrincipalName -join ';'}} |
+  Sort-Object PasswordLastSet
+```
+
+**4. Encontrar as contas sem pré-autenticação e sem expiração de senha.** Achado de dois minutos que costuma render:
+
+```powershell
+# AS-REP roasting
+Get-ADUser -Filter 'DoesNotRequirePreAuth -eq $true' -Properties DoesNotRequirePreAuth
+
+# Senha que nunca expira
+Get-ADUser -Filter 'PasswordNeverExpires -eq $true -and Enabled -eq $true' |
+  Select-Object Name, SamAccountName
+
+# Delegação irrestrita — servidores que acumulam TGT de quem os acessa
+Get-ADComputer -Filter 'TrustedForDelegation -eq $true' -Properties TrustedForDelegation
+```
+
+**5. Revisar os grupos que importam, trimestralmente.** Poucos membros, todos justificáveis:
+
+```powershell
+foreach ($g in 'Domain Admins','Enterprise Admins','Schema Admins','Account Operators','Backup Operators') {
+  "== $g =="
+  Get-ADGroupMember -Identity $g -Recursive | Select-Object -Expand SamAccountName
+}
+```
+
+**6. Procurar senha em `SYSVOL`.** Legível por qualquer usuário do domínio, e ainda aparece:
+
+```powershell
+Get-ChildItem \\dominio.local\SYSVOL -Recurse -Include *.xml,*.ps1,*.bat,*.vbs -ErrorAction SilentlyContinue |
+  Select-String -Pattern 'cpassword|password\s*=' |
+  Select-Object Path, Line -First 40
+```
+
+**7. Ligar o registro que sustenta detecção.** Sem isso, o incidente é reconstruído por adivinhação:
+
+```text
+Política de Auditoria Avançada (por GPO):
+  Logon/Logoff → Logon, Logoff, Bloqueio de conta ...... Êxito e Falha
+  Acesso a Objetos → Compartilhamento de Arquivos ...... Êxito e Falha
+  Rastreamento Detalhado → Criação de Processo ......... Êxito
+  Alteração de Política, Uso de Privilégio ............. Êxito e Falha
+
+Modelos Administrativos > Sistema > Auditoria de Criação de Processo
+  → "Incluir linha de comando" = Habilitado
+
+Componentes do Windows > Windows PowerShell
+  → Registro de blocos de script = Habilitado
+  → Transcrição = Habilitado (destino em compartilhamento restrito)
+
+Tamanho do log Segurança: mínimo 1 GB nas estações, 4 GB nos servidores
+```
+
+**8. Aplicar o modelo de camadas administrativas.** A regra que mais reduz o alcance de um comprometimento: credencial de administrador de domínio nunca toca estação de trabalho. Estação administrativa dedicada, sem e-mail e sem navegação, e restrição por GPO ("Negar logon local" para contas de domínio nas estações comuns) para que a regra não dependa de disciplina individual.
+
+## Resumo
+
+- No Windows, **tudo é objeto com descritor de segurança** — inclusive serviços e chaves de registro, onde permissões frouxas viram escalonamento. A identidade é o **SID** (renomear a conta administrador não muda o `-500`), e a autorização vem do **token**, montado na autenticação: mudança de grupo só vale no próximo logon.
+- **UAC não é fronteira de segurança.** A separação real é ter contas distintas para uso comum e para administração.
+- A **floresta é a fronteira de segurança**, não o domínio. Separar departamentos em domínios não cria isolamento.
+- No **NTLM**, o hash funciona como a senha (*pass the hash*), e a ausência de autenticação do servidor viabiliza retransmissão. **Desabilitar LLMNR e NBT-NS** e exigir assinatura SMB e LDAP corta o vetor mais comum.
+- **Kerberoasting e AS-REP roasting** abusam de operações legítimas: a quebra ocorre fora da rede, sem falha de autenticação e sem bloqueio de conta. A defesa é senha longa e aleatória em conta de serviço — idealmente **gMSA** — e pré-autenticação sempre habilitada.
+- A estação guarda credenciais em memória para o *logon* único funcionar. As três defesas que se reforçam: **Credential Guard**, **modelo de camadas administrativas** (credencial de domínio nunca em estação) e **LAPS** (senha local única por máquina).
+- Os caminhos de escalada em AD **não dependem de vulnerabilidade de software** — vêm de senha reutilizada, conta de serviço com privilégio excessivo, senha em `SYSVOL`, grupos inchados, delegação esquecida. São descobríveis por análise de grafo, e rodar essa análise contra o próprio ambiente é o exercício mais revelador disponível.
+- O Windows registra muito e quase nada do que interessa. **Linha de comando na criação de processo, registro de blocos do PowerShell, log de segurança grande e remessa externa** são o mínimo — e o evento **1102** (log apagado) merece alerta sempre.

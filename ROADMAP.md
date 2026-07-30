@@ -25,7 +25,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 010** - Protocolos de aplicação e seus riscos: HTTP, DNS, SMTP e SNMP - `vol02/cap010-protocolos-de-aplicacao-e-seus-riscos-http.qmd`
 - [x] **cap 011** - Fundamentos de sistemas operacionais: processos, permissões e memória - `vol02/cap011-fundamentos-de-sistemas-operacionais.qmd`
 - [x] **cap 012** - Linux essencial para segurança - `vol02/cap012-linux-essencial-para-seguranca.qmd`
-- [ ] **cap 013** - Windows e Active Directory essencial - `vol02/cap013-windows-e-active-directory-essencial.qmd`
+- [x] **cap 013** - Windows e Active Directory essencial - `vol02/cap013-windows-e-active-directory-essencial.qmd`
 - [ ] **cap 014** - Virtualização e montagem do laboratório de estudos - `vol02/cap014-virtualizacao-e-montagem-do-laboratorio-de.qmd`
 
 ### Volume 3 — Criptografia Aplicada
