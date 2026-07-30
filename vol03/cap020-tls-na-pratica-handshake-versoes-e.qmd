@@ -1,3 +1,320 @@
 # TLS na prática: handshake, versões e configuração segura {#sec-cap020}
 
-*(em elaboracao)*
+Em outubro de 2014, o ataque POODLE tornou pública uma lição que administradores de servidor levaram anos para absorver: **o que derruba um serviço não é o protocolo que ele usa, é o protocolo que ele ainda aceita**.
+
+O cenário era banal. Servidores modernos negociavam TLS 1.2 com navegadores modernos, e mantinham SSL 3.0 habilitado "por compatibilidade com clientes antigos". Ninguém o usava; ele estava apenas ligado. O ataque explorou exatamente isso: um adversário no caminho derrubava repetidamente as tentativas de handshake em TLS, e o navegador — seguindo uma lógica de degradação bem-intencionada, projetada para lidar com servidores mal implementados — tentava versões cada vez mais antigas até chegar ao SSL 3.0. Que o servidor aceitava. A partir daí, o preenchimento CBC do SSL 3.0, que não era coberto pelo MAC, permitia decifrar um cookie de sessão byte a byte.
+
+O servidor usava TLS 1.2. O navegador usava TLS 1.2. E a sessão foi decifrada em SSL 3.0, porque ambos ainda o aceitavam.
+
+Este capítulo trata do protocolo que carrega quase todo o tráfego sensível da internet, de como seu handshake funciona, e de por que configurá-lo é sobretudo um exercício de **remover** — não de adicionar.
+
+## O que o TLS garante, e onde ele fica
+
+O TLS opera entre a camada de transporte e a de aplicação, como o @sec-cap008 posicionou. Para o HTTP, para o SMTP, para o LDAP ou para um protocolo próprio, ele oferece um soquete que se comporta como TCP e entrega três propriedades:
+
+- **Confidencialidade** dos dados, por AEAD (@sec-cap016).
+- **Integridade e autenticidade** de cada registro, pela mesma primitiva.
+- **Autenticação do servidor** por certificado (@sec-cap019), e opcionalmente do cliente.
+
+E é útil enunciar o que ele **não** garante, porque a confusão é frequente: não protege o dado antes de entrar no soquete nem depois de sair dele; não esconde **com quem** você fala — o nome do servidor viaja em claro no SNI, e o endereço IP sempre viaja; e não diz nada sobre a idoneidade do outro lado. Certificado válido prova identidade, não boa-fé: um site de golpe tem HTTPS impecável, e o cadeado nunca significou "seguro" no sentido que o público lhe atribui.
+
+### A linha do tempo
+
+| Versão | Ano | Situação |
+|---|---|---|
+| SSL 2.0 | 1995 | Quebrado por projeto. Proibido |
+| SSL 3.0 | 1996 | POODLE. Proibido desde 2015 (RFC 7568) |
+| TLS 1.0 | 1999 | BEAST; aposentado pelos navegadores em 2020 |
+| TLS 1.1 | 2006 | Sem AEAD; aposentado junto com o 1.0 |
+| TLS 1.2 | 2008 | **Aceitável**, se bem configurado [@rfc5246] |
+| TLS 1.3 | 2018 | **Preferencial.** Só AEAD, só sigilo encaminhado [@rfc8446] |
+
+: Versões de SSL e TLS e sua situação em 2026. {#tbl-versoes-tls}
+
+A configuração correta hoje é curta: **TLS 1.2 e 1.3 habilitados, tudo abaixo desabilitado**. Se o parque não tiver clientes legados, apenas TLS 1.3.
+
+## O handshake do TLS 1.3
+
+A @fig-handshake-tls13 mostra a troca completa. Vale segui-la mensagem a mensagem, porque cada uma resolve um problema discutido nos capítulos anteriores.
+
+::: {#fig-handshake-tls13}
+```{.tikz}
+%%| filename: handshake-tls13
+%%| alt: Diagrama de sequência do handshake TLS 1.3, mostrando ClientHello com key share, ServerHello, mensagens já cifradas, certificado, verificação e finished, com dados de aplicação após um round-trip
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ator/.style={draw=manualblue, very thick, fill=manualblue!10, rounded corners=3pt,
+                 align=center, inner sep=5pt, minimum width=3.0cm, minimum height=0.9cm},
+    msg/.style={font=\scriptsize, align=center, inner sep=2pt},
+    claro/.style={draw=manualgray, thick},
+    cifrado/.style={draw=manualgreen, very thick},
+    fase/.style={align=left, font=\scriptsize, manualgray},
+    nota/.style={draw=manualyellow, thick, fill=manualyellow!12, rounded corners=3pt,
+                 align=left, inner sep=4pt, font=\scriptsize, text width=5.0cm}}
+
+  \node[ator] (c) at (0,0.8) {\textbf{Cliente}};
+  \node[ator] (s) at (8.4,0.8) {\textbf{Servidor}};
+  \draw[auxiliar, manualgray] (0,0.3) -- (0,-8.2);
+  \draw[auxiliar, manualgray] (8.4,0.3) -- (8.4,-8.2);
+
+  \node[fase, anchor=west] at (-2.4,-0.4) {\textbf{\textcolor{manualgray}{em claro}}};
+  \draw[claro, ->, >=stealth] (0,-1.0) -- node[msg, above] {\textbf{ClientHello}}
+                                        node[msg, below] {versões, suítes, \textbf{key\_share} $g^{a}$, SNI} (8.4,-1.0);
+  \draw[claro, <-, >=stealth] (0,-2.2) -- node[msg, above] {\textbf{ServerHello}}
+                                        node[msg, below] {suíte escolhida, \textbf{key\_share} $g^{b}$} (8.4,-2.2);
+
+  \node[fase, anchor=west] at (-2.4,-2.9) {\textbf{\textcolor{manualgreen}{a partir daqui,}}};
+  \node[fase, anchor=west] at (-2.4,-3.3) {\textbf{\textcolor{manualgreen}{tudo cifrado}}};
+
+  \draw[cifrado, <-, >=stealth] (0,-3.4) -- node[msg, above] {EncryptedExtensions}
+                                            node[msg, below] {ALPN e demais parâmetros} (8.4,-3.4);
+  \draw[cifrado, <-, >=stealth] (0,-4.4) -- node[msg, above] {\textbf{Certificate}}
+                                            node[msg, below] {cadeia do servidor} (8.4,-4.4);
+  \draw[cifrado, <-, >=stealth] (0,-5.4) -- node[msg, above] {\textbf{CertificateVerify}}
+                                            node[msg, below] {assina o handshake com a chave privada} (8.4,-5.4);
+  \draw[cifrado, <-, >=stealth] (0,-6.3) -- node[msg, above] {Finished} (8.4,-6.3);
+  \draw[cifrado, ->, >=stealth] (0,-7.1) -- node[msg, above] {Finished} (8.4,-7.1);
+  \draw[destaque, manualblue, <->, >=stealth] (0,-7.9) -- node[msg, above] {\textbf{dados de aplicação}} (8.4,-7.9);
+
+  \node[nota] at (12.2,-1.6)
+    {\textbf{O cliente já envia \texttt{key\_share} no primeiro pacote.}
+     É o que reduz o handshake a \textbf{1-RTT} — em TLS 1.2 eram dois.};
+  \node[nota] at (12.2,-4.4)
+    {\textbf{O certificado viaja cifrado.}
+     Em TLS 1.2 ele ia em claro, e revelava a identidade do servidor a qualquer observador.};
+  \node[nota] at (12.2,-7.0)
+    {\textbf{CertificateVerify} assina toda a transcrição do handshake: é o que impede
+     o adversário no meio da troca Diffie-Hellman e o que amarra a chave à identidade.};
+\end{tikzpicture}
+```
+Handshake TLS 1.3 completo em um round-trip. Tudo após o `ServerHello` já viaja cifrado.
+:::
+
+O que a figura torna visível:
+
+**O cliente aposta na primeira mensagem.** Junto do `ClientHello`, ele já envia sua parte pública de ECDHE (`key_share`) para os grupos que julga prováveis. Se acertar — e X25519 ou P-256 acertam quase sempre —, o servidor responde com a sua parte e ambos já derivam as chaves. É o que corta o handshake para **um round-trip**. Se o cliente errar o grupo, o servidor pede outro com `HelloRetryRequest`, e aí custa 2-RTT.
+
+**Tudo após o `ServerHello` já vai cifrado**, inclusive o certificado. Em TLS 1.2 o certificado do servidor trafegava em claro, entregando a identidade a qualquer observador passivo. Continua sendo possível inferi-la pelo SNI e pelo IP, mas o vazamento direto acabou.
+
+**`CertificateVerify` é a peça que resolve o adversário ativo** do @sec-cap018: o servidor assina toda a transcrição do handshake com a chave privada correspondente ao certificado. Só quem detém aquela chave produz essa assinatura, e ela cobre os `key_share` — de modo que um atacante que substituísse a troca ECDHE quebraria a assinatura.
+
+**As chaves saem de HKDF** (@sec-cap017), derivadas do segredo ECDHE em uma cascata de rótulos: chaves de handshake, chaves de aplicação, chave de retomada, cada uma com propósito separado. Nenhuma chave é usada para duas coisas.
+
+### O que o TLS 1.3 removeu — e por que isso é a maior melhoria
+
+A lista de remoções é mais importante que a de adições:
+
+- **Transporte de chave por RSA.** Removido: todo handshake tem sigilo encaminhado, por construção.
+- **Cifras CBC e todos os modos não autenticados.** Só AEAD. Padding oracle deixa de ser possível.
+- **RC4, 3DES, MD5, SHA-1** em qualquer papel.
+- **Renegociação** e **compressão** — origens de ataques como CRIME.
+- **Grupos Diffie-Hellman customizados**, que permitiam ao servidor oferecer parâmetros fracos (Logjam).
+
+O resultado é que a superfície de configuração encolheu drasticamente. Em TLS 1.2 é possível montar uma configuração formalmente válida e materialmente insegura; **em TLS 1.3 todas as opções disponíveis são seguras**. É o mesmo princípio do @sec-cap016 sobre APIs de alto nível: quando a interface não permite escolher errado, a documentação deixa de ser a última linha de defesa.
+
+### 0-RTT: o desconto que tem preço
+
+O TLS 1.3 permite que um cliente que já conversou antes com o servidor envie dados **junto** com o `ClientHello`, usando uma chave pré-compartilhada da sessão anterior. Latência zero.
+
+O preço é que **dados 0-RTT não têm proteção contra repetição**. Um atacante que capture aquele primeiro pacote pode reenviá-lo depois, e o servidor o processará de novo — sem saber que é repetição. Para um `GET` idempotente, é inofensivo. Para um `POST` que transfere dinheiro, não é.
+
+A regra é simples e deve estar escrita na configuração: **0-RTT apenas para requisições comprovadamente idempotentes, ou desligado**. Na dúvida, desligado — o ganho é de alguns milissegundos, e o risco é de duplicar uma operação.
+
+## Como ler uma suíte de cifras
+
+Nome de suíte parece ruído e é uma especificação completa. A @fig-suite decompõe.
+
+::: {#fig-suite}
+```{.tikz}
+%%| filename: anatomia-suite
+%%| alt: Decomposição do nome de uma suíte de cifras TLS 1.2 em acordo de chave, autenticação, cifra com modo e função hash, comparada com o formato reduzido do TLS 1.3
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    peca/.style={draw=manualblue, very thick, fill=manualblue!10, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum height=0.85cm, font=\ttfamily\scriptsize},
+    expl/.style={draw=manualgray, thick, fill=white, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=3.0cm, font=\scriptsize},
+    nota/.style={align=left, font=\scriptsize, manualgray}}
+
+  \node[nota, anchor=west] at (-1.4,3.4) {\textbf{TLS 1.2} — quatro escolhas independentes, e é possível errar em todas};
+
+  \node[peca, minimum width=2.1cm] (a) at (0.4,2.4) {ECDHE};
+  \node[peca, minimum width=1.7cm] (b) at (2.7,2.4) {RSA};
+  \node[peca, minimum width=3.4cm] (c) at (5.9,2.4) {AES\_256\_GCM};
+  \node[peca, minimum width=2.1cm] (d) at (8.9,2.4) {SHA384};
+
+  \node[expl] (ae) at (0.4,0.9) {\textbf{Acordo de chave}\\efêmero $\Rightarrow$ sigilo\\encaminhado};
+  \node[expl] (be) at (3.6,0.9) {\textbf{Autenticação}\\tipo da chave no\\certificado};
+  \node[expl] (ce) at (6.9,0.9) {\textbf{Cifra e modo}\\GCM $\Rightarrow$ AEAD\\autenticado};
+  \node[expl] (de) at (10.1,0.9) {\textbf{Hash do KDF}\\e do PRF do\\handshake};
+
+  \foreach \x/\y in {a/ae, b/be, c/ce, d/de}
+    \draw[auxiliar, manualgray, ->, >=stealth] (\x) -- (\y);
+
+  \node[draw=manualred, very thick, fill=manualred!8, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\scriptsize, text width=13.4cm] at (5.2,-0.9)
+    {\textbf{\textcolor{manualred}{A leitura que mais importa:}} suíte que começa com \texttt{TLS\_RSA\_WITH\_...}
+     usa RSA para \emph{transportar} a chave e \textbf{não tem sigilo encaminhado} — quem gravar o
+     tráfego hoje e obtiver a chave do servidor amanhã decifra tudo. Já \texttt{TLS\_ECDHE\_RSA\_WITH\_...}
+     usa RSA apenas para \emph{assinar}, e tem sigilo encaminhado.};
+
+  \node[nota, anchor=west] at (-1.4,-2.6) {\textbf{TLS 1.3} — só sobra a cifra, porque o resto não é mais negociável};
+  \node[peca, minimum width=5.4cm, draw=manualgreen, fill=manualgreen!12] (t13) at (2.0,-3.6)
+    {TLS\_AES\_256\_GCM\_SHA384};
+  \node[nota, anchor=west, text width=6.0cm] at (5.4,-3.6)
+    {ECDHE é obrigatório, a autenticação vem do certificado\\
+     e só há AEAD. \textbf{Não existe combinação insegura a escolher.}};
+\end{tikzpicture}
+```
+Anatomia de uma suíte de cifras. Em TLS 1.3 sobrou apenas a cifra, porque o resto deixou de ser negociável.
+:::
+
+A leitura prática que vale memorizar: **`TLS_RSA_WITH_*` não tem sigilo encaminhado; `TLS_ECDHE_*` tem**. Essa única distinção resolve a maior parte das revisões de configuração de TLS 1.2.
+
+## O que cada ataque histórico ensinou
+
+| Ataque | Ano | Causa | Lição permanente |
+|---|---|---|---|
+| BEAST | 2011 | IV previsível em CBC no TLS 1.0 | IV precisa ser imprevisível |
+| CRIME / BREACH | 2012 | Compressão sobre dado secreto | Não comprimir o que mistura segredo e entrada do atacante |
+| Lucky13 | 2013 | Temporização no MAC-then-Encrypt | Verificação precisa ser em tempo constante |
+| Heartbleed | 2014 | Falta de validação de tamanho no OpenSSL | Não é falha do protocolo; é do código. Rotacionar chave após comprometimento |
+| POODLE | 2014 | Degradação para SSL 3.0 ainda aceito | **Desligar o que não se usa** |
+| FREAK / Logjam | 2015 | Suítes de exportação e grupos DH fracos | Compatibilidade herdada é dívida de segurança |
+| DROWN | 2016 | SSL 2.0 na mesma chave em outro serviço | Chave compartilhada propaga o comprometimento |
+| ROBOT | 2017 | Bleichenbacher ressuscitado em PKCS#1 v1.5 | Vulnerabilidade corrigida volta em nova implementação |
+
+: Ataques contra TLS e o que cada um deixou como regra. {#tbl-ataques-tls}
+
+Duas leituras transversais valem mais que a lista. A primeira: **quase todos foram viabilizados por compatibilidade retroativa** — suítes de exportação, SSL 3.0 habilitado, PKCS#1 v1.5 mantido. A superfície de ataque do TLS foi, historicamente, o que não se usava mas continuava ligado. A segunda: o **Heartbleed não foi falha do protocolo**, e por isso ilustra outra coisa: quando a chave privada pode ter vazado, revogar e reemitir é obrigatório — e o @sec-cap019 já explicou por que revogação em massa funciona mal.
+
+## Configuração segura, em concreto
+
+A configuração correta hoje é curta o suficiente para caber numa página:
+
+```nginx
+# nginx — perfil moderno com compatibilidade razoável
+ssl_protocols             TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers off;                       # em TLS 1.3, o cliente escolhe melhor
+ssl_ciphers               ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+ssl_ecdh_curve            X25519:prime256v1:secp384r1;
+ssl_session_timeout       1d;
+ssl_session_cache         shared:SSL:10m;
+ssl_session_tickets       off;                        # bilhete mal rotacionado anula o sigilo encaminhado
+
+ssl_stapling              on;
+ssl_stapling_verify       on;
+ssl_trusted_certificate   /etc/ssl/certs/cadeia-completa.pem;
+
+add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+```
+
+Quatro decisões merecem justificativa:
+
+**`ssl_session_tickets off`** não é preciosismo. O bilhete de sessão é cifrado com uma chave do servidor; se essa chave não for rotacionada com frequência, quem a obtiver decifra todas as sessões retomadas — **anulando o sigilo encaminhado que o ECDHE entregou**. Ou se desliga, ou se rotaciona a chave de bilhete a cada poucas horas, com um mecanismo que efetivamente funcione em todos os nós do balanceador.
+
+**HSTS** [@rfc6797] instrui o navegador a nunca mais acessar aquele domínio por HTTP, o que fecha a janela do primeiro acesso — o momento em que a degradação para HTTP é possível. `includeSubDomains` é potente e irreversível na prática: ativá-lo com um subdomínio interno sem HTTPS o torna inacessível pelo prazo do `max-age`. Ativar primeiro com `max-age` curto, verificar, depois aumentar.
+
+**A ordem das suítes deixa de importar em TLS 1.3**, e por isso `ssl_prefer_server_ciphers off`: o cliente sabe melhor que o servidor se tem aceleração AES em hardware. Um celular sem `AES-NI` escolherá ChaCha20 e ficará mais rápido e mais seguro contra canal lateral, exatamente como o @sec-cap016 descreveu.
+
+**As curvas** devem incluir X25519 em primeiro lugar, pelas razões do @sec-cap018.
+
+### Autenticação mútua
+
+Quando o cliente também apresenta certificado, a autenticação acontece no handshake, antes de qualquer dado de aplicação:
+
+```nginx
+ssl_client_certificate  /etc/ssl/ac-interna/ca.pem;   # AC que emite os certificados de cliente
+ssl_verify_client       on;
+ssl_verify_depth        2;
+ssl_crl                 /etc/ssl/ac-interna/revogados.crl;
+```
+
+Três observações que separam mTLS que funciona de mTLS decorativo. Primeira: `ssl_verify_client on` valida a **cadeia**, e não a identidade — qualquer certificado emitido por aquela AC entra. A autorização, isto é, *qual* cliente pode acessar *o quê*, precisa ser feita pela aplicação a partir do `Subject`, e é assunto do Volume 4. Segunda: a CRL precisa ser **atualizada**, ou a revogação é decorativa; em PKI interna o `hard-fail` é viável e deve ser usado. Terceira: certificado de cliente expira, e a renovação precisa ser automatizada com a mesma disciplina do certificado de servidor — com o agravante de que a falha aparece do lado do cliente, longe de quem opera o servidor.
+
+## ⚖️ Brasil em Foco
+
+**No Pix, mTLS não é boa prática — é condição de participação.** A comunicação com o SPI exige autenticação mútua com certificado ICP-Brasil, e o manual de segurança do arranjo especifica versões de TLS e suítes admitidas. Instituições que integram por meio de prestador herdam a obrigação, e a homologação verifica a configuração efetiva, não a declarada. Reprovar por TLS 1.1 ainda habilitado ou por suíte sem AEAD é ocorrência comum e inteiramente evitável com uma varredura prévia [@bcb4893].
+
+**O Open Finance elevou o requisito e adicionou o cliente.** O ecossistema brasileiro de compartilhamento de dados usa mTLS combinado com OAuth 2.0 e objetos de requisição assinados — o perfil FAPI, tratado no Volume 4. Do ponto de vista deste capítulo, o efeito prático é que cada participante opera **dois parques de certificados** com ciclos independentes: os de transporte e os de assinatura. Expirar qualquer um dos dois interrompe o compartilhamento, e o alerta precisa cobrir ambos.
+
+**A LGPD não exige TLS por nome, e a exigência decorre do art. 46.** A obrigação de adotar medidas aptas a proteger os dados, avaliada à luz do estado da técnica, torna indefensável em 2026 trafegar dado pessoal sem TLS moderno. Na prática regulatória, o que se examina é a configuração efetiva no momento do incidente — o relatório de uma varredura pública, com data, é evidência tanto a favor quanto contra. Manter esse registro periodicamente é barato e vale como prova de diligência [@lgpd2018].
+
+**Certificado ICP-Brasil no servidor web público não funciona, e a confusão custa caro.** Como o @sec-cap019 registrou, as raízes da ICP-Brasil não estão nos armazéns de confiança dos navegadores para autenticação de servidor. Um site público precisa de AC pública — Let's Encrypt resolve. A ICP-Brasil é para integração com sistemas de governo, assinatura de documentos e arranjos regulados como o Pix. Tentar usar e-CNPJ para HTTPS público resulta em erro de certificado para todos os visitantes.
+
+**Órgãos públicos e o gov.br operam sob exigências próprias.** A conexão com serviços do governo federal, o peticionamento eletrônico e as integrações com Receita e e-Social especificam versões de TLS e, em muitos casos, exigem mTLS com ICP-Brasil. Como esses sistemas atualizam requisitos por norma técnica e não por aviso ao integrador, a prática que evita indisponibilidade é acompanhar as publicações e testar a integração num ambiente de homologação **antes** de a exigência entrar em vigor.
+
+## 🛠️ No Campo
+
+**1. Faça a varredura completa antes de mudar qualquer coisa.** O `testssl.sh` é a ferramenta de referência, roda de dentro da rede e não depende de serviço externo:
+
+```bash
+testssl.sh --full --parallel --htmlfile relatorio.html https://exemplo.com.br
+
+# Alternativas de bolso, sem instalar nada
+nmap --script ssl-enum-ciphers -p 443 exemplo.com.br
+openssl s_client -connect exemplo.com.br:443 -tls1_1 </dev/null   # deve FALHAR
+openssl s_client -connect exemplo.com.br:443 -tls1_3 </dev/null   # deve funcionar
+```
+
+Guarde o relatório com data. É a linha de base para a próxima mudança e a evidência de diligência mencionada acima.
+
+**2. Desligue o que não se usa, e confirme que desligou.** A lição do POODLE, em forma de comando. Depois de ajustar a configuração, o teste é tentar o protocolo antigo e **esperar a falha** — configuração recarregada nem sempre é configuração aplicada, especialmente atrás de balanceador ou CDN.
+
+**3. Verifique se o TLS realmente termina onde você pensa.** Balanceador, CDN, WAF e malha de serviço frequentemente encerram o TLS antes da aplicação, e o trecho seguinte pode estar em claro:
+
+```bash
+# De dentro da rede, o trafego entre balanceador e aplicacao esta cifrado?
+curl -sv http://backend-interno:8080/health 2>&1 | grep -i '^< HTTP'
+ss -tlnp | grep -E ':(80|8080|8443)\b'
+```
+
+Descobrir que o tráfego interno entre o balanceador e a aplicação trafega em claro, atravessando três redes, é um achado comum — e é exatamente o que mTLS interno resolve.
+
+**4. Trate o bilhete de sessão como chave.** Ou desligue, ou rotacione:
+
+```bash
+grep -rn 'ssl_session_tickets\|SSLSessionTickets' /etc/nginx /etc/apache2 2>/dev/null
+```
+
+Bilhete ligado com chave estática desde a instalação anula o sigilo encaminhado de todas as sessões retomadas — e é a configuração padrão de muitas distribuições.
+
+**5. Implante HSTS em etapas.** Irreversível na prática, então a ordem importa:
+
+```text
+1. max-age=300                                  # cinco minutos, verificar
+2. max-age=86400                                # um dia, verificar
+3. max-age=63072000; includeSubDomains          # dois anos
+4. preload  — só depois de garantir que TODO subdominio tem HTTPS
+```
+
+O passo 4 é irreversível de verdade: sair da lista de precarga dos navegadores leva meses.
+
+**6. Monitore a expiração e a versão em um só lugar.** O que derruba serviço é a expiração; o que reprova auditoria é a versão. Um único verificador cobre ambos:
+
+```bash
+for h in exemplo.com.br api.exemplo.com.br pix.exemplo.com.br; do
+  info=$(openssl s_client -connect "$h":443 -servername "$h" </dev/null 2>/dev/null)
+  ver=$(echo "$info" | grep -m1 'Protocol')
+  fim=$(echo "$info" | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+  echo "$h | $ver | expira: $fim"
+done
+```
+
+**7. Ligue 0-RTT apenas com conhecimento de causa.** Se o serviço tem qualquer rota não idempotente, o ganho de latência não compensa. Se ligar, restrinja a métodos seguros na camada de aplicação e registre a decisão — inclusive porque ela precisa ser revisitada quando uma rota nova for criada.
+
+**8. Automatize a renovação e teste a rotação inteira.** Renovação que nunca foi exercitada não é controle. Uma vez por trimestre, forçar a renovação num ambiente de homologação e verificar que o serviço recarrega, que a cadeia continua completa e que os clientes mTLS continuam autenticando. É o mesmo princípio de restaurar backup, aplicado a certificado.
+
+## Resumo
+
+- **O que derruba um serviço é o que ele ainda aceita, não o que ele usa.** POODLE explorou SSL 3.0 mantido "por compatibilidade" em servidores que negociavam TLS 1.2 normalmente.
+- A configuração correta em 2026 é **TLS 1.2 e 1.3 apenas**; só TLS 1.3 se não houver cliente legado. Tudo abaixo é proibido.
+- O **handshake TLS 1.3 fecha em 1-RTT** porque o cliente já envia `key_share` no `ClientHello`, e tudo após o `ServerHello` — inclusive o certificado — viaja cifrado.
+- **`CertificateVerify` é a peça que impede o adversário no meio**, assinando toda a transcrição do handshake com a chave privada do certificado.
+- A maior melhoria do TLS 1.3 foi o que ele **removeu**: transporte de chave por RSA, CBC, renegociação, compressão e grupos DH customizados. Não há mais combinação insegura a escolher.
+- **0-RTT não tem proteção contra repetição.** Só para requisições comprovadamente idempotentes, ou desligado.
+- Na leitura de suítes, a distinção que mais importa: **`TLS_RSA_WITH_*` não tem sigilo encaminhado; `TLS_ECDHE_*` tem**.
+- A história dos ataques a TLS é, em grande medida, a história da **compatibilidade retroativa**: suítes de exportação, versões antigas habilitadas, preenchimentos obsoletos mantidos.
+- **Bilhete de sessão com chave estática anula o sigilo encaminhado.** Desligar ou rotacionar de verdade.
+- **HSTS fecha a janela do primeiro acesso** e é irreversível na prática — implantar em etapas, e `preload` só com todos os subdomínios em HTTPS.
+- No Brasil, **mTLS com ICP-Brasil é condição de participação no Pix e no Open Finance**, com dois parques de certificados a monitorar. E certificado ICP-Brasil **não serve** para HTTPS público — para isso, AC pública.
