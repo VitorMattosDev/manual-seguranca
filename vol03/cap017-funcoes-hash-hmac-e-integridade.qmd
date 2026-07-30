@@ -1,3 +1,366 @@
 # Funções hash, HMAC e integridade {#sec-cap017}
 
-*(em elaboracao)*
+Em 2012, pesquisadores analisando o código malicioso Flame encontraram algo que não deveria existir: um certificado de assinatura de código aparentemente emitido pela Microsoft, válido segundo toda a cadeia de confiança do Windows, e usado para distribuir a praga através do mecanismo de atualização do sistema. Máquinas comprometidas recebiam o Flame por um canal que o próprio Windows tratava como legítimo.
+
+Não houve invasão da Microsoft. Não houve chave privada roubada. O que houve foi uma **colisão de prefixo escolhido** em MD5. Um serviço de licenciamento da Microsoft ainda assinava certificados usando MD5, e os atacantes — com criptanálise inédita à época e um poder computacional considerável — construíram dois documentos diferentes com o mesmo resumo MD5: um inócuo, submetido para assinatura, e outro com poderes de assinatura de código. A assinatura obtida sobre o primeiro era matematicamente válida sobre o segundo, porque **a assinatura digital não assina o documento, assina o seu resumo**.
+
+Colisões práticas em MD5 eram publicamente conhecidas desde 2004. Foram necessários oito anos para que a consequência aparecesse na forma de um ataque estatal contra a cadeia de atualização do sistema operacional mais usado do mundo. Esse intervalo — entre "quebrado no artigo" e "explorado em campo" — é a razão de este capítulo insistir tanto na diferença entre as propriedades de uma função hash, e em qual delas cada uso realmente depende.
+
+## O que uma função hash faz
+
+Uma **função hash criptográfica** recebe uma entrada de qualquer tamanho e devolve uma saída de tamanho fixo — o **resumo**, ou *digest*. SHA-256 devolve 256 bits, sempre, tanto para um byte quanto para um terabyte.
+
+Duas propriedades básicas vêm de graça: é **determinística** (a mesma entrada sempre produz a mesma saída) e é **rápida de computar**. As três propriedades que a tornam criptográfica são exigências fortes, e cada uma protege um uso diferente:
+
+**Resistência à pré-imagem.** Dado um resumo $h$, deve ser inviável encontrar qualquer $M$ tal que $H(M) = h$. É a propriedade de mão única. É o que impede que um resumo armazenado revele a entrada.
+
+**Resistência à segunda pré-imagem.** Dado um $M_1$ específico, deve ser inviável encontrar $M_2 \neq M_1$ com $H(M_1) = H(M_2)$. É o que impede substituir **um documento existente** por outro com o mesmo resumo.
+
+**Resistência a colisão.** Deve ser inviável encontrar **qualquer** par $M_1 \neq M_2$ com o mesmo resumo. Note a diferença: aqui o atacante escolhe as duas mensagens. É a propriedade mais fraca das três, no sentido de ser a primeira a cair — e é exatamente a que o Flame explorou.
+
+Essa gradação é o que torna a pergunta "MD5 está quebrado?" mal formulada. MD5 tem resistência a colisão **destruída** — colisões saem em segundos num notebook. Sua resistência à pré-imagem, no entanto, continua de pé: ninguém sabe, hoje, inverter um resumo MD5 arbitrário. Por isso MD5 permanece aceitável para detectar corrupção acidental de um arquivo baixado (uso que depende só de pré-imagem, e contra um adversário que não existe) e é **catastrófico** para assinatura digital, certificados, deduplicação com implicação de segurança ou qualquer coisa em que um adversário escolha o conteúdo.
+
+### Colisões são inevitáveis; o que importa é o custo
+
+Uma função que mapeia entradas infinitas em saídas de 256 bits necessariamente tem colisões — o princípio da casa dos pombos garante. A segurança está no custo de **encontrar** uma.
+
+E aqui entra o **paradoxo do aniversário**, que é a origem de uma confusão persistente. Para encontrar uma colisão qualquer em uma função de $n$ bits, não são necessárias $2^n$ tentativas, e sim aproximadamente $2^{n/2}$. Em SHA-256, isso significa $2^{128}$ — ainda inviável. Mas explica por que **o tamanho do resumo deve ser o dobro do nível de segurança desejado**: para 128 bits de segurança contra colisão, o resumo precisa de 256 bits.
+
+É também por isso que resumos truncados exigem cuidado. Truncar SHA-256 para 64 bits deixa a resistência a colisão em $2^{32}$ — cerca de quatro bilhões de operações, questão de segundos. Identificadores curtos derivados de hash são convenientes e não são garantia de unicidade contra um adversário.
+
+## A linha do tempo, e onde estamos
+
+| Função | Saída | Situação em 2026 | Uso |
+|---|---|---|---|
+| MD5 | 128 bits | Colisões em segundos; pré-imagem intacta | Só verificação de corrupção acidental |
+| SHA-1 | 160 bits | Colisão prática desde 2017; prefixo escolhido desde 2020 | **Aposentar.** Legado apenas |
+| SHA-256 / SHA-512 | 256 / 512 bits | Sólida; nenhum ataque prático | **Padrão para uso geral** |
+| SHA-3 (Keccak) | 224–512 bits | Sólida; construção interna distinta | Alternativa estrutural ao SHA-2 |
+| BLAKE2 / BLAKE3 | variável | Sólida; muito rápida em software | Excelente onde desempenho importa |
+
+: Estado das principais funções hash. {#tbl-estado-hash}
+
+O **SHA-1** merece um parágrafo, porque sua morte foi lenta e instrutiva. Fraquezas teóricas apareceram em 2005. Em 2017, o ataque SHAttered produziu dois PDFs distintos com o mesmo resumo SHA-1 [@stevens2017] — mas era uma colisão de prefixo *idêntico*, de utilidade prática limitada. Em 2020, o ataque SHA-1 is a Shambles entregou **colisão de prefixo escolhido** por cerca de 45 mil dólares em nuvem, que é o tipo de colisão que forja certificados e assinaturas. Entre a primeira fraqueza teórica e a exploração barata passaram quinze anos — tempo mais que suficiente para migrar, e ainda assim SHA-1 aparece em ambientes de produção hoje.
+
+**SHA-2 e SHA-3 não competem, coexistem.** SHA-2 usa a construção Merkle–Damgård, a mesma família estrutural de MD5 e SHA-1. Continua sólido, mas herda dessa família uma peculiaridade que será discutida a seguir. SHA-3, escolhido em competição pública em 2015 [@fips202], usa uma construção completamente diferente — a *esponja* — e existe justamente como seguro estrutural: se algum dia aparecer um ataque genérico contra Merkle–Damgård, SHA-3 não é afetado. Na prática, use SHA-256 por omissão; SHA-3 e BLAKE são escolhas legítimas, não obrigatórias.
+
+## Hash não é criptografia, e hash não é anonimização
+
+Dois equívocos que aparecem em auditoria com frequência incômoda.
+
+**Hash não é criptografia** porque não há chave e não há como voltar. Se o dado precisa ser recuperado, hash é a ferramenta errada — o @sec-cap016 tem a certa. "Nós fazemos hash dos dados do cartão para protegê-los" descreve, na melhor hipótese, um sistema que perdeu os dados; na pior, um sistema que os expôs.
+
+**Hash não anonimiza domínios pequenos**, e essa é a armadilha cara. A função é pública e determinística: qualquer pessoa pode calcular o resumo de todas as entradas possíveis e montar a tabela reversa. O resultado depende inteiramente do tamanho do espaço de entrada:
+
+| Dado | Entradas possíveis | Tempo para tabela completa |
+|---|---|---|
+| CPF | $\approx 1{,}1 \times 10^{10}$ | Minutos em GPU comum |
+| Telefone celular brasileiro | $\approx 10^{10}$ | Minutos |
+| Placa de veículo | $\approx 10^{8}$ | Segundos |
+| E-mail de domínio conhecido | Depende da lista | Horas, com listas vazadas |
+| Chave AES-256 aleatória | $2^{256}$ | Inviável |
+
+: Reversibilidade de hash por tamanho do espaço de entrada. {#tbl-hash-dominio}
+
+A conclusão operacional é direta: **hash de identificador nacional não é anonimização, é pseudonimização — e fraca**. O @sec-cap015 já registrou a consequência jurídica no Brasil; a consequência técnica é que, se o objetivo é publicar dado sem reidentificação, hash simples não serve. O que ajuda é hash com chave (HMAC com segredo que nunca é publicado), *salt* por registro, ou técnicas de agregação e ruído que o Volume 16 trata.
+
+## Length extension: a peculiaridade que matou o MAC caseiro
+
+Suponha que alguém queira autenticar mensagens com um segredo compartilhado, e implemente o mais óbvio: `MAC = SHA256(segredo || mensagem)`. É intuitivo, é errado, e o motivo é estrutural.
+
+Funções da família Merkle–Damgård — MD5, SHA-1, SHA-2 — processam a entrada em blocos, mantendo um estado interno que é atualizado bloco a bloco. **O resumo final é o estado interno.** Quem conhece o resumo conhece o estado da função ao fim da mensagem, e pode continuar a partir dele.
+
+Na prática, um atacante que veja `mensagem` e `SHA256(segredo || mensagem)`, sem conhecer o segredo, consegue produzir um MAC válido para `mensagem || preenchimento || acrescimo`, para qualquer `acrescimo` que escolher. Ele nem precisa saber o segredo — basta saber seu **comprimento**. Um parâmetro `&admin=false` vira `&admin=false<lixo>&admin=true`, com MAC válido, e a aplicação que lê o último valor do parâmetro obedece.
+
+A @fig-hmac mostra o problema e a construção que o resolve.
+
+::: {#fig-hmac}
+```{.tikz}
+%%| filename: hmac-construcao
+%%| alt: Diagrama comparando o MAC ingênuo vulnerável a extensão de comprimento com a construção HMAC de duas passadas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bloco/.style={draw=manualgray, thick, fill=white, rounded corners=3pt,
+                  align=center, inner sep=4pt, minimum width=2.3cm, minimum height=0.85cm,
+                  font=\scriptsize},
+    hfun/.style={draw=manualblue, very thick, fill=manualblue!12, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=2.0cm, minimum height=0.9cm,
+                 font=\scriptsize},
+    ruim/.style={draw=manualred, very thick, fill=manualred!10, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=2.3cm, minimum height=0.85cm,
+                 font=\scriptsize},
+    bom/.style={draw=manualgreen, very thick, fill=manualgreen!12, rounded corners=3pt,
+                align=center, inner sep=4pt, minimum width=2.3cm, minimum height=0.85cm,
+                font=\scriptsize},
+    nota/.style={align=left, font=\scriptsize, manualgray}}
+
+  % ---- ingenuo ----
+  \node[nota, anchor=west, font=\scriptsize] at (-1.0,2.2)
+    {\textbf{\textcolor{manualred}{MAC ingênuo}} — vulnerável a extensão de comprimento};
+  \node[bloco] (s1) at (0,1.0) {segredo};
+  \node[bloco] (m1) at (2.5,1.0) {mensagem};
+  \node[hfun]  (h1) at (5.3,1.0) {SHA-256};
+  \node[ruim]  (t1) at (8.0,1.0) {MAC};
+  \draw[auxiliar, ->, >=stealth] (s1) -- (m1);
+  \draw[auxiliar, ->, >=stealth] (m1) -- (h1);
+  \draw[auxiliar, ->, >=stealth] (h1) -- (t1);
+  \node[nota, anchor=west, text width=5.0cm] at (9.4,1.0)
+    {O MAC \textbf{é} o estado interno final.\\
+     O atacante continua daí e forja\\
+     MAC válido para a mensagem estendida.};
+
+  % ---- HMAC ----
+  \node[nota, anchor=west, font=\scriptsize] at (-1.0,-1.2)
+    {\textbf{\textcolor{manualgreen}{HMAC}} — duas passadas, o estado nunca é a saída};
+  \node[bloco] (k1) at (0,-2.4) {$K \oplus$ ipad};
+  \node[bloco] (m2) at (2.5,-2.4) {mensagem};
+  \node[hfun]  (h2) at (5.3,-2.4) {SHA-256};
+  \node[bloco] (i2) at (8.0,-2.4) {resumo interno};
+  \draw[auxiliar, ->, >=stealth] (k1) -- (m2);
+  \draw[auxiliar, ->, >=stealth] (m2) -- (h2);
+  \draw[auxiliar, ->, >=stealth] (h2) -- (i2);
+
+  \node[bloco] (k2) at (2.5,-4.2) {$K \oplus$ opad};
+  \node[hfun]  (h3) at (5.3,-4.2) {SHA-256};
+  \node[bom]   (t2) at (8.0,-4.2) {HMAC};
+  \draw[destaque, manualgreen, ->, >=stealth] (i2) -- ++(0,-0.9) -| (3.9,-4.2) -- (h3);
+  \draw[auxiliar, ->, >=stealth] (k2) -- (h3);
+  \draw[auxiliar, ->, >=stealth] (h3) -- (t2);
+  \node[nota, anchor=west, text width=5.0cm] at (9.4,-3.3)
+    {A segunda passada esconde o estado.\\
+     Extensão de comprimento deixa de\\
+     funcionar, e a segurança do HMAC\\
+     não depende de resistência a colisão.};
+\end{tikzpicture}
+```
+O MAC ingênuo entrega o estado interno da função; o HMAC o esconde atrás de uma segunda passada.
+:::
+
+## MAC e HMAC: integridade com autenticidade
+
+Vale separar dois conceitos que o vocabulário corrente mistura:
+
+- **Hash simples** detecta alteração **acidental**. Não detecta alteração maliciosa, porque quem alterou o dado recalcula o resumo.
+- **MAC** (código de autenticação de mensagem) usa uma **chave secreta** e detecta alteração **maliciosa**, porque só quem tem a chave produz um MAC válido.
+
+Publicar o SHA-256 de um arquivo no mesmo servidor que hospeda o arquivo protege contra corrupção de transferência e contra praticamente nada mais: quem comprometeu o servidor troca os dois. É por isso que distribuições Linux publicam o arquivo de resumos **assinado** com GPG — a assinatura é o que adiciona autenticidade, e o resumo é apenas o que a assinatura cobre.
+
+O **HMAC** [@rfc2104] é a construção padrão de MAC a partir de função hash. Sua definição é duas passadas com a chave misturada por constantes distintas:
+
+$$\mathrm{HMAC}_K(M) = H\big((K \oplus \mathrm{opad}) \,\|\, H((K \oplus \mathrm{ipad}) \,\|\, M)\big)$$
+
+O que importa não é memorizar a fórmula, e sim três consequências práticas:
+
+1. **Resolve a extensão de comprimento**, porque a saída nunca é o estado interno de uma passada sobre a mensagem.
+2. **É demonstravelmente seguro sob hipóteses fracas.** HMAC-SHA1 permanece seguro como MAC mesmo com SHA-1 colidido, porque a segurança do HMAC não depende de resistência a colisão. Isso não é motivo para manter HMAC-SHA1 — é motivo para não entrar em pânico ao encontrá-lo.
+3. **Usa uma chave**, e essa chave precisa vir de CSPRNG e ter pelo menos o tamanho da saída da função.
+
+Alternativas modernas incluem **KMAC** (baseado em SHA-3) e **Poly1305** (o autenticador do ChaCha20-Poly1305, do @sec-cap016). Para uso geral, HMAC-SHA256 continua sendo a escolha correta e universalmente disponível.
+
+### Comparar MAC em tempo constante
+
+Detalhe pequeno, consequência grande. Comparar dois MACs com o operador de igualdade da linguagem quase sempre invoca uma comparação que **retorna assim que encontra o primeiro byte diferente**. Isso torna o tempo de resposta proporcional ao número de bytes iniciais corretos.
+
+Um atacante que consiga medir esse tempo — e a rede moderna, com estatística suficiente, permite —, descobre o MAC **byte a byte**: fixa o primeiro byte testando 256 valores, escolhe o que demorou mais, passa ao segundo. São 256 × 32 tentativas em vez de $2^{256}$.
+
+A correção é usar a função de comparação em tempo constante que toda plataforma oferece: `hmac.compare_digest` no Python, `crypto.timingSafeEqual` no Node, `MessageDigest.isEqual` no Java, `subtle.ConstantTimeCompare` no Go, `CRYPTO_memcmp` no OpenSSL.
+
+## Derivar chave e guardar senha: usos opostos
+
+Duas famílias de funções derivadas de hash são constantemente confundidas, e o critério que as separa é uma inversão completa de objetivo.
+
+**KDF de derivação de chave** — a exemplo do **HKDF** [@rfc5869] — parte de material com **alta entropia** (um segredo de Diffie-Hellman, uma chave mestra) e produz várias chaves independentes. O objetivo é separação de domínio: uma chave para cifrar, outra para autenticar, outra por sessão, todas derivadas do mesmo segredo sem que uma revele a outra. HKDF opera em duas etapas — *extract* concentra a entropia, *expand* produz o material do tamanho necessário, parametrizado por um rótulo de contexto. É o que o TLS 1.3 usa para derivar todas as chaves do handshake, como o @sec-cap020 mostra. **HKDF é rápido de propósito**, porque a entrada já é imprevisível.
+
+**Função de hash de senha** — **Argon2**, **scrypt**, **bcrypt**, **PBKDF2** — parte de material com **baixíssima entropia** (uma senha humana) e precisa ser **deliberadamente lenta e cara**, porque o atacante que obtiver a base vai testar bilhões de candidatos. Argon2id [@rfc9106] é a recomendação atual, e sua característica decisiva é o **custo de memória**: exigir centenas de megabytes por tentativa neutraliza a vantagem de GPUs e ASICs, que têm muitos núcleos e pouca memória por núcleo.
+
+O erro fatal é usar a família errada:
+
+| Situação | Correto | Erro comum |
+|---|---|---|
+| Derivar chaves de um segredo de handshake | HKDF-SHA256 | Argon2 (lento sem necessidade) |
+| Armazenar senha de usuário | Argon2id, scrypt, bcrypt | **SHA-256, mesmo com sal** |
+| Derivar chave a partir de senha (cofre, disco) | Argon2id, PBKDF2 com muitas iterações | SHA-256 iterado à mão |
+| Verificar integridade de arquivo | SHA-256 | — |
+
+: Qual família de função usar em cada situação. {#tbl-kdf-vs-senha}
+
+A linha do meio é a que mais aparece em incidente real. `SHA256(senha + sal)` é rápido — e essa é exatamente a propriedade que o torna inadequado. Uma GPU moderna calcula dezenas de bilhões de SHA-256 por segundo; com Argon2id configurado para 100 ms e 256 MB por tentativa, o mesmo hardware faz algumas dezenas. O @sec-cap015 registrou que hash rápido é ótimo para integridade e péssimo para senha; o Volume 4 aprofunda o tema no capítulo de senhas.
+
+## Árvores de Merkle: integridade que escala
+
+Verificar a integridade de um conjunto grande de dados com um único resumo tem um problema prático: qualquer alteração invalida o resumo inteiro, e descobrir **onde** está a alteração exige recomputar tudo.
+
+A **árvore de Merkle** resolve isso. Cada folha é o resumo de um bloco de dados; cada nó interno é o resumo da concatenação dos resumos de seus filhos; a raiz resume o conjunto inteiro. A @fig-merkle mostra a estrutura.
+
+::: {#fig-merkle}
+```{.tikz}
+%%| filename: arvore-merkle
+%%| alt: Árvore de Merkle com quatro blocos de dados, seus resumos nas folhas, dois nós intermediários e a raiz, com destaque para o caminho de prova de inclusão de um bloco
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    dado/.style={draw=manualgray, thick, fill=white, rounded corners=2pt,
+                 align=center, inner sep=3pt, minimum width=1.9cm, minimum height=0.7cm,
+                 font=\scriptsize},
+    folha/.style={draw=manualblue, thick, fill=manualblue!10, rounded corners=2pt,
+                  align=center, inner sep=3pt, minimum width=1.9cm, minimum height=0.7cm,
+                  font=\scriptsize},
+    interno/.style={draw=manualblue, very thick, fill=manualblue!16, rounded corners=2pt,
+                    align=center, inner sep=3pt, minimum width=2.4cm, minimum height=0.75cm,
+                    font=\scriptsize},
+    raiz/.style={draw=manualgreen, very thick, fill=manualgreen!14, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=3.0cm, minimum height=0.9cm,
+                 font=\scriptsize},
+    prova/.style={draw=manualred, very thick, fill=manualred!12, rounded corners=2pt,
+                  align=center, inner sep=3pt, minimum width=2.4cm, minimum height=0.75cm,
+                  font=\scriptsize},
+    nota/.style={align=left, font=\scriptsize, manualgray}}
+
+  \node[raiz] (r) at (4.5,3.4) {\textbf{Raiz}\\\scriptsize $H(H_{AB} \| H_{CD})$};
+  \node[interno] (ab) at (1.8,1.7) {$H_{AB}$};
+  \node[prova]   (cd) at (7.2,1.7) {$H_{CD}$};
+
+  \node[folha] (ha) at (0.3,0.1) {$H_A$};
+  \node[prova] (hb) at (3.3,0.1) {$H_B$};
+  \node[folha] (hc) at (6.0,0.1) {$H_C$};
+  \node[folha] (hd) at (8.7,0.1) {$H_D$};
+
+  \node[dado, draw=manualred, fill=manualred!8] (a) at (0.3,-1.4) {bloco A};
+  \node[dado] (b) at (3.3,-1.4) {bloco B};
+  \node[dado] (c) at (6.0,-1.4) {bloco C};
+  \node[dado] (d) at (8.7,-1.4) {bloco D};
+
+  \foreach \x/\y in {a/ha, b/hb, c/hc, d/hd}
+    \draw[auxiliar, ->, >=stealth] (\x) -- (\y);
+  \draw[auxiliar, ->, >=stealth] (ha) -- (ab);
+  \draw[auxiliar, ->, >=stealth] (hb) -- (ab);
+  \draw[auxiliar, ->, >=stealth] (hc) -- (cd);
+  \draw[auxiliar, ->, >=stealth] (hd) -- (cd);
+  \draw[auxiliar, ->, >=stealth] (ab) -- (r);
+  \draw[auxiliar, ->, >=stealth] (cd) -- (r);
+
+  \node[nota, anchor=west, text width=5.2cm] at (10.4,1.2)
+    {\textbf{\textcolor{manualred}{Prova de inclusão do bloco A}}\\[2pt]
+     Basta $H_B$ e $H_{CD}$ — dois resumos — para\\
+     recomputar a raiz e provar que A pertence\\
+     ao conjunto, sem ver B, C nem D.\\[4pt]
+     Em $n$ blocos, a prova tem $\log_2 n$ resumos:\\
+     um milhão de blocos, vinte resumos.};
+\end{tikzpicture}
+```
+Árvore de Merkle. A prova de inclusão cresce logaritmicamente, não linearmente.
+:::
+
+A propriedade que faz a estrutura valer a pena é a **prova de inclusão**: para provar que um bloco pertence ao conjunto, basta apresentar os resumos irmãos ao longo do caminho até a raiz — $\log_2 n$ resumos, não $n$. Um conjunto de um milhão de blocos gera prova de vinte resumos.
+
+Isso não é curiosidade acadêmica. É o que sustenta:
+
+- O **Git**, em que cada *commit* referencia a árvore por resumo, e o histórico inteiro é uma cadeia de resumos encadeados — razão pela qual reescrever história muda todos os identificadores seguintes.
+- O **Certificate Transparency** [@rfc6962], que o @sec-cap019 detalha: registros públicos de certificados emitidos, em que a árvore permite provar inclusão e consistência sem baixar o registro inteiro.
+- **Backup e sincronização** com deduplicação e verificação incremental (ZFS, `restic`, `rsync` com resumos).
+- **Blockchains**, em que a árvore permite validar uma transação sem baixar o bloco completo.
+
+## ⚖️ Brasil em Foco
+
+**Hash de CPF não anonimiza, e a distinção tem consequência regulatória.** A LGPD retira de seu escopo o dado anonimizado (art. 12) e mantém sob a lei o pseudonimizado. O art. 12, §1º é explícito: não se considera anonimizado o dado cujo processo de anonimização possa ser revertido "com esforços razoáveis". Com 1,1 bilhão de CPFs possíveis e uma GPU comum, a reversão de um SHA-256 de CPF não exige esforço razoável — exige alguns minutos. Publicar base "anonimizada por hash" é, na prática, publicar a base, e a ANPD já tratou o tema em seu guia de agentes de tratamento. Quando o objetivo é usar identificador sem expor o titular, o caminho técnico é **HMAC com chave mantida em segredo e sob custódia separada** [@lgpd2018; @anpd2023guia].
+
+**Assinatura ICP-Brasil depende do algoritmo de resumo, não só da chave.** A assinatura digital assina o resumo do documento, e por isso a política de assinatura da ICP-Brasil especifica quais funções são admitidas. Documentos assinados com SHA-1 em anos anteriores permanecem juridicamente válidos pelo princípio da lei vigente à época, mas **novas assinaturas com resumo obsoleto são rejeitadas pelos validadores oficiais**. Para quem opera emissão de NF-e, peticionamento eletrônico ou o Assinador ITI, o efeito prático é que uma biblioteca desatualizada gera documentos que não passam na validação — e a mensagem de erro raramente aponta para o resumo [@mp2200; @iti2024].
+
+**Integridade de log é requisito de investigação, não só de auditoria.** O Marco Civil (Lei 12.965/2014) obriga provedores de conexão a guardar registros de conexão por um ano e provedores de aplicação a guardar registros de acesso por seis meses. Registro que possa ter sido alterado tem valor probatório frágil. A prática que resolve é encadeamento por resumo — cada lote de registros carrega o resumo do lote anterior, formando uma cadeia em que qualquer remoção ou alteração quebra a sequência — combinada com carimbo de tempo e, quando o caso justificar, assinatura. O Volume 13 trata de cadeia de custódia; a primitiva que sustenta tudo é esta [@marcocivil2014].
+
+**No arranjo do Pix e no Open Finance, HMAC e resumo aparecem em requisito contratual.** A verificação de integridade de mensagens, os identificadores de idempotência e o registro de chaves envolvem construções baseadas em hash, com especificação explícita de algoritmo nos manuais operacionais. Instituições que integram por meio de terceiros herdam essas exigências, e a homologação verifica algoritmo e formato — não apenas "usa criptografia" [@bcb4893].
+
+**Vazamentos brasileiros mostraram o custo do hash rápido em senha.** Diversos incidentes divulgados no país expuseram bases com senhas em MD5 ou SHA-1 sem sal, o que equivale, para senhas comuns, a expor as senhas em texto claro: tabelas prontas cobrem as senhas mais usadas, e a reutilização de senha entre serviços transforma um vazamento em comprometimento em cadeia. Sob a ótica do art. 48 da LGPD, base com senha em hash rápido dificilmente sustenta a tese de ausência de risco relevante ao titular.
+
+## 🛠️ No Campo
+
+**1. Encontre MD5 e SHA-1 nos caminhos que importam.** Nem toda ocorrência é problema — o que interessa é o uso:
+
+```bash
+grep -rniE 'MD5|SHA-?1\b' --include='*.py' --include='*.java' --include='*.go' \
+     --include='*.js' --include='*.cs' --include='*.php' . \
+  | grep -viE 'test|vendor|node_modules|checksum de download'
+
+# Certificados assinados com algoritmo obsoleto no parque
+for c in /etc/ssl/certs/*.pem; do
+  alg=$(openssl x509 -in "$c" -noout -text 2>/dev/null | grep -m1 'Signature Algorithm')
+  case "$alg" in *md5*|*sha1*) echo "OBSOLETO: $c -> $alg";; esac
+done
+```
+
+Classifique cada achado por propriedade: se o uso depende de resistência a colisão (assinatura, certificado, identificador com significado de segurança, deduplicação confiável), é achado alto. Se depende só de detecção de corrupção acidental, é dívida técnica de baixa prioridade.
+
+**2. Substitua toda comparação de MAC por comparação em tempo constante.** Busca de um minuto, correção de dois:
+
+```bash
+grep -rnE '(hmac|mac|signature|token|digest)\s*==|==\s*(hmac|mac|signature|digest)' \
+     --include='*.py' --include='*.js' --include='*.go' --include='*.java' . -i
+```
+
+```python
+# Errado: retorna no primeiro byte divergente
+if calculado == recebido: ...
+
+# Certo
+import hmac
+if hmac.compare_digest(calculado, recebido): ...
+```
+
+**3. Nunca construa MAC concatenando segredo e mensagem.** A regra que evita a extensão de comprimento sem exigir que ninguém a entenda:
+
+```python
+# Errado — vulnerável a length extension
+import hashlib
+mac = hashlib.sha256(segredo + mensagem).hexdigest()
+
+# Certo
+import hmac, hashlib
+mac = hmac.new(chave, mensagem, hashlib.sha256).hexdigest()
+```
+
+**4. Verifique as duas propriedades ao publicar artefatos.** Resumo publicado ao lado do arquivo protege contra corrupção; **assinatura** sobre o arquivo de resumos protege contra adulteração:
+
+```bash
+sha256sum -c SHA256SUMS               # integridade do conteúdo
+gpg --verify SHA256SUMS.asc SHA256SUMS # autenticidade da lista
+```
+
+Executar só o primeiro comando é o erro que faz o *checksum* parecer um controle de segurança quando é apenas um controle de qualidade de transferência.
+
+**5. Encadeie os registros por resumo onde a integridade tiver valor probatório.** Barato de implementar, difícil de retroagir:
+
+```bash
+# Sela diária: cada dia carrega o resumo do dia anterior
+ANTERIOR=$(cat /var/log/selo/$(date -d yesterday +%F).sha 2>/dev/null || echo GENESE)
+{ echo "prev=$ANTERIOR"; cat /var/log/auth.log; } \
+  | sha256sum | awk '{print $1}' > /var/log/selo/$(date +%F).sha
+```
+
+O selo deve viver em armazenamento separado e preferencialmente somente-anexação — encadeamento cujo arquivo de selos está no mesmo servidor comprometido não prova nada. O Volume 12 trata do restante.
+
+**6. Ajuste o custo do Argon2 ao seu hardware, e reavalie anualmente.** Parâmetro de fábrica raramente é adequado. O alvo é o maior custo que a sua carga suporta:
+
+```python
+from argon2 import PasswordHasher
+ph = PasswordHasher(time_cost=3, memory_cost=262144, parallelism=4)  # 256 MB
+h = ph.hash("senha-do-usuario")
+# Meça: o objetivo é 100-500 ms por verificacao no hardware de producao.
+```
+
+Registre os parâmetros junto do resumo — todo formato moderno já os embute — para permitir aumentar o custo depois sem invalidar as senhas existentes.
+
+**7. Documente qual propriedade cada uso depende.** Uma coluna a mais no inventário de algoritmos do @sec-cap015: para cada uso de hash, anote se depende de pré-imagem, de segunda pré-imagem ou de colisão. É o que permite responder, na próxima manchete sobre uma função quebrada, se aquilo afeta ou não o seu sistema — e a resposta costuma ser mais tranquila do que a manchete sugere.
+
+**8. Trate identificador derivado de hash como identificador, não como segredo.** Resumo truncado para caber em URL, chave de cache ou nome de arquivo é conveniente e não é imprevisível para quem conhece a entrada. Se o valor precisa ser difícil de adivinhar, ele tem de vir de CSPRNG — não de hash de algo que o atacante pode enumerar, como um identificador sequencial ou um e-mail.
+
+## Resumo
+
+- Uma função hash criptográfica tem **três propriedades distintas** — pré-imagem, segunda pré-imagem e colisão — e cada uso depende de uma delas. "Está quebrado?" é pergunta mal formulada; a certa é qual propriedade caiu e se o seu uso depende dela.
+- **MD5 tem resistência a colisão destruída e pré-imagem intacta.** Serve para detectar corrupção acidental; é catastrófico para assinatura, como o Flame demonstrou ao forjar um certificado da Microsoft em 2012.
+- **SHA-1 está morto para uso adversarial** desde a colisão de prefixo escolhido de 2020, por cerca de 45 mil dólares. SHA-256 é o padrão; SHA-3 e BLAKE são alternativas legítimas, não obrigatórias.
+- O **paradoxo do aniversário** exige resumo do dobro do nível de segurança pretendido, e torna resumos truncados perigosos: 64 bits de resumo caem em segundos.
+- **Hash não anonimiza domínio pequeno.** A tabela reversa completa de CPFs sai em minutos numa GPU. Para pseudonimizar de verdade, HMAC com chave sob custódia separada.
+- Funções Merkle–Damgård expõem o estado interno na saída, e por isso `H(segredo || mensagem)` **não é um MAC**: sofre extensão de comprimento. **HMAC** resolve com duas passadas e não depende de resistência a colisão.
+- **Comparação de MAC precisa ser em tempo constante.** Comparação ingênua vaza o MAC byte a byte por temporização.
+- **Derivar chave e guardar senha são objetivos opostos**: HKDF é rápido de propósito, porque a entrada já tem entropia; Argon2id é lento e caro em memória de propósito, porque a entrada é uma senha humana. Trocar as famílias é o erro mais comum.
+- **Árvores de Merkle** dão prova de inclusão logarítmica, e sustentam Git, Certificate Transparency, backup deduplicado e blockchains.
+- No Brasil, hash de CPF não é anonimização sob a LGPD, a validade de assinatura ICP-Brasil depende do algoritmo de resumo, e integridade encadeada de registros é o que dá valor probatório à guarda exigida pelo Marco Civil.
