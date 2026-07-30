@@ -1,3 +1,336 @@
 # Gestão de identidades e de acessos privilegiados (IAM e PAM) {#sec-cap026}
 
-*(em elaboracao)*
+Toda auditoria de acesso encontra a mesma pessoa. Ela entrou como estagiária no suporte, virou analista, passou pela equipe de infraestrutura, foi para o financeiro e hoje é coordenadora de projetos. Em doze anos, acumulou os acessos de cinco funções — e nunca perdeu um. Tem permissão de leitura no banco de produção que ninguém mais do time dela tem, ainda administra três máquinas virtuais que sobraram do tempo de infra, e continua no grupo que aprova pagamento.
+
+Ninguém errou. Cada concessão foi legítima no dia em que aconteceu. O que faltou foi o outro lado da operação: **remover**. E a soma de doze anos de concessões legítimas sem nenhuma revogação produz um acesso que nenhum gestor teria aprovado se lhe pedissem tudo de uma vez.
+
+Esse é o problema que a gestão de identidades resolve. O @sec-cap022 tratou de *como decidir* quem pode o quê; este capítulo trata de *como operar essa decisão ao longo do tempo*, em escala, com rotatividade — e do subconjunto onde o erro custa mais caro: o acesso privilegiado.
+
+## O ciclo de vida da identidade
+
+Uma identidade corporativa nasce, muda e morre. A disciplina de IAM é fazer com que os três eventos aconteçam no sistema no mesmo ritmo em que acontecem na realidade.
+
+A regra estruturante é que **a fonte da verdade é o RH, não a TI**. Quem sabe que alguém foi contratado, mudou de área ou foi desligado é o sistema de gestão de pessoas. Todo processo que depende de um e-mail avisando a TI vai falhar — não por má vontade, mas porque processos manuais têm taxa de erro e o desligamento costuma acontecer numa sexta-feira à tarde.
+
+::: {#fig-ciclo-identidade}
+```{.tikz}
+%%| filename: ciclo-vida-identidade
+%%| alt: Ciclo de vida da identidade corporativa com as fases de admissão, mudança e desligamento, mostrando o que deve ser automatizado em cada uma e o ponto onde o acúmulo de privilégios acontece
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fase/.style={draw, very thick, rounded corners=4pt, align=left, inner sep=5pt,
+                 text width=5.0cm, font=\scriptsize, minimum height=2.3cm},
+    fx/.style={->, >=stealth, very thick, manualgray}}
+
+  \node[fase, draw=manualgreen, fill=manualgreen!12] (adm) at (0,0)
+    {\textbf{Admissão (\emph{joiner})}\\[3pt]
+     Gatilho: registro no RH\\
+     $\rightarrow$ cria identidade única\\
+     $\rightarrow$ atribui papéis do cargo\\
+     $\rightarrow$ provisiona nos sistemas\\
+     $\rightarrow$ exige registro de MFA\\[2pt]
+     \emph{Acesso básico no 1º dia, nada além}};
+
+  \node[fase, draw=manualyellow, fill=manualyellow!14] (mud) at (6.2,0)
+    {\textbf{Mudança (\emph{mover})}\\[3pt]
+     Gatilho: transferência, promoção\\
+     $\rightarrow$ atribui papéis novos\\
+     $\rightarrow$ \textcolor{manualred}{\textbf{remove os antigos}}\\
+     $\rightarrow$ reavalia acesso privilegiado\\[2pt]
+     \textcolor{manualred}{\textbf{É aqui que o acúmulo nasce:}
+     quase todo processo faz a primeira seta e esquece a segunda}};
+
+  \node[fase, draw=manualred, fill=manualred!10] (des) at (12.4,0)
+    {\textbf{Desligamento (\emph{leaver})}\\[3pt]
+     Gatilho: término no RH\\
+     $\rightarrow$ desativa (não apaga)\\
+     $\rightarrow$ encerra sessões e tokens\\
+     $\rightarrow$ rotaciona segredos que tocou\\
+     $\rightarrow$ transfere propriedade de dados\\[2pt]
+     \emph{Minutos, não dias}};
+
+  \draw[fx] (adm) -- (mud);
+  \draw[fx] (mud) -- (des);
+  \draw[fx, manualgray, dashed] (mud.south) to[bend right=25]
+     node[midway, below, font=\scriptsize] {ciclos sucessivos} (mud.north);
+
+  \node[draw=manualgray, thick, fill=white, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.8cm] at (6.2,-2.6)
+    {\textbf{O desligamento recebe toda a atenção; a mudança é onde o risco se acumula.}
+     Doze anos de transferências sem revogação produzem um acesso que nenhum gestor aprovaria
+     se lhe fosse apresentado inteiro, de uma vez --- e que também nunca foi negado, porque
+     nunca foi pedido.};
+\end{tikzpicture}
+```
+As três fases do ciclo de vida. A do meio é a que quebra na prática.
+:::
+
+### Admissão
+
+O objetivo é que a pessoa tenha, no primeiro dia, exatamente o acesso do cargo — e nada mais. O padrão que funciona é o **acesso por nascimento** (*birthright access*): um conjunto derivado automaticamente de cargo, departamento e localidade. Tudo além disso passa por solicitação com aprovação.
+
+O erro mais comum aqui tem nome: **clonagem de acesso**. "Dê ao novo analista o mesmo acesso do Bruno." É rápido, é tentador, e propaga em uma operação todo o acúmulo de privilégios que o Bruno juntou em oito anos. Uma vez adotada, a clonagem faz o excesso crescer geometricamente.
+
+### Mudança
+
+É a fase que quase todo mundo implementa pela metade. O gatilho da transferência concede o acesso novo — porque a pessoa reclama se não tiver — e não remove o antigo, porque ninguém reclama do que sobra.
+
+A implementação correta trata a mudança como **desligamento seguido de admissão**: revoga tudo o que derivava do cargo anterior e concede o que deriva do novo, com um período de sobreposição curto e explícito onde a transição de trabalho exigir. E toda exceção a essa regra recebe prazo de validade.
+
+### Desligamento
+
+O relógio importa. Entre a decisão de desligar e a desativação efetiva existe uma janela, e é nela que ocorrem a cópia de base de clientes, a exclusão de arquivos e o acesso de retaliação. O alvo é **minutos**, com o gatilho vindo do RH.
+
+E desativar a conta principal não basta. O que sobrevive a um desligamento mal feito:
+
+- Tokens de API e chaves de acesso emitidas em nome da pessoa
+- Chaves SSH espalhadas por `authorized_keys` de servidores
+- Sessões ativas em aplicações federadas (que valem até o token expirar, @sec-cap025)
+- Contas locais em equipamentos de rede e appliances, fora do diretório
+- Acesso a repositórios de código, registros de contêiner e ferramentas de CI/CD
+- Credenciais compartilhadas que a pessoa conhecia — que precisam ser **rotacionadas**, não apenas revogadas
+- Encaminhamento de e-mail e regras de caixa postal configuradas para endereço externo
+
+Essa última merece destaque porque é usada tanto por ex-funcionário quanto por atacante: uma regra de encaminhamento continua exfiltrando mensagens depois que a conta foi desativada, se ela existir no nível do servidor.
+
+## Governança: além do provisionamento
+
+Provisionar é operar. Governar é responder — a qualquer momento, com evidência — a três perguntas: **quem tem acesso a quê? por quê? ainda deveria?**
+
+### Recertificação
+
+A campanha de revisão periódica é o instrumento principal, e a maioria delas é teatro. O sintoma é a taxa de revogação: campanhas que revogam menos de 5% dos acessos revisados estão medindo a velocidade de clique dos gestores, não a adequação dos acessos.
+
+O que faz a diferença:
+
+- **Padrão de exclusão, não de manutenção.** O acesso que o gestor não confirmar ativamente até o prazo é revogado. Inverte o ônus e é a única mudança que muda o resultado.
+- **Contexto na tela.** Mostre a data da última utilização daquele acesso. Gestor que vê "não usado há 14 meses" revoga; gestor que vê apenas `SAP_FI_DISPLAY_ALL` aprova.
+- **Escopo por risco.** Acesso privilegiado a cada trimestre; acesso comum a cada semestre; acesso de baixo risco anualmente ou nunca — revisar tudo com a mesma frequência dilui a atenção onde ela importa.
+- **Granularidade útil.** Revisar 400 permissões atômicas é impossível; revisar 12 papéis com descrição em linguagem de negócio é viável.
+
+### Solicitação e aprovação
+
+O acesso além do básico passa por um fluxo com quatro elementos: **justificativa** escrita pelo solicitante, **aprovação** de quem tem responsabilidade (gestor e, para dado sensível, o dono do dado), **prazo** de validade — acesso permanente é a exceção, não o padrão — e **registro** completo de quem pediu, quem aprovou, quando e por quê.
+
+O prazo é o item mais transformador e o menos adotado. Acesso concedido "até 31/12" desaparece sozinho; acesso permanente exige que alguém se lembre de removê-lo, o que nunca acontece.
+
+### Análise de acesso não utilizado
+
+O relatório mais barato e mais eficaz de toda a disciplina: permissões concedidas e nunca exercidas. As nuvens públicas oferecem isso pronto — o IAM Access Analyzer da AWS gera política com base no uso real, e há equivalentes no Azure e no GCP. A conversa com o gestor muda completamente quando a pergunta deixa de ser "ele precisa disso?" e passa a ser "ele não usou isso em 18 meses; podemos remover?".
+
+## Acesso privilegiado: onde o erro custa mais
+
+Conta privilegiada é a que pode alterar a configuração do sistema, acessar dado de todos os usuários, apagar registro de auditoria ou conceder privilégio a outros. Elas são uma fração pequena do total e concentram quase todo o risco — motivo pelo qual têm disciplina própria.
+
+O inventário costuma ser maior do que se imagina: administradores de domínio, `root` e `Administrator` locais, contas de serviço (numerosas, esquecidas e frequentemente com privilégio excessivo), administradores de banco, credenciais de equipamento de rede, chaves raiz de nuvem, credenciais de pipeline de CI/CD e contas de emergência.
+
+### As quatro capacidades do PAM
+
+::: {#fig-pam-capacidades}
+```{.tikz}
+%%| filename: pam-capacidades
+%%| alt: As quatro capacidades de uma solução de gestão de acesso privilegiado — cofre, intermediação de sessão, elevação temporária e gravação com auditoria — e o risco que cada uma trata
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bloco/.style={draw, very thick, rounded corners=4pt, align=left, inner sep=5pt,
+                text width=5.6cm, font=\scriptsize, minimum height=2.1cm}}
+
+  \node[bloco, draw=manualblue, fill=manualblue!12] at (0,0)
+    {\textbf{1. Cofre de credenciais}\\[2pt]
+     Senha privilegiada sai da planilha e do bilhete adesivo. Retirada registrada,
+     rotação automática após o uso.\\[2pt]
+     \emph{Trata: credencial compartilhada, senha eterna, uso sem rastro}};
+
+  \node[bloco, draw=manualgreen, fill=manualgreen!12] at (6.6,0)
+    {\textbf{2. Intermediação de sessão}\\[2pt]
+     A conexão passa por um intermediário que injeta a credencial. \textbf{O operador
+     nunca vê a senha.}\\[2pt]
+     \emph{Trata: vazamento da credencial, uso fora do canal controlado}};
+
+  \node[bloco, draw=manualyellow, fill=manualyellow!14] at (0,-2.7)
+    {\textbf{3. Elevação temporária (JIT)}\\[2pt]
+     Ninguém é administrador o tempo todo. Privilégio ativado sob justificativa,
+     com prazo, e expira sozinho.\\[2pt]
+     \emph{Trata: privilégio permanente --- o maior deles}};
+
+  \node[bloco, draw=manualred, fill=manualred!10] at (6.6,-2.7)
+    {\textbf{4. Gravação e auditoria}\\[2pt]
+     Sessão registrada, comandos capturados, alerta em ação de alto risco.\\[2pt]
+     \emph{Trata: ausência de evidência --- o problema que só aparece depois do incidente}};
+
+  \node[draw=manualgray, thick, fill=white, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=12.0cm] at (3.3,-4.9)
+    {\textbf{A terceira capacidade é a que muda a matemática do ataque.} Com elevação temporária,
+     a credencial roubada de um administrador normalmente não tem privilégio \emph{no momento do
+     roubo} --- e ativá-lo exige justificativa, aprovação e gera evento. Sem ela, toda estação
+     de administrador é uma chave permanente do domínio.};
+\end{tikzpicture}
+```
+As quatro capacidades de PAM e o risco específico que cada uma endereça.
+:::
+
+**Elevação temporária** merece o destaque que a figura lhe dá. O modelo tradicional — a pessoa *é* administradora do domínio, permanentemente — significa que comprometer a estação dela em qualquer momento é comprometer o domínio. Com acesso *just-in-time*, o privilégio existe por 60 minutos, mediante justificativa, com registro e alerta. Um roubo de credencial fora dessa janela rende uma conta comum.
+
+### Contas de serviço
+
+São o problema mais persistente do PAM, porque não têm dono natural, não trocam de senha, frequentemente têm privilégio muito além do necessário e ninguém sabe quais sistemas quebram se elas mudarem.
+
+O caminho é, sempre que possível, **eliminá-las**: identidade gerenciada em nuvem, autenticação por certificado, conta de serviço gerenciada por grupo no Active Directory — todas trocam a senha estática por credencial rotacionada pela plataforma. Onde a senha estática for inevitável, ela vai para o cofre, com rotação automatizada, dono nomeado e privilégio revisado.
+
+```powershell
+# Contas de servico com senha que nunca expira e privilegio de dominio
+Get-ADUser -Filter { PasswordNeverExpires -eq $true -and Enabled -eq $true } `
+  -Properties PasswordLastSet, MemberOf, ServicePrincipalName |
+  Where-Object { $_.ServicePrincipalName -or $_.MemberOf -match 'Admin' } |
+  Select-Object Name, PasswordLastSet,
+    @{n='DiasSemTroca';e={ (New-TimeSpan -Start $_.PasswordLastSet).Days }} |
+  Sort-Object DiasSemTroca -Descending
+```
+
+Encontrar contas com `DiasSemTroca` na casa dos milhares é rotina. Cada uma é uma credencial que sobreviveu a todos os desligamentos do período.
+
+### Kerberoasting: por que a conta de serviço fraca é um caminho para o domínio
+
+Vale explicar o mecanismo, porque ele conecta o @sec-cap023 a este capítulo e explica por que "senha de conta de serviço" não é detalhe.
+
+No Active Directory, qualquer usuário autenticado pode solicitar um tíquete de serviço para uma conta que tenha SPN registrado. Parte desse tíquete é cifrada com uma chave derivada da **senha da conta de serviço**. O atacante com acesso comum ao domínio solicita o tíquete, leva-o para fora e tenta quebrar a senha offline — sem limitação de taxa, sem gerar falhas de autenticação, sem alarme.
+
+Conta de serviço com senha de 10 caracteres criada em 2014 cai em horas. Se ela for administradora do domínio — situação lamentavelmente comum —, o comprometimento do domínio inteiro decorre de uma senha fraca escolhida uma década antes.
+
+As defesas são específicas: senha de 25 caracteres ou mais gerada aleatoriamente (o que torna a quebra offline inviável), preferência por contas gerenciadas por grupo (a plataforma gera e rotaciona senha de 240 bits), remoção de contas de serviço dos grupos administrativos, e detecção de solicitação anômala de tíquetes de serviço (evento 4769 com cifra RC4). O Volume 6 desenvolve o endurecimento do Active Directory em detalhe.
+
+### Modelo em camadas
+
+O princípio que organiza o acesso administrativo é impedir que credencial de alto privilégio apareça em máquina de baixa confiança:
+
+- **Camada 0** — controladores de domínio, IdP, PAM, autoridade certificadora. Administra-se apenas a partir de estações dedicadas, sem e-mail e sem navegação.
+- **Camada 1** — servidores e aplicações. Administradores próprios, que não têm privilégio na camada 0.
+- **Camada 2** — estações de trabalho e suporte ao usuário.
+
+A regra: credencial de uma camada nunca é usada em máquina de camada inferior. Administrador de domínio que abre sessão RDP numa estação de usuário para resolver um chamado deixa material de autenticação naquela máquina — e um atacante já presente ali o coleta. É assim que a maioria dos comprometimentos de domínio efetivamente acontece.
+
+## Métricas que revelam a saúde do programa
+
+| Métrica | Alvo | O que revela quando ruim |
+|---|---|---|
+| Tempo de desligamento (RH → acesso cortado) | < 1 hora | Janela de risco pós-demissão |
+| Contas ativas sem uso há 90 dias | ~ 0 | Órfãs, ex-funcionários, contas esquecidas |
+| Contas privilegiadas permanentes | Tendendo a zero | Ausência de elevação temporária |
+| Taxa de revogação na recertificação | > 5% | Abaixo disso, a revisão é carimbo |
+| Contas de serviço sem rotação há 1 ano | ~ 0 | Superfície de Kerberoasting e credencial eterna |
+| Permissões concedidas e nunca usadas | < 10% | Excesso de privilégio estrutural |
+| Acessos com prazo de validade | Crescente | Maturidade do modelo de concessão |
+
+: Métricas de saúde de um programa de IAM e PAM. {#tbl-metricas-iam}
+
+A segunda linha costuma ser a mais reveladora numa primeira medição. Contas ativas sem uso são, quase sempre, uma mistura de ex-funcionários que escaparam do processo, contas de serviço abandonadas e acessos criados para projetos que terminaram.
+
+## ⚖️ Brasil em Foco
+
+**Acesso de ex-funcionário ativo é falha de medida de segurança sob o art. 46 da LGPD.** A obrigação de adotar medidas aptas a proteger dados pessoais de acessos não autorizados abrange o controle de ciclo de vida das contas. Numa apuração, a ANPD examina se havia processo de desligamento com gatilho automático, qual o tempo real entre o término e o corte, e se há registro dessa transição. Conta ativa meses depois do desligamento é achado que compromete a defesa de adequação, independentemente de ter havido uso indevido [@lgpd2018; @anpd2024res15].
+
+**A segregação de funções e o controle de privilégio são requisitos auditados no setor regulado.** A Resolução BCB 4.893/2021 exige política de segurança cibernética com controles de acesso proporcionais ao risco; o PCI-DSS trata explicitamente de restrição por necessidade de saber (requisito 7), identificação individual (requisito 8) e rastreabilidade de acesso a dado de conta (requisito 10). Conta administrativa compartilhada é não conformidade objetiva em ambos — não porque a senha seja fraca, mas porque destrói a atribuição individual de responsabilidade [@bcb4893; @pcidss4].
+
+**A trilha de auditoria precisa existir antes do incidente para servir de prova.** Registro de quem acessou o quê, quando e sob qual justificativa é o insumo tanto da apuração administrativa quanto de eventual ação judicial. Para provedores, o Marco Civil impõe guarda de registros com prazos definidos; para tratamento de dado pessoal, a demonstração de conformidade sob o art. 6º, X, depende de evidência. Log de acesso privilegiado que o próprio administrador pode apagar não sustenta nenhuma das duas funções — daí a exigência de destino de log fora do alcance de quem é auditado [@marcocivil2014; @lgpd2018].
+
+**Uso de credencial legítima fora da finalidade tem consequência jurídica.** A Lei 12.737/2012, com o agravamento da Lei 14.155/2021, alcança o acesso não autorizado a dispositivo informático; e o funcionário que usa acesso legítimo fora do escopo autorizado responde nas esferas trabalhista e civil, além de expor a organização perante o titular do dado. Do ponto de vista operacional, o que separa uma apuração conclusiva de uma inconclusiva é a existência de gravação de sessão privilegiada e de log de decisão de autorização [@lei12737; @lei14155].
+
+**Terceirização não transfere responsabilidade.** Provedores brasileiros operam com técnicos terceirizados, integradores e fornecedores com acesso remoto à infraestrutura. Sob a LGPD, o controlador responde pelo tratamento realizado por seus operadores (arts. 39 e 42), e contrato de prestação de serviço não afasta essa responsabilidade. Na prática isso exige, para todo acesso de terceiro: identidade nominal (nunca conta compartilhada do fornecedor), acesso intermediado e gravado, prazo de validade vinculado ao contrato e revogação automática no término [@lgpd2018].
+
+## 🛠️ No Campo
+
+**1. Comece pelo relatório de contas órfãs — é o diagnóstico mais rápido.** Cruze o diretório com a base ativa do RH:
+
+```powershell
+# Contas habilitadas sem autenticacao ha mais de 90 dias
+$corte = (Get-Date).AddDays(-90)
+Get-ADUser -Filter { Enabled -eq $true } -Properties LastLogonDate, Title, Department |
+  Where-Object { $_.LastLogonDate -lt $corte -or -not $_.LastLogonDate } |
+  Select-Object Name, SamAccountName, LastLogonDate, Department |
+  Sort-Object LastLogonDate |
+  Export-Csv .\contas-inativas.csv -NoTypeInformation -Encoding utf8
+
+# Cruzamento com o RH: quem esta ativo no AD e desligado na folha
+$rh = Import-Csv .\ativos-rh.csv          # matricula, cpf, situacao
+$ad = Get-ADUser -Filter { Enabled -eq $true } -Properties EmployeeID
+$ad | Where-Object { $_.EmployeeID -notin $rh.matricula } |
+  Select-Object Name, SamAccountName, EmployeeID
+```
+
+Toda linha do segundo comando é uma conta ativa de alguém que já saiu. Esse relatório costuma abrir o orçamento do projeto de IAM sozinho.
+
+**2. Automatize o desligamento com gatilho no RH.** O fluxo mínimo, disparado pelo evento de término:
+
+```python
+def desligar(matricula: str) -> None:
+    ident = identidade_por_matricula(matricula)
+
+    diretorio.desativar(ident)                 # desativa, nao apaga
+    idp.encerrar_sessoes(ident)                # sessoes federadas ativas
+    idp.revogar_refresh_tokens(ident)          # o que sobrevive a expiracao
+    for chave in api.chaves_de(ident):
+        api.revogar(chave)
+    ssh.remover_chaves_publicas(ident)         # authorized_keys em todo o parque
+    email.remover_regras_encaminhamento(ident) # exfiltracao silenciosa
+    email.converter_em_compartilhada(ident, destino=gestor_de(ident))
+
+    # Credenciais compartilhadas que a pessoa conhecia: ROTACIONAR
+    for segredo in cofre.segredos_acessados_por(ident, dias=180):
+        cofre.agendar_rotacao(segredo, prioridade="alta")
+
+    auditoria.registrar("desligamento", ident, origem="rh")
+```
+
+A rotação dos segredos compartilhados é o passo mais esquecido, e é o único que trata do que a pessoa **sabe** — o resto trata do que ela **tem**.
+
+**3. Elimine o privilégio permanente antes de comprar ferramenta.** A elevação temporária existe nativamente em várias plataformas, sem projeto de PAM:
+
+```bash
+# Linux: sudo com escopo estreito, em vez de ALL:ALL
+# /etc/sudoers.d/operacao
+%operacao ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx, \
+                               /usr/bin/systemctl status nginx
+# Registro completo do que foi executado
+Defaults log_input, log_output, iolog_dir=/var/log/sudo-io
+```
+
+```powershell
+# Entra ID PIM: quem tem papel PERMANENTE (o que se quer zerar)
+Get-MgRoleManagementDirectoryRoleAssignment -All |
+  Select-Object PrincipalId, RoleDefinitionId, DirectoryScopeId
+```
+
+**4. Reduza `Domain Admins` a um número que caiba na mão.** A pergunta a fazer para cada membro: esta pessoa precisa disso **agora**, ou precisou uma vez em 2019? A maioria dos administradores de servidor não precisa de privilégio de domínio — precisa de privilégio local nos servidores que administra, que é coisa diferente. Contas de serviço nesse grupo são achado crítico com correção obrigatória.
+
+**5. Endureça as contas de serviço contra Kerberoasting.** Inventarie SPNs, meça o comprimento e a idade das senhas, migre para contas gerenciadas por grupo onde a aplicação suportar, e remova do grupo administrativo o que não precisar estar lá:
+
+```powershell
+# Todas as contas com SPN — o universo exposto ao Kerberoasting
+Get-ADUser -Filter { ServicePrincipalName -like '*' } `
+  -Properties ServicePrincipalName, PasswordLastSet, MemberOf |
+  Select-Object Name, PasswordLastSet,
+    @{n='Admin';e={ [bool]($_.MemberOf -match 'Domain Admins|Enterprise Admins') }},
+    @{n='SPNs';e={ $_.ServicePrincipalName -join '; ' }}
+```
+
+**6. Reformule a recertificação para que ela revogue.** Padrão de exclusão por inação, data da última utilização visível na tela, escopo por risco, e uma métrica publicada: taxa de revogação por campanha. Se ela ficar abaixo de 5%, o problema não são os acessos — é a campanha.
+
+**7. Coloque prazo em toda concessão fora do básico.** Acesso a projeto expira com o projeto; acesso de fornecedor expira com o contrato; acesso emergencial expira em horas. O sistema deve exigir uma data no formulário, sem opção de "permanente" para quem não for aprovador de exceção.
+
+**8. Proteja a conta de emergência e teste-a.** Duas contas de vidro quebrado, com senha longa dividida entre dois responsáveis e guardada em cofre físico, excluídas das políticas de acesso condicional (para não travarem junto com o IdP), com alerta imediato em qualquer uso e teste semestral documentado. Sem elas, uma falha do provedor de identidade tranca todo mundo do lado de fora.
+
+**9. Envie o log privilegiado para fora do alcance do privilegiado.** Destino de log em conta ou domínio separado, com escrita permitida e exclusão negada para os administradores auditados. Log que o administrador pode apagar não é evidência — é conveniência.
+
+**10. Trate acesso de terceiro como categoria própria.** Identidade nominal por técnico (nunca conta genérica do fornecedor), acesso intermediado e gravado, janela de tempo aprovada, e revogação automática vinculada à vigência do contrato. É o caminho mais comum de comprometimento por cadeia de suprimentos, tema do Volume 16.
+
+## Resumo
+
+- **O ciclo de vida da identidade tem três eventos** — admissão, mudança e desligamento — e a fonte da verdade é o RH. A fase de **mudança** é onde o acúmulo de privilégios nasce, porque o processo concede o novo e não remove o antigo.
+- **Clonagem de acesso** ("dê o mesmo que o Bruno") propaga o excesso acumulado de uma pessoa para toda a organização. Use acesso por nascimento derivado do cargo.
+- **Desligar não é desativar a conta principal**: tokens, chaves SSH, sessões federadas, contas locais em appliances, regras de encaminhamento de e-mail e — sobretudo — as **credenciais compartilhadas que a pessoa conhecia**, que precisam ser rotacionadas.
+- **Recertificação só vale se revogar.** Padrão de exclusão por inação, última utilização visível na tela, escopo por risco. Taxa de revogação abaixo de 5% indica carimbo, não revisão.
+- **Prazo de validade em toda concessão** é a mudança de maior efeito: acesso com data desaparece sozinho; acesso permanente depende de alguém lembrar.
+- **PAM tem quatro capacidades** — cofre, intermediação de sessão, elevação temporária e gravação. A elevação temporária é a que muda a matemática do ataque, porque a credencial roubada normalmente não carrega privilégio no momento do roubo.
+- **Contas de serviço são o problema mais persistente**: sem dono, sem rotação, com excesso de privilégio. O Kerberoasting transforma uma senha fraca de conta de serviço em comprometimento de domínio, e a defesa é senha longa aleatória, conta gerenciada por grupo e remoção dos grupos administrativos.
+- O **modelo em camadas** impede que credencial de alta camada apareça em máquina de baixa confiança — é o controle que quebra o caminho mais comum de comprometimento de domínio.
+- No Brasil, conta de ex-funcionário ativa é falha sob o art. 46 da LGPD; conta administrativa compartilhada é não conformidade objetiva em PCI-DSS e nas normas do BCB; e a responsabilidade pelo acesso de terceirizados permanece com o controlador.
