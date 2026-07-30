@@ -1,3 +1,347 @@
 # Criptografia simétrica: AES, modos de operação e AEAD {#sec-cap016}
 
-*(em elaboracao)*
+Em outubro de 2013, a Adobe sofreu um vazamento que expôs cerca de 153 milhões de registros de conta. As senhas não estavam em texto claro — estavam cifradas com 3DES, um algoritmo respeitável. E, ainda assim, comunidades da internet montaram em poucos dias um passatempo chamado *the Adobe crossword*: uma grade de palavras cruzadas em que as "definições" eram as dicas de senha dos próprios usuários e as "respostas" eram as senhas, deduzidas coletivamente.
+
+O motivo é que a Adobe usou o modo **ECB**. Nesse modo, blocos idênticos de texto claro produzem blocos idênticos de texto cifrado. Toda conta cuja senha era `123456` tinha exatamente o mesmo texto cifrado — e havia dezenas de milhares delas. Bastou olhar para o texto cifrado mais frequente e, com uma única dica de senha vazada junto, todo o grupo caiu de uma vez. A partir daí a grade se preencheu sozinha, senha após senha, sem que ninguém tivesse quebrado o 3DES nem descoberto a chave.
+
+O algoritmo estava correto. A chave nunca foi revelada. E o vazamento foi total, porque a escolha do **modo de operação** destruiu a segurança que o algoritmo entregava. Esse capítulo trata de por que essa escolha existe, o que cada modo garante, e por que a resposta moderna é não escolher nada disso à mão — é usar AEAD.
+
+## O que uma cifra de bloco faz — e o que ela não faz
+
+Uma **cifra de bloco** é uma função que transforma um bloco de tamanho fixo de texto claro em um bloco do mesmo tamanho de texto cifrado, sob controle de uma chave. Nada mais. O AES opera sobre blocos de **128 bits** (16 bytes), com chaves de 128, 192 ou 256 bits [@fips197].
+
+Dizer isso em voz alta expõe o problema imediato: mensagens reais não têm 16 bytes. Um arquivo tem megabytes; um campo de banco tem tamanho variável; um pacote tem cabeçalho e corpo. **A cifra de bloco, sozinha, não sabe cifrar nada além de 16 bytes.** O que preenche essa lacuna é o **modo de operação** — o protocolo que decide como quebrar a mensagem em blocos, como encadeá-los e o que fazer com o resto que não completa um bloco.
+
+Essa separação é a fonte de quase todos os desastres práticos com criptografia simétrica. O AES é uma primitiva excelente e o modo é onde se erra. E o erro não faz barulho: em ECB o dado *parece* cifrado, o teste de integração passa, o campo no banco vira uma sopa de bytes ilegíveis. Só que a estrutura sobreviveu — e estrutura é tudo o que o atacante precisa, como o @sec-cap015 mostrou a propósito da análise de frequência.
+
+### Do DES ao AES, em um parágrafo
+
+O **DES**, adotado em 1977, usava chave de 56 bits — suficiente na época, quebrável por força bruta em horas hoje. A resposta emergencial foi o **3DES**, que aplica DES três vezes com chaves distintas; funciona, é lento, tem bloco de apenas 64 bits e está formalmente aposentado pelo NIST desde 2023 [@nistsp800131a]. O substituto veio de uma competição pública aberta em 1997, ganha pelo algoritmo belga **Rijndael**, padronizado como **AES** em 2001. O processo importa tanto quanto o resultado: cinco anos de análise pública e adversarial, com todos os candidatos abertos, é precisamente o princípio de Kerckhoffs aplicado à escolha de padrão.
+
+Internamente, o AES é uma **rede de substituição e permutação**: cada rodada aplica substituição de bytes (a *S-box*, que entrega confusão), deslocamento de linhas e mistura de colunas (que entregam difusão), e soma da subchave da rodada. São 10 rodadas para chave de 128 bits e 14 para 256 bits. Após mais de duas décadas de análise mundial intensa, **não há ataque prático contra o AES completo**. Os ataques que existem são contra implementações — canais laterais de temporização e de cache —, e a resposta a eles é a instrução `AES-NI` do processador, que executa as rodadas em hardware, em tempo constante e uma ordem de grandeza mais rápido.
+
+**AES-128 ou AES-256?** AES-128 é considerado seguro para praticamente todo uso civil, e é mais rápido. AES-256 custa cerca de 40% mais e oferece margem contra avanços futuros — inclusive a redução quadrática que o algoritmo de Grover traria num computador quântico relevante, tema do Volume 16. Na prática, escolha AES-256 quando houver exigência regulatória ou dado de vida longa; escolha AES-128 quando desempenho importar. Nenhuma das duas é o elo fraco do seu sistema.
+
+## Modos de operação: onde se decide o destino
+
+A @fig-modos-operacao compara as três construções fundamentais.
+
+::: {#fig-modos-operacao}
+```{.tikz}
+%%| filename: modos-operacao
+%%| alt: Comparação entre os modos ECB, CBC e CTR, mostrando que ECB cifra blocos independentes, CBC encadeia com XOR do bloco anterior e CTR cifra um contador para gerar fluxo de chave
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bl/.style={draw=manualgray, thick, fill=white, rounded corners=2pt,
+               align=center, inner sep=3pt, minimum width=1.5cm, minimum height=0.65cm,
+               font=\scriptsize},
+    cif/.style={draw=manualblue, very thick, fill=manualblue!12, rounded corners=2pt,
+                align=center, inner sep=3pt, minimum width=1.5cm, minimum height=0.7cm,
+                font=\scriptsize},
+    cout/.style={draw=manualgreen, thick, fill=manualgreen!12, rounded corners=2pt,
+                 align=center, inner sep=3pt, minimum width=1.5cm, minimum height=0.65cm,
+                 font=\scriptsize},
+    xo/.style={draw=manualred, thick, fill=white, circle, inner sep=1pt, font=\tiny},
+    tit/.style={align=left, font=\scriptsize},
+    obs/.style={align=left, font=\scriptsize, manualgray}}
+
+  % ---------- ECB ----------
+  \node[tit, anchor=west] at (-2.6,3.0) {\textbf{\textcolor{manualred}{ECB}} — blocos independentes};
+  \foreach \i/\x in {1/0, 2/2.3, 3/4.6} {
+    \node[bl]  (p\i) at (\x,2.2) {$M_{\i}$};
+    \node[cif] (e\i) at (\x,1.2) {AES$_K$};
+    \node[cout] (c\i) at (\x,0.2) {$C_{\i}$};
+    \draw[auxiliar, ->, >=stealth] (p\i) -- (e\i);
+    \draw[auxiliar, ->, >=stealth] (e\i) -- (c\i);}
+  \node[obs, anchor=west, text width=6.4cm] at (6.0,1.2)
+    {$M_i = M_j \Rightarrow C_i = C_j$. O padrão do texto claro\\
+     atravessa a cifragem intacto. \textbf{\textcolor{manualred}{Nunca usar.}}};
+
+  % ---------- CBC ----------
+  \node[tit, anchor=west] at (-2.6,-1.0) {\textbf{\textcolor{manualyellow}{CBC}} — encadeado pelo bloco anterior};
+  \node[bl, draw=manualyellow, fill=manualyellow!15] (iv) at (-1.9,-2.8) {IV};
+  \foreach \i/\x in {1/0, 2/2.3, 3/4.6} {
+    \node[bl]  (q\i) at (\x,-1.8) {$M_{\i}$};
+    \node[xo]  (x\i) at (\x,-2.8) {$\oplus$};
+    \node[cif] (f\i) at (\x,-3.8) {AES$_K$};
+    \node[cout] (d\i) at (\x,-4.8) {$C_{\i}$};
+    \draw[auxiliar, ->, >=stealth] (q\i) -- (x\i);
+    \draw[auxiliar, ->, >=stealth] (x\i) -- (f\i);
+    \draw[auxiliar, ->, >=stealth] (f\i) -- (d\i);}
+  \draw[auxiliar, ->, >=stealth] (iv) -- (x1);
+  \draw[destaque, manualyellow, ->, >=stealth] (d1) -- ++(0,-0.5) -| (1.15,-2.8) -- (x2);
+  \draw[destaque, manualyellow, ->, >=stealth] (d2) -- ++(0,-0.5) -| (3.45,-2.8) -- (x3);
+  \node[obs, anchor=west, text width=6.4cm] at (6.0,-3.3)
+    {Sequencial na cifragem, paralelizável na decifragem.\\
+     Exige preenchimento. IV precisa ser \textbf{imprevisível}.\\
+     Sem MAC, é vulnerável a oráculo de preenchimento.};
+
+  % ---------- CTR ----------
+  \node[tit, anchor=west] at (-2.6,-6.6) {\textbf{\textcolor{manualgreen}{CTR}} — cifra de fluxo a partir de uma cifra de bloco};
+  \foreach \i/\x in {1/0, 2/2.3, 3/4.6} {
+    \node[bl, draw=manualyellow, fill=manualyellow!15] (n\i) at (\x,-7.4) {nonce$\|$\i};
+    \node[cif] (g\i) at (\x,-8.4) {AES$_K$};
+    \node[xo]  (y\i) at (\x,-9.4) {$\oplus$};
+    \node[cout] (r\i) at (\x,-10.4) {$C_{\i}$};
+    \draw[auxiliar, ->, >=stealth] (n\i) -- (g\i);
+    \draw[auxiliar, ->, >=stealth] (g\i) -- (y\i);
+    \draw[auxiliar, ->, >=stealth] (y\i) -- (r\i);
+    \draw[auxiliar, ->, >=stealth] (\x-1.2,-9.4) -- (y\i);
+    \node[font=\tiny, manualgray, anchor=east] at (\x-1.2,-9.4) {$M_{\i}$};}
+  \node[obs, anchor=west, text width=6.4cm] at (6.0,-8.9)
+    {Totalmente paralelizável, sem preenchimento.\\
+     Reusar o par (chave, nonce) é \textbf{\textcolor{manualred}{catastrófico}}:\\
+     $C_i \oplus C_j = M_i \oplus M_j$ e a chave sai da equação.};
+\end{tikzpicture}
+```
+Os três modos fundamentais. O que muda entre eles não é o AES, é o que se faz com ele.
+:::
+
+### ECB: o modo que não deve existir
+
+**Electronic Codebook** cifra cada bloco de forma independente. É o comportamento ingênuo — e é errado por uma razão simples: blocos de texto claro iguais produzem blocos de texto cifrado iguais. Qualquer estrutura repetida na entrada aparece na saída.
+
+O exemplo canônico do ensino de criptografia é uma imagem *bitmap* cifrada em ECB: os contornos da figura permanecem perfeitamente visíveis, porque regiões de cor uniforme viram blocos repetidos. O caso da Adobe é a mesma falha aplicada a senhas.
+
+A regra é absoluta: **ECB não tem uso legítimo em sistema real**. Se você o encontrar em código de produção, é um achado, não uma escolha de projeto.
+
+### CBC: encadeamento e suas armadilhas
+
+**Cipher Block Chaining** resolve o problema do ECB combinando, por XOR, cada bloco de texto claro com o texto cifrado do bloco anterior antes de cifrar. O primeiro bloco usa um **vetor de inicialização** (IV) no lugar do bloco anterior. Como o encadeamento propaga qualquer diferença, dois textos claros idênticos cifrados com IVs distintos produzem textos cifrados completamente distintos.
+
+Três exigências acompanham o CBC, e cada uma já derrubou sistemas reais:
+
+**O IV precisa ser imprevisível, não apenas único.** IV previsível — um contador, ou o último bloco cifrado da mensagem anterior — permite ao atacante confirmar palpites sobre o texto claro num cenário de texto claro escolhido. Foi exatamente essa a base do ataque BEAST contra o TLS 1.0, que o @sec-cap020 detalha. O IV não é secreto e viaja junto do texto cifrado, mas tem de vir de CSPRNG.
+
+**O preenchimento cria um oráculo.** Como CBC exige múltiplos exatos do bloco, a mensagem é completada com preenchimento (tipicamente PKCS#7). Se o sistema distinguir, em qualquer canal observável — mensagem de erro, código HTTP, tempo de resposta —, "preenchimento inválido" de "preenchimento válido mas conteúdo inválido", o atacante decifra a mensagem inteira **sem jamais conhecer a chave**, submetendo textos cifrados modificados e observando as respostas. É o *padding oracle* de Vaudenay [@vaudenay2002], e ele reaparece a cada década com nome novo.
+
+**CBC não protege integridade.** Este é o ponto mais importante e o mais ignorado, e ele merece seção própria.
+
+### CTR: a cifra de bloco virando cifra de fluxo
+
+**Counter Mode** não cifra o texto claro. Cifra um contador — a concatenação de um *nonce* com um número de bloco — e usa o resultado como fluxo de chave, que é combinado por XOR com o texto claro. É elegante: dispensa preenchimento, é totalmente paralelizável, permite acesso aleatório (decifrar o bloco 5000 sem tocar nos anteriores) e usa apenas a função de cifragem do AES.
+
+O preço é uma regra sem exceção: **o par (chave, nonce) nunca pode se repetir**. Reusar o nonce com a mesma chave gera o mesmo fluxo de chave, e dois textos cifrados sob o mesmo fluxo entregam o XOR dos textos claros — a falha do one-time pad reutilizado, do @sec-cap015, aplicada a um sistema moderno. Não é degradação gradual: é colapso.
+
+Esse mesmo defeito, em outra roupagem, foi o que arruinou o **WEP** nas redes sem fio. O WEP usava RC4 com um IV de apenas 24 bits, concatenado à chave. Em rede movimentada, IVs se repetem em horas — e a repetição, somada a fraquezas do RC4, permite recuperar a chave. O Volume 5 volta ao tema; o que importa aqui é a causa: espaço de nonce pequeno demais para o volume de tráfego.
+
+### Cifras de fluxo: RC4 morreu, ChaCha20 é o presente
+
+Cifras de fluxo geram diretamente um fluxo de chave, sem passar por blocos. O **RC4** dominou por duas décadas — em WEP, em WPA-TKIP, em TLS — e está proibido desde 2015 (RFC 7465): seus primeiros bytes de saída são estatisticamente enviesados, o que permitiu recuperar cookies de sessão em ataques práticos.
+
+O sucessor é o **ChaCha20**, de Daniel Bernstein [@rfc8439]. É rápido em software puro, executa naturalmente em tempo constante e não depende de instrução dedicada do processador — o que o torna preferível ao AES em dispositivos sem `AES-NI`, especialmente celulares e sistemas embarcados. É por isso que navegadores móveis frequentemente negociam ChaCha20-Poly1305 em vez de AES-GCM: no hardware deles, é mais rápido e mais seguro contra canal lateral.
+
+## Cifrar não é autenticar
+
+Aqui está o conceito que separa quem entende criptografia aplicada de quem apenas a invoca.
+
+**Confidencialidade e integridade são propriedades independentes.** Nenhum dos modos anteriores — ECB, CBC ou CTR — impede que um atacante **altere** o texto cifrado. Ele não conseguirá ler o conteúdo, mas conseguirá modificá-lo de maneira controlada, e o destinatário decifrará silenciosamente o resultado adulterado como se fosse legítimo. Essa propriedade tem nome: **maleabilidade**.
+
+Em CTR é gritante. O texto cifrado é o texto claro combinado por XOR com o fluxo de chave. Inverter o bit $n$ do texto cifrado inverte exatamente o bit $n$ do texto claro decifrado. Um atacante que saiba que os bytes 12 a 16 contêm o valor de uma transferência pode alterá-los sem conhecer nada da chave, e o resultado decifra normalmente. Em CBC o efeito é menos direto, mas igualmente explorável: alterar um bloco de texto cifrado corrompe o bloco correspondente e produz uma mudança **controlada** no bloco seguinte.
+
+A consequência prática:
+
+> Texto cifrado que chega sem verificação de integridade não deve ser decifrado. A decifragem de dado não autenticado é o que transforma um canal cifrado em superfície de ataque.
+
+A solução clássica foi acoplar um MAC — tipicamente HMAC, que o @sec-cap017 detalha. E aí surgiu mais uma armadilha: **a ordem importa**.
+
+| Construção | Como funciona | Veredito |
+|---|---|---|
+| Encrypt-then-MAC | Cifra, depois calcula o MAC sobre o texto cifrado | **Correta.** Verifica antes de decifrar |
+| MAC-then-Encrypt | Calcula o MAC sobre o claro, depois cifra tudo | Frágil. Foi o que expôs o TLS ao padding oracle |
+| Encrypt-and-MAC | Cifra e calcula o MAC sobre o claro, em paralelo | Vaza informação; o MAC do claro é determinístico |
+
+: Ordem de cifragem e autenticação. Só a primeira é seguramente correta. {#tbl-ordem-mac}
+
+A razão de **Encrypt-then-MAC** ser a correta é operacional: ela permite verificar o MAC **antes** de tocar no texto cifrado. Se a verificação falhar, descarta-se a mensagem sem nunca executar a decifragem — e sem preenchimento processado não há oráculo de preenchimento.
+
+Combinar as duas primitivas à mão exige acertar a ordem, usar chaves distintas para cifragem e MAC, e comparar o MAC em tempo constante. São três oportunidades de errar, e a indústria errou nas três. Daí a resposta moderna.
+
+## AEAD: a resposta certa
+
+**AEAD** — *Authenticated Encryption with Associated Data* — é uma primitiva única que entrega confidencialidade e integridade em uma só operação, com uma só chave e uma só API. Não há ordem para escolher errado, porque não há duas operações a ordenar.
+
+A @fig-aead mostra a interface.
+
+::: {#fig-aead}
+```{.tikz}
+%%| filename: aead-interface
+%%| alt: Interface de uma construção AEAD, mostrando chave, nonce, dados associados e texto claro como entradas, e texto cifrado com etiqueta de autenticação como saída
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ent/.style={draw=manualgray, thick, fill=white, rounded corners=3pt,
+                align=center, inner sep=4pt, minimum width=3.4cm, minimum height=0.9cm,
+                font=\scriptsize},
+    sec/.style={draw=manualyellow, very thick, fill=manualyellow!15, rounded corners=3pt,
+                align=center, inner sep=4pt, minimum width=3.4cm, minimum height=0.9cm,
+                font=\scriptsize},
+    box/.style={draw=manualblue, very thick, fill=manualblue!10, rounded corners=4pt,
+                align=center, inner sep=6pt, minimum width=3.4cm, minimum height=2.6cm},
+    sai/.style={draw=manualgreen, very thick, fill=manualgreen!12, rounded corners=3pt,
+                align=center, inner sep=4pt, minimum width=3.4cm, minimum height=0.9cm,
+                font=\scriptsize},
+    obs/.style={align=left, font=\scriptsize, manualgray}}
+
+  \node[sec] (k)  at (0, 3.0) {\textbf{Chave} $K$\\\scriptsize secreta, 256 bits};
+  \node[sec] (n)  at (0, 1.6) {\textbf{Nonce} $N$\\\scriptsize único por chave, público};
+  \node[ent] (ad) at (0, 0.2) {\textbf{Dados associados} $A$\\\scriptsize autenticados, não cifrados};
+  \node[ent] (m)  at (0,-1.2) {\textbf{Texto claro} $M$};
+
+  \node[box] (aead) at (5.4,0.9) {\textbf{AEAD}\\[3pt]\scriptsize AES-256-GCM\\\scriptsize ChaCha20-Poly1305\\\scriptsize AES-GCM-SIV};
+
+  \node[sai] (c) at (10.8, 1.6) {\textbf{Texto cifrado} $C$};
+  \node[sai] (t) at (10.8, 0.2) {\textbf{Etiqueta} $T$\\\scriptsize 128 bits de autenticação};
+
+  \foreach \a in {k,n,ad,m} \draw[auxiliar, ->, >=stealth] (\a) -- (aead);
+  \draw[destaque, ->, >=stealth] (aead) -- (c);
+  \draw[destaque, ->, >=stealth] (aead) -- (t);
+
+  \node[draw=manualred, very thick, fill=manualred!8, rounded corners=4pt,
+        align=left, inner sep=6pt, font=\scriptsize, text width=13.5cm] at (5.4,-3.2)
+    {\textbf{\textcolor{manualred}{Na decifragem, a etiqueta é verificada primeiro.}}
+     Se $T$ não confere, a função devolve erro e \textbf{nada} de texto claro — nem parcial, nem em buffer.
+     É essa ordem, imposta pela própria primitiva, que elimina de uma vez o oráculo de preenchimento,
+     a maleabilidade e a escolha errada entre MAC-then-Encrypt e Encrypt-then-MAC.};
+\end{tikzpicture}
+```
+Interface AEAD: quatro entradas, duas saídas, uma decisão a menos para o desenvolvedor errar.
+:::
+
+Os **dados associados** ($A$) são a parte menos óbvia e a mais útil. São informações que precisam ser autenticadas mas não cifradas — porque um intermediário precisa lê-las. O cabeçalho de um pacote, o identificador da versão do registro, o número da conta em uma mensagem de roteamento. Ao incluí-los como dados associados, altera-se a etiqueta se alguém os modificar, ainda que permaneçam visíveis. É o mecanismo correto para **amarrar o texto cifrado ao seu contexto** — sem ele, um texto cifrado válido pode ser transplantado para outro registro, outro usuário ou outra conta e continuar decifrando perfeitamente.
+
+### As três construções que importam
+
+**AES-GCM** é o padrão de fato [@nistsp80038d]: CTR para a cifragem, mais um MAC baseado em multiplicação no campo de Galois. Muito rápido com `AES-NI`, e obrigatório no TLS 1.3. Herda do CTR a exigência de nonce único — com um agravante que merece destaque: **em GCM, o reúso de nonce não só revela texto claro como permite recuperar a chave de autenticação**, e a partir daí o atacante forja mensagens válidas à vontade. É a falha mais grave que se pode cometer com GCM.
+
+**ChaCha20-Poly1305** [@rfc8439] combina a cifra de fluxo ChaCha20 com o autenticador Poly1305. Rápido sem hardware dedicado, naturalmente resistente a canal lateral de temporização. É o parceiro do AES-GCM no TLS 1.3 e a escolha preferencial em dispositivos móveis e embarcados.
+
+**AES-GCM-SIV** é a rede de segurança. Usa síntese do nonce e do conteúdo para derivar os parâmetros internos, de modo que o reúso de nonce degrada a segurança em vez de destruí-la: o vazamento se limita a revelar que duas mensagens idênticas foram cifradas duas vezes. Custa algum desempenho e uma passada extra sobre os dados. Vale a pena sempre que a unicidade do nonce não puder ser garantida com confiança — sistemas distribuídos sem coordenação, dispositivos que podem ser restaurados de instantâneo, ou qualquer lugar onde um contador possa voltar atrás.
+
+### A regra do nonce, e os limites por chave
+
+Nonce em AEAD é o ponto de falha mais frequente, e há três estratégias válidas para gerá-lo:
+
+1. **Contador**, quando existe um único emissor com estado durável. Simples e exato, mas quebra se o estado for restaurado de um instantâneo ou se houver mais de um emissor.
+2. **Aleatório de CSPRNG**, com nonce de 96 bits. Pelo paradoxo do aniversário, a probabilidade de colisão só se torna preocupante após cerca de $2^{32}$ mensagens com a mesma chave — daí o limite prático de **até $2^{32}$ mensagens por chave** para AES-GCM com nonce aleatório.
+3. **Híbrido**: prefixo fixo por instância (identificador do processo ou da máquina) somado a um contador local. É a construção que melhor sobrevive a sistemas distribuídos.
+
+Dois limites adicionais valem estar documentados: AES-GCM não deve cifrar mais de cerca de **64 GB sob a mesma chave e o mesmo nonce**, e o volume total por chave deve ser bem inferior a $2^{64}$ blocos. Na prática isso significa que **chaves de longa duração precisam de rotação**, e que a derivação de subchaves por sessão — o que o TLS 1.3 faz com HKDF, tema do @sec-cap017 — não é sofisticação, é exigência.
+
+## Como escolher, em uma tabela
+
+| Situação | Escolha | Motivo |
+|---|---|---|
+| Uso geral, servidor com `AES-NI` | AES-256-GCM | Padrão, acelerado em hardware, ubíquo |
+| Móvel, embarcado, sem `AES-NI` | ChaCha20-Poly1305 | Mais rápido em software, tempo constante |
+| Nonce difícil de garantir único | AES-GCM-SIV | Degrada em vez de colapsar |
+| API de alto nível disponível | `libsodium` (`crypto_secretbox`) | Escolhe tudo por você, e escolhe certo |
+| Legado com CBC que não dá para trocar já | CBC + HMAC, *encrypt-then-MAC* | Correto se e somente se a ordem e as chaves separadas estiverem certas |
+| Qualquer situação | **Nunca ECB. Nunca RC4. Nunca DES ou 3DES.** | Sem exceção |
+
+: Escolha de cifra simétrica por cenário. {#tbl-escolha-simetrica}
+
+A linha mais importante é a quarta. Quando existe uma API de alto nível que não expõe modo nem IV nem nonce — como `crypto_secretbox` do `libsodium` ou o `Fernet` da biblioteca `cryptography` do Python —, ela é a escolha certa, porque remove do desenvolvedor toda decisão em que ele poderia errar. Interface que não permite errar vale mais que documentação que explica como não errar.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD não nomeia algoritmos, e isso tem uma consequência prática.** O art. 46 exige medidas "aptas a proteger" os dados pessoais, sem listar cifras. Na avaliação de um incidente, a ANPD examina se a medida era adequada ao **estado da técnica** e ao risco. Isso quer dizer que usar 3DES ou AES em modo ECB em 2026 não é apenas ruim tecnicamente — é indefensável administrativamente, porque o padrão de mercado está documentado em normas públicas há mais de uma década. A defesa técnica em processo administrativo se apoia em referência normativa: NIST SP 800-38D, ISO/IEC 27002, PCI-DSS. Guardar essa correspondência por escrito, com data, é o que transforma uma decisão de arquitetura em prova [@lgpd2018; @anpd2024res15].
+
+**Anonimização e pseudonimização passam por criptografia simétrica — e por sua gestão de chaves.** A LGPD retira do seu escopo o dado anonimizado, mas mantém o pseudonimizado sob a lei. Um CPF cifrado com AES é dado **pseudonimizado**, não anonimizado, porque quem tem a chave reverte a operação. A consequência é direta: a chave passa a ser o ativo mais sensível do ambiente, e a segregação entre quem opera a base e quem custodia a chave deixa de ser refinamento e vira controle essencial. Se a mesma equipe tem os dois, não há pseudonimização efetiva.
+
+**No arranjo do Pix, a exigência é de suíte moderna, não de "criptografia".** A Resolução BCB 4.893/2021 e o manual de segurança do Pix impõem TLS com suítes atuais e autenticação mútua por certificado ICP-Brasil na comunicação com o SPI. Como o TLS 1.3 admite apenas AEAD, participar do arranjo já elimina por construção os modos legados. Para instituições menores que integram via PSTI, a homologação verifica exatamente isso — e reprovar em homologação por suíte obsoleta é um evento comum e evitável [@bcb4893].
+
+**PCI-DSS v4 é explícito onde a LGPD é principiológica.** Quem processa cartão está sujeito ao requisito 3, que trata da proteção do dado de conta armazenado, e ao requisito 4, do dado em trânsito. A norma exige "criptografia forte" com definição própria, veda algoritmos obsoletos e — o ponto que mais reprova auditoria no Brasil — exige **procedimento documentado de gestão do ciclo de vida das chaves**: geração, distribuição, armazenamento, rotação, retirada e substituição em caso de comprometimento. Ter AES-256-GCM não passa na auditoria; ter AES-256-GCM com o ciclo de chaves documentado e executado, passa [@pcidss4].
+
+**Certificados A1 e A3 mudam onde a chave privada vive, e isso é decisão de arquitetura.** No certificado A1 a chave privada é um arquivo protegido por senha, copiável — prático para automação de NF-e, e frágil se o servidor for comprometido. No A3 a chave vive em cartão ou *token* e não é extraível, o que torna a automação mais difícil e o roubo da chave muito mais. A escolha entre eles é, na prática, uma decisão sobre gestão de chaves simétrica ao que este capítulo discutiu: onde a chave nasce, quem a acessa e o que acontece se o hospedeiro cair [@mp2200; @iti2024].
+
+## 🛠️ No Campo
+
+**1. Procure ECB no seu código hoje.** É a varredura de maior retorno deste capítulo, e leva um minuto:
+
+```bash
+grep -rniE 'AES/ECB|MODE_ECB|aes-[0-9]+-ecb|ECBEncrypt|CipherMode\.ECB' \
+     --include='*.java' --include='*.py' --include='*.cs' --include='*.go' \
+     --include='*.php' --include='*.js' .
+
+# Java: a armadilha silenciosa. "AES" sem modo explícito É ECB no provider padrão.
+grep -rn 'Cipher.getInstance("AES")' --include='*.java' .
+```
+
+A segunda busca merece atenção especial: em Java, `Cipher.getInstance("AES")` seleciona `AES/ECB/PKCS5Padding` por omissão. É o padrão inseguro mais bem escondido da plataforma, e ainda aparece em código novo.
+
+**2. Verifique o efeito do ECB com as próprias mãos.** Duas linhas que tornam o problema impossível de esquecer:
+
+```bash
+# 64 bytes de texto claro repetitivo, cifrados em ECB e em CBC
+printf 'AAAAAAAAAAAAAAAA%.0s' {1..4} \
+  | openssl enc -aes-128-ecb -K 00112233445566778899aabbccddeeff -nosalt | xxd
+# Saída: o mesmo bloco de 16 bytes, quatro vezes.
+
+printf 'AAAAAAAAAAAAAAAA%.0s' {1..4} \
+  | openssl enc -aes-128-cbc -K 00112233445566778899aabbccddeeff \
+                -iv 000102030405060708090a0b0c0d0e0f -nosalt | xxd
+# Saída: quatro blocos distintos.
+```
+
+**3. Prefira sempre a API de alto nível.** Quando a biblioteca oferece uma função que não pede modo nem IV, use-a:
+
+```python
+# Certo: a biblioteca decide modo, nonce e autenticação
+from cryptography.fernet import Fernet
+chave = Fernet.generate_key()          # guarde no cofre, não no código
+token = Fernet(chave).encrypt(b"dado sensivel")
+
+# Também certo, quando é preciso controlar o nonce e usar dados associados
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+import os
+k = AESGCM.generate_key(bit_length=256)
+nonce = os.urandom(12)                 # CSPRNG, nunca reutilizado com esta chave
+ct = AESGCM(k).encrypt(nonce, b"dado sensivel", b"id-registro-4711")
+```
+
+O terceiro argumento do `encrypt` são os dados associados. Colocar ali o identificador do registro impede que um texto cifrado válido seja transplantado para outra linha da tabela.
+
+**4. Trate a decifragem que falha como evento de segurança, não como erro de aplicação.** Etiqueta AEAD inválida significa dado corrompido ou adulterado. Registre com o identificador do registro e do chamador, alerte a partir de um limiar, e **nunca** devolva ao cliente a razão da falha:
+
+```text
+Errado:  400 {"erro": "authentication tag mismatch at offset 48"}
+Errado:  400 {"erro": "invalid padding"}
+Certo:   400 {"erro": "requisicao invalida"}   + log interno detalhado + contador de alerta
+```
+
+Mensagem de erro específica é o combustível do oráculo. A distinção que o atacante precisa é justamente a que a mensagem detalhada oferece de graça.
+
+**5. Escreva o esquema do texto cifrado no início do projeto.** Todo dado cifrado deve carregar consigo o que é preciso para decifrá-lo e para migrá-lo depois:
+
+```text
+[versao:1][id_chave:2][nonce:12][texto_cifrado:n][etiqueta:16]
+```
+
+O campo de versão é o que permite trocar de algoritmo daqui a cinco anos sem reescrever a base inteira. O identificador de chave é o que torna a rotação possível sem uma janela de indisponibilidade. Quem não previu esses dois campos descobre o custo na primeira rotação.
+
+**6. Meça antes de assumir que criptografia é cara.** Em servidor moderno com `AES-NI`, AES-GCM roda em vários gigabytes por segundo por núcleo. O argumento de desempenho contra cifrar quase sempre é herdado de uma época em que era verdadeiro:
+
+```bash
+openssl speed -evp aes-256-gcm
+openssl speed -evp chacha20-poly1305
+grep -o -m1 'aes' /proc/cpuinfo && echo "AES-NI disponivel"
+```
+
+Se o resultado do ChaCha20 superar o do AES-GCM, o processador não tem aceleração — e a escolha da suíte deve mudar de acordo.
+
+**7. Planeje a rotação de chaves antes de precisar dela.** Chave de cifragem de dados com prazo definido, chave mestra no cofre ou no KMS, e um procedimento de recifragem que rode em lotes sem indisponibilidade. Documente também o cenário de comprometimento: qual dado precisa ser recifrado, em que ordem, em quanto tempo. As diretrizes do NIST sobre ciclo de vida de chaves [@nistsp80057] são a referência para essa política.
+
+**8. Registre os limites de volume por chave no monitoramento.** Um contador de mensagens cifradas por chave, com alerta bem antes de $2^{32}$, é barato de implementar e evita a categoria de falha mais difícil de diagnosticar depois: colisão de nonce por volume, num sistema que funcionou perfeitamente por três anos.
+
+## Resumo
+
+- **A cifra de bloco só sabe cifrar um bloco.** Tudo além de 16 bytes depende do **modo de operação** — e é no modo, não no AES, que os sistemas reais quebram.
+- **ECB não tem uso legítimo.** Blocos iguais viram textos cifrados iguais, e a estrutura do dado atravessa a cifragem intacta. O vazamento da Adobe em 2013 expôs 153 milhões de senhas sem que ninguém quebrasse o algoritmo.
+- **CBC** exige IV imprevisível vindo de CSPRNG, e seu preenchimento cria um oráculo sempre que o sistema distingue erro de preenchimento de erro de conteúdo.
+- **CTR** é rápido e paralelizável, e colapsa por completo se o par (chave, nonce) se repetir: os textos cifrados entregam o XOR dos textos claros. Foi essa a falha do WEP.
+- **Cifrar não é autenticar.** Todos os modos clássicos são maleáveis: o atacante altera o texto cifrado de forma controlada sem conhecer a chave. Dado não autenticado não deve ser decifrado.
+- Ao combinar cifra e MAC manualmente, só **encrypt-then-MAC** com chaves separadas é seguramente correto — e são três oportunidades de errar.
+- **AEAD é a resposta moderna**: uma primitiva, uma chave, uma chamada, com a verificação da etiqueta antes de qualquer decifragem. AES-GCM no servidor, ChaCha20-Poly1305 em móvel e embarcado, AES-GCM-SIV quando a unicidade do nonce não for garantível.
+- Os **dados associados** amarram o texto cifrado ao seu contexto e impedem que ele seja transplantado para outro registro ou outro usuário.
+- **Nonce único é obrigação, não recomendação** — em GCM, reusá-lo permite recuperar a chave de autenticação e forjar mensagens. Chaves têm limite de volume, e por isso rotação e derivação por sessão são exigências.
+- No Brasil, LGPD e PCI-DSS convergem no mesmo ponto: escolher o algoritmo é o começo, **documentar e executar o ciclo de vida da chave** é o que passa em auditoria. E dado cifrado é pseudonimizado, não anonimizado — a chave continua sendo o ativo.
