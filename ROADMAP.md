@@ -33,7 +33,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 015** - História e princípios da criptografia - `vol03/cap015-historia-e-principios-da-criptografia.qmd`
 - [x] **cap 016** - Criptografia simétrica: AES, modos de operação e AEAD - `vol03/cap016-criptografia-simetrica-aes-modos-de-operacao.qmd`
 - [x] **cap 017** - Funções hash, HMAC e integridade - `vol03/cap017-funcoes-hash-hmac-e-integridade.qmd`
-- [ ] **cap 018** - Criptografia assimétrica: RSA, Diffie-Hellman e curvas elípticas - `vol03/cap018-criptografia-assimetrica-rsa-diffie-hellman-e.qmd`
+- [x] **cap 018** - Criptografia assimétrica: RSA, Diffie-Hellman e curvas elípticas - `vol03/cap018-criptografia-assimetrica-rsa-diffie-hellman-e.qmd`
 - [ ] **cap 019** - PKI, certificados digitais e cadeias de confiança - `vol03/cap019-pki-certificados-digitais-e-cadeias-de.qmd`
 - [ ] **cap 020** - TLS na prática: handshake, versões e configuração segura - `vol03/cap020-tls-na-pratica-handshake-versoes-e.qmd`
 - [ ] **cap 021** - Erros clássicos: criptografia mal empregada - `vol03/cap021-erros-classicos-criptografia-mal-empregada.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (17 concluidos).
+**Total:** 107 capitulos em 16 volumes (18 concluidos).
 

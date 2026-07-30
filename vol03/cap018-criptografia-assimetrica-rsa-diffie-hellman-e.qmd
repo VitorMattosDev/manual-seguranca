@@ -1,3 +1,311 @@
 # Criptografia assimétrica: RSA, Diffie-Hellman e curvas elípticas {#sec-cap018}
 
-*(em elaboracao)*
+No 27º Chaos Communication Congress, em dezembro de 2010, o grupo fail0verflow apresentou a recuperação da chave privada com que a Sony assinava todo o software do PlayStation 3. Não foi vazamento interno, não foi invasão de servidor, não foi força bruta contra ECDSA. Foi uma linha de código.
+
+O ECDSA exige que cada assinatura use um valor aleatório novo, chamado $k$ — um nonce, com todas as obrigações que o @sec-cap016 já estabeleceu para nonces. A implementação da Sony usava **um valor constante**. E a matemática do ECDSA é implacável quanto a isso: duas assinaturas produzidas com o mesmo $k$ permitem resolver um sistema de duas equações e recuperar a chave privada diretamente, com aritmética que cabe em vinte linhas de Python. A partir daí, qualquer pessoa podia assinar software que o console aceitaria como oficial. Não havia como revogar: a chave estava gravada no hardware de milhões de aparelhos.
+
+O algoritmo era sólido, a curva era adequada, o tamanho da chave era correto. O gerador de nonce não gerava nada. É o @sec-cap015 outra vez, num contexto de bilhões de dólares.
+
+Este capítulo trata da família de primitivas que resolveu o problema mais antigo da criptografia — como duas partes que nunca se encontraram acordam uma chave secreta — e das armadilhas específicas que ela trouxe junto.
+
+## O problema que a assimétrica resolve
+
+Até 1976, toda criptografia era simétrica, e isso implicava um problema logístico insolúvel: **para conversar em sigilo, as partes precisavam antes compartilhar uma chave por um canal já seguro**. Bancos trocavam chaves por malote. Embaixadas usavam correio diplomático. Redes militares distribuíam livros de código fisicamente.
+
+A escala torna isso impraticável. Uma rede de $n$ participantes que precisem falar dois a dois exige $n(n-1)/2$ chaves distintas: 10 pessoas exigem 45 chaves; 1.000 exigem quase meio milhão; a internet exigiria um número sem sentido. E nada disso resolve o caso que a web tornou cotidiano — um navegador que nunca viu determinado servidor precisa estabelecer sigilo com ele em milissegundos, sem contato prévio.
+
+A resposta veio do artigo de Diffie e Hellman [@diffie1976], que propôs a ideia central: **duas chaves matematicamente relacionadas, uma pública e uma privada**, tais que conhecer a pública não permita derivar a privada.
+
+A ferramenta que torna isso possível é a **função de mão única com alçapão** — fácil de computar numa direção, inviável de inverter, exceto para quem detém uma informação extra (o alçapão). Multiplicar dois primos de 1024 bits é instantâneo; fatorar o produto de volta é inviável. Elevar um número a uma potência módulo um primo grande é rápido; recuperar o expoente — o logaritmo discreto — não é.
+
+Vale registrar a natureza dessa segurança: **ela é conjectural**. Ninguém provou que fatoração é difícil. Sabe-se que ninguém conseguiu, apesar de séculos de esforço matemático, e que um avanço teórico mudaria o quadro. É uma diferença real em relação ao AES, cuja segurança também não é provada, mas cujo ataque não depende de um problema matemático com nome e história própria. É também a razão de a criptografia pós-quântica existir — um computador quântico relevante resolveria fatoração e logaritmo discreto em tempo polinomial, e o assunto é do Volume 16.
+
+## Diffie-Hellman: acordar uma chave em público
+
+O protocolo Diffie-Hellman faz algo que parece impossível: duas partes trocam mensagens **inteiramente públicas** e terminam compartilhando um segredo que quem observou não consegue calcular.
+
+::: {#fig-dh}
+```{.tikz}
+%%| filename: diffie-hellman
+%%| alt: Troca Diffie-Hellman entre duas partes, mostrando os valores públicos trocados, os expoentes privados e o segredo comum obtido pelos dois lados
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    parte/.style={draw=manualblue, very thick, fill=manualblue!10, rounded corners=3pt,
+                  align=center, inner sep=5pt, minimum width=3.6cm, minimum height=0.9cm},
+    priv/.style={draw=manualred, thick, fill=manualred!8, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=3.6cm, font=\scriptsize},
+    pub/.style={draw=manualgray, thick, fill=white, rounded corners=3pt,
+                align=center, inner sep=4pt, minimum width=3.6cm, font=\scriptsize},
+    seg/.style={draw=manualgreen, very thick, fill=manualgreen!14, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=3.6cm, minimum height=1.0cm,
+                font=\scriptsize},
+    nota/.style={align=center, font=\scriptsize, manualgray}}
+
+  \node[parte] (a) at (0,4.6) {\textbf{Alice}};
+  \node[parte] (b) at (9.0,4.6) {\textbf{Bob}};
+
+  \node[nota] at (4.5,4.6) {\textbf{Público:} primo $p$, gerador $g$};
+
+  \node[priv] (pa) at (0,3.3) {escolhe $a$ secreto};
+  \node[priv] (pb) at (9.0,3.3) {escolhe $b$ secreto};
+
+  \node[pub] (Aa) at (0,2.1) {calcula $A = g^{a} \bmod p$};
+  \node[pub] (Bb) at (9.0,2.1) {calcula $B = g^{b} \bmod p$};
+
+  \draw[destaque, manualblue, ->, >=stealth] (1.9,1.5) -- node[nota, above] {$A$} (7.1,1.5);
+  \draw[destaque, manualblue, ->, >=stealth] (7.1,0.9) -- node[nota, below] {$B$} (1.9,0.9);
+
+  \node[seg] (sa) at (0,-0.4) {$s = B^{a} \bmod p$};
+  \node[seg] (sb) at (9.0,-0.4) {$s = A^{b} \bmod p$};
+  \node[nota] at (4.5,-0.4) {$g^{ab} \bmod p$\\\textbf{mesmo valor}};
+
+  \node[draw=manualred, very thick, fill=manualred!8, rounded corners=4pt,
+        align=left, inner sep=6pt, font=\scriptsize, text width=12.6cm] at (4.5,-2.4)
+    {\textbf{\textcolor{manualred}{O observador vê $p$, $g$, $A$ e $B$ — e não consegue calcular $s$.}}
+     Obter $a$ a partir de $A = g^{a} \bmod p$ é o problema do logaritmo discreto, inviável para $p$ grande.
+     \textbf{Mas o observador ativo pode se passar por cada lado:} sem autenticação, Diffie-Hellman
+     estabelece uma chave excelente com o atacante no meio. É por isso que ele nunca aparece sozinho.};
+\end{tikzpicture}
+```
+Troca Diffie-Hellman. O segredo comum nunca trafega — e nada nela autentica quem está do outro lado.
+:::
+
+O mecanismo é simples de acompanhar. As partes concordam publicamente sobre um primo grande $p$ e um gerador $g$. Alice escolhe um expoente secreto $a$ e publica $A = g^a \bmod p$; Bob escolhe $b$ e publica $B = g^b \bmod p$. Alice calcula $B^a = g^{ab}$, Bob calcula $A^b = g^{ab}$: o mesmo valor. O observador tem $A$ e $B$, e para obter $g^{ab}$ precisaria de $a$ ou $b$ — o logaritmo discreto, inviável.
+
+**A limitação é tão importante quanto o mecanismo.** Diffie-Hellman garante sigilo contra observador passivo e **nada** contra adversário ativo. Um atacante posicionado no caminho executa duas trocas — uma com Alice, outra com Bob —, decifra, lê, recifra e repassa. Ambos os lados acreditam ter um canal seguro, e têm: com o atacante.
+
+A conclusão que estrutura todo o resto do volume: **acordo de chave sem autenticação é inútil na prática**. É por isso que o TLS combina ECDHE com assinatura do servidor, e por isso o @sec-cap019 existe.
+
+Na forma moderna, usa-se **DHE** (efêmero, com expoentes novos a cada sessão) ou, preferencialmente, **ECDHE** sobre curvas elípticas. O adjetivo "efêmero" é o que entrega **sigilo encaminhado**, tratado adiante.
+
+## RSA: cifrar e assinar com o mesmo par
+
+O RSA [@rivest1978] foi o primeiro esquema a fazer as duas coisas — cifrar e assinar — com o mesmo tipo de par de chaves, e por isso dominou por décadas.
+
+A geração é conceitualmente simples: escolhem-se dois primos grandes $p$ e $q$, calcula-se $n = pq$, e derivam-se um expoente público $e$ (tipicamente 65537) e um expoente privado $d$. A chave pública é $(n, e)$; a privada é $(n, d)$. A operação básica é exponenciação modular, e a segurança repousa sobre a dificuldade de fatorar $n$.
+
+Duas advertências práticas valem mais que a matemática:
+
+**RSA "de livro-texto" é inseguro.** Aplicar a operação diretamente sobre a mensagem é determinístico — cifrar duas vezes o mesmo dado dá o mesmo resultado, o que permite enumerar mensagens curtas — e maleável. Todo uso real exige preenchimento probabilístico: **OAEP** para cifragem e **PSS** para assinatura [@rfc8017]. O preenchimento antigo, PKCS#1 v1.5, foi a base do ataque de Bleichenbacher [@bleichenbacher1998] — um oráculo que revela o texto claro submetindo variações do cifrado e observando as respostas, exatamente a estrutura do modelo CCA do @sec-cap015. Foi corrigido em 1998, ressuscitou em 2017 como ROBOT em produtos de grandes fabricantes, e o @sec-cap020 mostra por que o TLS 1.3 simplesmente removeu o RSA de transporte de chave.
+
+**RSA não cifra dados, cifra chaves.** A operação é lenta e limitada ao tamanho do módulo — uma chave de 2048 bits cifra no máximo 190 bytes com OAEP. O uso correto é o **esquema híbrido**: gera-se uma chave simétrica aleatória, cifram-se os dados com AES-GCM e cifra-se **apenas a chave simétrica** com RSA. Quem tenta cifrar um arquivo diretamente com RSA ou está cifrando algo minúsculo ou está fazendo algo errado.
+
+### Assinatura: o inverso, e a confusão eterna
+
+Assinar é a operação com a chave **privada**, verificável com a **pública**. E a fonte de confusão mais persistente da área é qual chave faz o quê. A @fig-chaves-uso resolve de vez.
+
+::: {#fig-chaves-uso}
+```{.tikz}
+%%| filename: uso-das-chaves
+%%| alt: Diagrama mostrando que para confidencialidade cifra-se com a chave pública do destinatário e decifra-se com a privada, e que para autenticidade assina-se com a chave privada do emissor e verifica-se com a pública
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    op/.style={draw=manualblue, very thick, fill=manualblue!10, rounded corners=3pt,
+               align=center, inner sep=5pt, minimum width=3.0cm, minimum height=1.0cm,
+               font=\scriptsize},
+    kpub/.style={draw=manualgreen, thick, fill=manualgreen!12, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=3.0cm, minimum height=0.85cm,
+                 font=\scriptsize},
+    kpriv/.style={draw=manualred, thick, fill=manualred!10, rounded corners=3pt,
+                  align=center, inner sep=4pt, minimum width=3.0cm, minimum height=0.85cm,
+                  font=\scriptsize},
+    titulo/.style={align=center, font=\scriptsize},
+    nota/.style={align=center, font=\scriptsize, manualgray}}
+
+  % --- confidencialidade ---
+  \node[titulo] at (2.6,2.9) {\textbf{\textcolor{manualblue}{Confidencialidade}} — só o destinatário lê};
+  \node[kpub]  (cp) at (0.4,1.7) {chave \textbf{pública}\\\scriptsize do destinatário};
+  \node[op]    (cf) at (0.4,0.3) {\textbf{cifrar}};
+  \node[kpriv] (dp) at (4.8,1.7) {chave \textbf{privada}\\\scriptsize do destinatário};
+  \node[op]    (df) at (4.8,0.3) {\textbf{decifrar}};
+  \draw[auxiliar, ->, >=stealth] (cp) -- (cf);
+  \draw[auxiliar, ->, >=stealth] (dp) -- (df);
+  \draw[destaque, manualblue, ->, >=stealth] (cf) -- node[nota, above] {cifrado} (df);
+
+  % --- autenticidade ---
+  \node[titulo] at (11.0,2.9) {\textbf{\textcolor{manualgreen}{Autenticidade}} — só o emissor pôde produzir};
+  \node[kpriv] (ap) at (8.8,1.7) {chave \textbf{privada}\\\scriptsize do emissor};
+  \node[op]    (as) at (8.8,0.3) {\textbf{assinar}};
+  \node[kpub]  (vp) at (13.2,1.7) {chave \textbf{pública}\\\scriptsize do emissor};
+  \node[op]    (vf) at (13.2,0.3) {\textbf{verificar}};
+  \draw[auxiliar, ->, >=stealth] (ap) -- (as);
+  \draw[auxiliar, ->, >=stealth] (vp) -- (vf);
+  \draw[destaque, manualgreen, ->, >=stealth] (as) -- node[nota, above] {assinatura} (vf);
+
+  \node[draw=manualyellow, very thick, fill=manualyellow!12, rounded corners=4pt,
+        align=left, inner sep=6pt, font=\scriptsize, text width=13.8cm] at (6.8,-1.7)
+    {\textbf{A regra em uma frase:} usa-se a chave \textbf{do destinatário} para confidencialidade
+     e a chave \textbf{do emissor} para autenticidade. Em ambos os casos, a operação secreta
+     (decifrar, assinar) usa a privada.\\[3pt]
+     \textbf{E a assinatura não assina o documento:} assina o \emph{resumo} do documento.
+     Por isso a força da assinatura está limitada pela função hash — foi assim que o Flame,
+     no capítulo anterior, forjou um certificado sem tocar em nenhuma chave privada.};
+\end{tikzpicture}
+```
+Qual chave faz o quê. Confidencialidade usa a chave do destinatário; autenticidade, a do emissor.
+:::
+
+A assinatura digital entrega três propriedades que um MAC não entrega, e a diferença é do @sec-cap003: **autenticidade, integridade e não repúdio**. O MAC prova que a mensagem veio de quem tem a chave — mas as duas partes têm a mesma chave, e por isso nenhuma pode provar a um terceiro que a outra a produziu. A assinatura, como só o titular da privada pode gerá-la, é oponível a terceiros. É essa propriedade que dá base jurídica à assinatura eletrônica.
+
+## Curvas elípticas: mesma segurança, chaves menores
+
+A criptografia de curvas elípticas (ECC) constrói as mesmas operações sobre a estrutura algébrica de uma curva elíptica em vez de sobre inteiros módulo um primo. O problema difícil correspondente — o logaritmo discreto em curva elíptica — resiste melhor aos algoritmos conhecidos, e a consequência prática é grande:
+
+| Segurança | Simétrica | RSA / DH | Curva elíptica |
+|---|---|---|---|
+| 80 bits | — | 1024 bits | 160 bits |
+| 112 bits | 3DES | **2048 bits** | 224 bits |
+| 128 bits | AES-128 | 3072 bits | **256 bits** |
+| 192 bits | AES-192 | 7680 bits | 384 bits |
+| 256 bits | AES-256 | 15360 bits | 512 bits |
+
+: Tamanhos de chave de segurança equivalente [@nistsp80057]. {#tbl-equivalencia-chaves}
+
+A tabela explica duas decisões que aparecem o tempo todo em configuração. Primeiro, por que RSA de 2048 bits — ainda o padrão de mercado — entrega apenas 112 bits de segurança, abaixo dos 128 que se considera o alvo moderno; subir para 3072 bits resolve, ao custo de operações sensivelmente mais lentas. Segundo, por que ECC domina em dispositivos móveis, IoT e qualquer lugar com restrição de banda, memória ou bateria: 256 bits de chave elíptica substituem 3072 bits de RSA.
+
+### Quais curvas usar
+
+**P-256, P-384** (NIST) são as mais suportadas, presentes em todo lugar, obrigatórias em muitos contextos regulados — incluindo a ICP-Brasil. Têm uma objeção conhecida: as constantes de projeto nunca foram plenamente justificadas publicamente, o que gerou desconfiança persistente após o episódio do Dual_EC_DRBG. Não há ataque conhecido contra elas.
+
+**Curve25519 e Ed25519**, de Daniel Bernstein [@rfc7748; @rfc8032], foram projetadas com parâmetros justificados publicamente e, sobretudo, para serem **difíceis de implementar errado**: resistem naturalmente a canal lateral, dispensam validação de ponto e não têm formatos degenerados. Quando há liberdade de escolha, são a melhor opção — `X25519` para acordo de chave, `Ed25519` para assinatura. É o padrão do SSH moderno, do Signal, do WireGuard e do TLS 1.3.
+
+**Evite curvas exóticas** e implementações próprias de curvas. Escolher uma curva sem análise pública consolidada é reencenar o @sec-cap015 com aritmética mais sofisticada.
+
+### ECDSA e o problema do nonce
+
+O caso do PlayStation 3 que abre este capítulo não é anedota histórica: a mesma falha reapareceu em carteiras de Bitcoin em dispositivos Android em 2013 (por um defeito no gerador de aleatoriedade do sistema) e continua aparecendo em auditorias.
+
+A raiz é estrutural. **ECDSA exige um nonce $k$ aleatório, secreto e irrepetível a cada assinatura.** Se $k$ vaza, a chave privada sai de uma equação. Se $k$ se repete em duas assinaturas, a chave privada sai de duas equações. Se $k$ é apenas **enviesado** — poucos bits previsíveis —, técnicas de reticulados recuperam a chave a partir de algumas centenas de assinaturas.
+
+Duas defesas existem, e a segunda é a razão de preferir Ed25519:
+
+- **RFC 6979** define ECDSA determinístico: $k$ é derivado por HMAC da chave privada e da mensagem. Elimina a dependência do gerador de aleatoriedade, mantendo compatibilidade com verificadores existentes.
+- **Ed25519 é determinístico por projeto.** Não há $k$ a gerar, não há como errar. É o exemplo mais limpo do princípio que percorre este volume: **primitiva que não permite errar vale mais que documentação explicando como não errar**.
+
+## Sigilo encaminhado: por que "efêmero" importa
+
+Considere um servidor que use RSA para transporte de chave — modo em que o cliente sorteia a chave de sessão, cifra com a pública do servidor e envia. Funciona, é rápido, e tem um defeito de longo prazo: **quem gravou o tráfego cifrado hoje e obtiver a chave privada do servidor daqui a cinco anos decifra tudo o que gravou**. Por ordem judicial, por comprometimento do servidor, por descarte inadequado de um disco, por avanço criptanalítico.
+
+O **sigilo encaminhado** (*forward secrecy*) elimina esse risco. Com ECDHE, cada sessão usa um par efêmero, descartado ao fim; a chave privada de longo prazo do servidor serve apenas para **assinar** a troca, provando identidade, e não é suficiente para reconstituir nenhuma chave de sessão. Comprometer o servidor amanhã não abre o tráfego de ontem.
+
+Foi por isso que o TLS 1.3 **removeu completamente** o transporte de chave por RSA [@rfc8446]. Não o desaconselhou: eliminou do protocolo. Em TLS 1.2, a diferença aparece no nome da suíte — `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384` tem sigilo encaminhado; `TLS_RSA_WITH_AES_256_GCM_SHA384` não tem. É a distinção mais importante a saber ler numa lista de suítes, e o @sec-cap020 volta ao ponto.
+
+## Como tudo se combina, na prática
+
+Nenhum sistema real usa uma primitiva isolada. A construção padrão de qualquer canal seguro moderno tem quatro peças, e reconhecê-las torna legível qualquer protocolo:
+
+1. **Acordo de chave efêmero** (ECDHE com X25519 ou P-256) estabelece um segredo compartilhado com sigilo encaminhado.
+2. **Assinatura** (Ed25519, ECDSA ou RSA-PSS) sobre a troca prova a identidade de quem está do outro lado — resolvendo o adversário ativo do Diffie-Hellman.
+3. **KDF** (HKDF, do @sec-cap017) deriva do segredo compartilhado todas as chaves de que a sessão precisa.
+4. **AEAD** (AES-GCM ou ChaCha20-Poly1305, do @sec-cap016) protege os dados em volume.
+
+Cada peça faz uma coisa que as outras não fazem. TLS 1.3, SSH, WireGuard e o protocolo do Signal são variações desse mesmo arranjo — e o que sobra de diferença entre eles é sobretudo gestão de identidade e de estado, não escolha de primitiva.
+
+A peça 2 é a que ainda está em aberto neste volume: **como saber que a chave pública do outro lado é mesmo dele?** Essa é a pergunta que o @sec-cap019 responde.
+
+## ⚖️ Brasil em Foco
+
+**A ICP-Brasil é uma infraestrutura de chaves assimétricas com força de lei.** A MP 2.200-2/2001 conferiu presunção de veracidade aos documentos assinados com certificado emitido em sua cadeia — o que, no Direito, significa inversão do ônus da prova: quem alega que não assinou é que precisa demonstrar. A base técnica é exatamente o não repúdio descrito neste capítulo, e ele depende de uma premissa que é operacional, não matemática: **a chave privada esteve sob controle exclusivo do titular**. Todo o desenho de custódia da ICP-Brasil existe para sustentar essa premissa [@mp2200; @iti2024].
+
+**A escolha entre A1 e A3 é uma decisão sobre onde a chave privada vive.** No **A1**, a chave é gerada em software e fica em arquivo `.pfx` protegido por senha, com validade de um ano — copiável, o que viabiliza automação de NF-e e assinatura em servidor, e significa que comprometer o servidor é comprometer a chave. No **A3**, a chave é gerada dentro de um cartão ou *token* criptográfico e **não é extraível**: as operações acontecem no dispositivo, com validade de até três anos. Existe ainda o certificado **em nuvem**, em que a chave fica em módulo criptográfico de hardware (HSM) de um prestador, acionada por autenticação forte — combinação que preserva a não extração e recupera a automação. A decisão é de arquitetura: quanto mais automática a assinatura, mais fraca tende a ser a premissa de controle exclusivo.
+
+**A Lei 14.063/2020 escalonou as assinaturas, e o nível determina para que servem.** A assinatura **simples** identifica o signatário por meios básicos; a **avançada** usa certificado não-ICP ou outro meio que assegure integridade e autoria com nível razoável de confiança — é o caso do gov.br; a **qualificada** exige certificado ICP-Brasil e é a única admitida para os atos de maior exigência, como transferência de imóveis e certos atos societários. Para quem projeta sistema, a implicação é que **o nível de assinatura é requisito funcional**, definido pelo ato jurídico pretendido, e não uma escolha de conveniência técnica [@lei14063].
+
+**O gov.br popularizou a assinatura avançada e trouxe uma dependência.** A assinatura pelo portal usa certificado gerenciado em nuvem pelo governo, com autenticação por conta de nível prata ou ouro. Resolveu o problema de custo — não exige comprar certificado — e criou dependência de disponibilidade do serviço federal, além de deslocar a segurança do documento para a segurança da conta gov.br. Do ponto de vista deste capítulo, o par de chaves não está mais com o titular; está com um custodiante, sob controle de autenticação. É uma troca legítima e explícita, e precisa ser tratada como tal na análise de risco.
+
+**Migração de RSA-2048 é assunto de planejamento, não de urgência.** Boa parte do parque brasileiro — inclusive certificados ICP-Brasil — usa RSA de 2048 bits, que entrega 112 bits de segurança. Não há ataque prático à vista, e o NIST projeta a transição para depois de 2030 [@nistsp800131a]. O que vale começar agora é o **inventário**: onde há RSA-2048 e RSA-1024, onde há SHA-1 em assinatura, quais sistemas conseguem lidar com chaves maiores ou com curvas elípticas. Esse mesmo inventário é o insumo da migração pós-quântica, e fazê-lo uma vez serve às duas.
+
+## 🛠️ No Campo
+
+**1. Prefira Ed25519 e X25519 sempre que houver liberdade de escolha.** Chaves menores, mais rápidas e — o que mais importa — sem nonce a errar:
+
+```bash
+# SSH: gerar par moderno
+ssh-keygen -t ed25519 -C "vitor@estacao" -f ~/.ssh/id_ed25519
+
+# Encontrar chaves antigas ou fracas ainda em uso no parque
+ssh-keygen -lf ~/.ssh/authorized_keys      # mostra tipo e tamanho de cada chave
+awk '{print $1}' ~/.ssh/authorized_keys | sort | uniq -c   # ssh-dss e rsa curtas = achado
+```
+
+`ssh-dss` (DSA) deve ser removido sem discussão: está desabilitado por padrão no OpenSSH há anos e tem exatamente o mesmo problema de nonce descrito aqui.
+
+**2. Nunca use RSA sem preenchimento moderno.** OAEP para cifrar, PSS para assinar:
+
+```python
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import hashes
+
+# Certo: OAEP para cifragem
+ct = pub.encrypt(chave_simetrica, padding.OAEP(
+        mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
+
+# Certo: PSS para assinatura
+sig = priv.sign(mensagem, padding.PSS(
+        mgf=padding.MGF1(hashes.SHA256()),
+        salt_length=padding.PSS.MAX_LENGTH), hashes.SHA256())
+```
+
+E lembre do escopo: o `chave_simetrica` do exemplo é o uso correto. Cifrar o dado em si com RSA é sintoma de desenho errado.
+
+**3. Procure PKCS#1 v1.5 e chaves fracas na base de código e no parque.** As duas varreduras que mais rendem:
+
+```bash
+grep -rnE 'PKCS1v15|PKCS1_v1_5|RSA/ECB/PKCS1Padding|NoPadding' \
+     --include='*.py' --include='*.java' --include='*.go' --include='*.cs' .
+
+# Chaves RSA com menos de 2048 bits em certificados do parque
+for c in /etc/ssl/certs/*.pem /etc/pki/tls/certs/*.crt; do
+  [ -f "$c" ] || continue
+  b=$(openssl x509 -in "$c" -noout -text 2>/dev/null | grep -oE 'Public-Key: \([0-9]+' | grep -oE '[0-9]+')
+  [ -n "$b" ] && [ "$b" -lt 2048 ] && echo "FRACA ($b bits): $c"
+done
+```
+
+`RSA/ECB/PKCS1Padding` em Java merece nota: apesar do "ECB" no nome, aqui ele não significa modo de operação — significa preenchimento PKCS#1 v1.5, e o achado é o preenchimento.
+
+**4. Exija sigilo encaminhado na configuração de TLS.** É a suíte que revela, e a leitura é direta:
+
+```bash
+# Suítes efetivamente oferecidas pelo servidor
+nmap --script ssl-enum-ciphers -p 443 servidor.exemplo.br
+
+# Qualquer suite TLS_RSA_WITH_* (sem DHE/ECDHE) nao tem sigilo encaminhado
+openssl s_client -connect servidor.exemplo.br:443 </dev/null 2>/dev/null \
+  | grep -E 'Protocol|Cipher'
+```
+
+**5. Trate a chave privada como o ativo que ela é.** Cinco controles que valem mais que a escolha do algoritmo: gerar no destino final (nunca gerar em uma máquina e copiar), permissão `0600` e dono correto, senha de proteção onde o formato permitir, HSM ou KMS para chave de assinatura de alto valor, e procedimento escrito de revogação testado antes de precisar dele.
+
+```bash
+# Achados clássicos de auditoria: chave privada legível ou versionada
+find / -name '*.key' -o -name '*.pem' 2>/dev/null | while read -r f; do
+  p=$(stat -c '%a %U' "$f" 2>/dev/null)
+  case "$p" in *4*|*6*|*7*) grep -qs 'PRIVATE KEY' "$f" && echo "$p $f";; esac
+done
+
+git log --all --diff-filter=A --name-only --pretty=format: \
+  | grep -E '\.(key|pem|pfx|p12|jks)$' | sort -u
+```
+
+O segundo comando merece ser rodado hoje. Chave privada que já esteve num commit continua no histórico mesmo depois de removida do diretório, e a única resposta correta é **considerá-la comprometida e rotacioná-la** — não apagar o arquivo.
+
+**6. Use ECDSA determinístico ou Ed25519 onde assinar for frequente.** Se a plataforma só oferece ECDSA, verifique se a biblioteca implementa RFC 6979. Se assina em dispositivo embarcado, com entropia escassa no arranque, isso deixa de ser preferência e vira requisito — é exatamente o cenário em que o gerador falha.
+
+**7. Documente o inventário de chaves assimétricas com data de expiração.** Um registro com titular, finalidade, algoritmo, tamanho, onde a privada vive, data de emissão e de validade. É o que evita a categoria de incidente mais evitável que existe: certificado expirado em produção num feriado. E é o insumo direto da migração pós-quântica, quando ela chegar.
+
+**8. Ao avaliar um fornecedor, pergunte onde a chave privada é gerada.** "Nós geramos o par e enviamos por e-mail" descreve um sistema em que o não repúdio não existe, porque o controle nunca foi exclusivo. A resposta correta é que o par nasce no dispositivo do titular ou dentro do HSM, e que a privada nunca trafega.
+
+## Resumo
+
+- A criptografia assimétrica resolveu o problema logístico que a simétrica não resolvia: **acordar chave entre partes que nunca se encontraram**, sem canal seguro prévio.
+- Sua segurança é **conjectural** — repousa sobre fatoração e logaritmo discreto serem difíceis, o que ninguém provou e um computador quântico relevante desfaria.
+- **Diffie-Hellman** estabelece um segredo por troca pública, e não autentica nada. Sem assinatura junto, entrega uma chave excelente ao atacante no meio.
+- **RSA de livro-texto é inseguro**; use OAEP para cifrar e PSS para assinar. E RSA **não cifra dados**: cifra a chave simétrica que cifra os dados.
+- A regra das chaves: **pública do destinatário para confidencialidade, privada do emissor para autenticidade**. A operação secreta é sempre a da chave privada.
+- **Assinatura digital dá não repúdio; MAC não dá**, porque no MAC as duas partes têm a mesma chave. É essa diferença que sustenta a assinatura eletrônica juridicamente.
+- **Curvas elípticas entregam a mesma segurança com chaves muito menores** — 256 bits de ECC equivalem a 3072 de RSA. Prefira X25519 e Ed25519 quando houver escolha; P-256 e P-384 quando houver exigência de compatibilidade ou regulatória.
+- **ECDSA depende de um nonce por assinatura**, e reusá-lo, vazá-lo ou enviesá-lo revela a chave privada. Foi assim que a chave do PlayStation 3 caiu. Ed25519 é determinístico por projeto e remove a possibilidade do erro.
+- **Sigilo encaminhado** exige acordo de chave efêmero: com ECDHE, comprometer o servidor amanhã não abre o tráfego de ontem. O TLS 1.3 removeu o transporte de chave por RSA justamente por isso.
+- Todo canal seguro moderno combina **ECDHE + assinatura + KDF + AEAD**. Reconhecer as quatro peças torna legível qualquer protocolo — e a peça que falta explicar é como confiar na chave pública alheia, tema do capítulo seguinte.
+- No Brasil, a ICP-Brasil dá base legal ao não repúdio, e a escolha entre **A1, A3 e nuvem** é, no fundo, uma decisão sobre onde a chave privada vive e quão defensável é a premissa de controle exclusivo.
