@@ -1,3 +1,284 @@
 # Modelagem de ameaças: STRIDE, árvores de ataque e abuse cases {#sec-cap005}
 
-*(em elaboracao)*
+O provedor lançou o portal do assinante em quatro meses de desenvolvimento. Funcionava: segunda via de fatura, alteração de plano, abertura de chamado, histórico de consumo. Autenticação por CPF e senha, sessão com expiração, tráfego em HTTPS com certificado válido, senhas armazenadas com hash forte. Os testes de aceitação passaram todos.
+
+Três semanas depois do lançamento, um assinante mandou uma mensagem para o suporte, sem qualquer má intenção: ele havia percebido que a URL da fatura terminava em `/fatura/48213`, trocou o número por `48212` e apareceu a fatura de outra pessoa — nome, CPF, endereço, valor. Testou mais alguns. Todos abriam.
+
+A falha é conhecida, tem nome (referência direta insegura a objeto), e leva talvez vinte minutos para corrigir. O que custou caro não foi a correção: foi que 4.000 assinantes ficaram com dados pessoais expostos por três semanas, e que o incidente virou comunicação à ANPD.
+
+O detalhe que interessa a este capítulo é outro. Nenhum teste teria pego isso, porque todos os testes verificavam que **o sistema faz o que deve fazer**. Ninguém verificou que ele **não faz o que não deve**. A pergunta "e se o usuário trocar o número na URL?" não custa nada, não exige ferramenta e leva menos de um minuto — desde que alguém a faça. Fazer sistematicamente essa classe de pergunta, antes de construir, é o que se chama modelagem de ameaças.
+
+## O que é, e quando fazer
+
+**Modelagem de ameaças** é o exercício estruturado de antecipar como um sistema pode ser atacado, antes de ele existir ou antes de ele mudar. Adam Shostack a resume em quatro perguntas [@shostack2014], e a virtude do método está inteiramente na disciplina de responder as quatro, na ordem:
+
+1. **O que estamos construindo?** Um desenho do sistema que todos concordam que está correto.
+2. **O que pode dar errado?** A parte criativa, guiada por um catálogo para não depender de inspiração.
+3. **O que vamos fazer a respeito?** Cada ameaça vira uma decisão com dono e prazo.
+4. **Fizemos um bom trabalho?** Revisão do próprio exercício.
+
+A terceira e a quarta perguntas são as que separam modelagem de conversa. Um modelo que produz uma lista de ameaças e nenhuma decisão registrada não mudou nada.
+
+Sobre **quando**: o retorno é máximo quando ainda é barato mudar — ao desenhar um sistema novo, ao alterar arquitetura, ao integrar um terceiro, ao expor algo que antes era interno, ao mudar quem pode acessar o quê. Não é ritual anual; é gatilho por mudança. E não precisa ser pesado: uma sessão de noventa minutos com quadro branco, a pessoa que desenvolve, a que opera a infraestrutura e alguém do negócio cobre a maior parte do valor.
+
+## Pergunta 1: desenhar o sistema
+
+O formato que melhor sustenta o exercício é o **diagrama de fluxo de dados**, com cinco elementos e uma convenção visual estável:
+
+- **Entidade externa** — quem interage e está fora do seu controle (assinante, integração de terceiro).
+- **Processo** — código que executa e transforma dados (aplicação, API, serviço).
+- **Armazenamento** — onde os dados repousam (banco, arquivo, fila, cache).
+- **Fluxo de dados** — o que trafega, e por qual canal.
+- **Fronteira de confiança** — a linha em que o nível de confiança muda. É o elemento mais importante do diagrama.
+
+A regra prática que rende mais: **ameaças se concentram onde os fluxos cruzam fronteiras de confiança**. Um desenho sem fronteiras marcadas não é um modelo de ameaças, é um diagrama de arquitetura. A @fig-dfd-portal desenha o portal do caso de abertura.
+
+::: {#fig-dfd-portal}
+```{.tikz}
+%%| filename: dfd-portal
+%%| alt: Diagrama de fluxo de dados do portal do assinante, com entidades externas, processos, armazenamentos e três fronteiras de confiança tracejadas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ext/.style={draw=manualgray, thick, fill=manualgray!10, align=center,
+                inner sep=4pt, minimum width=2.2cm, minimum height=0.95cm},
+    proc/.style={draw=manualblue, thick, fill=manualblue!8, circle, align=center,
+                 inner sep=2pt, minimum size=1.9cm},
+    store/.style={draw=manualgreen, thick, fill=manualgreen!8, align=center,
+                  inner sep=4pt, minimum width=2.3cm, minimum height=0.95cm},
+    fluxo/.style={->,>=stealth, thick, manualgray}}
+
+  \node[ext] (assin) at (0,2.2) {Assinante\\\scriptsize navegador};
+  \node[ext] (atend) at (0,-2.2) {Atendente\\\scriptsize interno};
+
+  \node[proc] (portal) at (4.4,2.2) {Portal\\\scriptsize web};
+  \node[proc] (api) at (8.8,0) {API de\\\scriptsize faturamento};
+  \node[proc] (erp) at (4.4,-2.2) {ERP\\\scriptsize interno};
+
+  \node[store] (bd) at (13.0,1.3) {Banco de dados\\\scriptsize cadastro, faturas};
+  \node[store] (log) at (13.0,-1.3) {Registros\\\scriptsize auditoria};
+
+  \draw[fluxo] (assin) -- node[above, font=\scriptsize] {HTTPS} (portal);
+  \draw[fluxo] (portal) -- node[above right, font=\scriptsize, pos=0.35] {REST} (api);
+  \draw[fluxo] (erp) -- node[below right, font=\scriptsize, pos=0.35] {REST} (api);
+  \draw[fluxo] (atend) -- node[above, font=\scriptsize] {HTTP} (erp);
+  \draw[fluxo] (api) -- node[above, font=\scriptsize, pos=0.6] {SQL} (bd);
+  \draw[fluxo] (api) -- node[below, font=\scriptsize, pos=0.6] {syslog} (log);
+
+  \draw[auxiliar, manualred, very thick] (2.2,-4.0) -- (2.2,4.0);
+  \node[manualred, anchor=south, font=\scriptsize, align=center] at (2.2,4.05)
+    {fronteira 1\\internet $\to$ DMZ};
+
+  \draw[auxiliar, manualred, very thick] (6.6,-4.0) -- (6.6,4.0);
+  \node[manualred, anchor=south, font=\scriptsize, align=center] at (6.6,4.05)
+    {fronteira 2\\DMZ $\to$ rede interna};
+
+  \draw[auxiliar, manualred, very thick] (11.0,-4.0) -- (11.0,4.0);
+  \node[manualred, anchor=south, font=\scriptsize, align=center] at (11.0,4.05)
+    {fronteira 3\\aplicação $\to$ dados};
+\end{tikzpicture}
+```
+Diagrama de fluxo de dados do portal do assinante. As três linhas vermelhas são onde o esforço de análise se concentra.
+:::
+
+Duas dicas de execução. Primeira: desenhe no nível de detalhe em que as decisões são tomadas — um diagrama com trinta caixas não é analisado por ninguém. Segunda: valide o desenho com quem construiu o sistema. É frequente descobrir, nessa validação, um fluxo que não estava no desenho e que ninguém lembrava que existia — e esse fluxo esquecido é, com frequência desconfortável, exatamente onde está o problema.
+
+## Pergunta 2: o que pode dar errado
+
+### STRIDE
+
+O **STRIDE** é o catálogo mais usado, e sua elegância está em ser o complemento exato das propriedades de segurança dos capítulos anteriores: cada letra é a violação de uma propriedade.
+
+| Letra | Ameaça | Propriedade violada | Exemplo no portal | Contramedida típica |
+|---|---|---|---|---|
+| **S** | *Spoofing* — falsificação de identidade | Autenticidade | Entrar como outro assinante com CPF vazado e senha fraca | Autenticação forte, segundo fator, TLS mútuo |
+| **T** | *Tampering* — adulteração | Integridade | Alterar o valor da fatura num parâmetro da requisição | Validação no servidor, assinatura, restrições no banco |
+| **R** | *Repudiation* — repúdio | Não repúdio | Negar que pediu a mudança de plano | Log íntegro, conta nomeada, carimbo de tempo |
+| **I** | *Information disclosure* — vazamento | Confidencialidade | Trocar o número da URL e ver a fatura alheia | Autorização por objeto, minimização, cifragem |
+| **D** | *Denial of service* — negação de serviço | Disponibilidade | Esgotar a API com requisições em massa | Limitação de taxa, cota, dimensionamento, filtragem |
+| **E** | *Elevation of privilege* — elevação de privilégio | Autorização | Assinante alcançar função de atendente | Menor privilégio, verificação de papel no servidor |
+
+: STRIDE e sua correspondência com as propriedades de segurança. {#tbl-stride}
+
+A falha do caso de abertura é um **I** clássico — e ela ilustra por que o catálogo funciona: bastava alguém percorrer as seis letras para o fluxo "assinante consulta fatura" e perguntar "como haveria vazamento de informação aqui?".
+
+A técnica que sistematiza isso chama-se **STRIDE por elemento**: em vez de olhar o sistema inteiro de uma vez, aplicar as letras relevantes a cada elemento do diagrama. Nem todas se aplicam a todos:
+
+- **Entidade externa**: S, R
+- **Processo**: todas as seis
+- **Armazenamento**: T, I, D (e R, se for o armazenamento dos próprios logs)
+- **Fluxo de dados**: T, I, D
+
+Para o portal da @fig-dfd-portal, isso significa cerca de trinta perguntas — algumas descartadas em segundos, outras rendendo achados. É trabalho de uma tarde, e é a razão pela qual a modelagem tem retorno tão desproporcional ao custo.
+
+### Árvores de ataque
+
+O STRIDE responde "que categorias de coisa podem dar errado". A **árvore de ataque**, proposta por Bruce Schneier, responde a uma pergunta diferente e complementar: *dado um objetivo do atacante, quais são todos os caminhos até ele?* [@schneier1999]
+
+A raiz é o objetivo; os nós internos são submetas; as folhas são ações concretas. Os nós se combinam de duas formas: **OU** (qualquer filho basta) e **E** (todos os filhos são necessários). A @fig-arvore-ataque monta a árvore para o objetivo mais realista no contexto de um provedor.
+
+::: {#fig-arvore-ataque}
+```{.tikz}
+%%| filename: arvore-ataque
+%%| alt: Árvore de ataque com o objetivo de obter a base de assinantes na raiz, três caminhos intermediários e folhas com ações concretas, marcando nós OU e E
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    raiz/.style={draw=manualred, very thick, fill=manualred!12, rounded corners=3pt,
+                 align=center, inner sep=5pt, minimum width=4.6cm},
+    meta/.style={draw=manualyellow, thick, fill=manualyellow!10, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=3.2cm},
+    folha/.style={draw=manualblue, thick, fill=manualblue!7, rounded corners=3pt,
+                  align=center, inner sep=4pt, minimum width=3.0cm, font=\scriptsize},
+    lig/.style={-, thick, manualgray}}
+
+  \node[raiz] (obj) at (7,5.4) {\textbf{Obter a base de assinantes}};
+  \node[manualred, anchor=west, font=\scriptsize] at (9.5,5.4) {(nó OU)};
+
+  \node[meta] (m1) at (1.6,3.1) {Acesso ao\\servidor do ERP};
+  \node[meta] (m2) at (7.0,3.1) {Acesso pela\\aplicação web};
+  \node[meta] (m3) at (12.4,3.1) {Via pessoa\\com acesso};
+
+  \draw[lig] (obj) -- (m1);
+  \draw[lig] (obj) -- (m2);
+  \draw[lig] (obj) -- (m3);
+
+  \node[folha] (f1) at (-0.2,0.9) {credencial de VPN\\vazada + sem 2FA};
+  \node[folha] (f2) at (3.3,0.9) {falha conhecida\\sem correção};
+  \node[folha] (f3) at (7.0,0.9) {referência direta\\insegura (IDOR)};
+  \node[folha] (f4) at (10.7,0.9) {injeção de SQL\\em campo de busca};
+  \node[folha] (f5) at (14.2,0.9) {engenharia social\\no suporte};
+
+  \draw[lig] (m1) -- (f1);
+  \draw[lig] (m1) -- (f2);
+  \draw[lig] (m2) -- (f3);
+  \draw[lig] (m2) -- (f4);
+  \draw[lig] (m3) -- (f5);
+
+  \node[folha, draw=manualgreen, fill=manualgreen!8] (e1) at (12.4,-1.6)
+    {obter lista de\\nomes do suporte};
+  \node[folha, draw=manualgreen, fill=manualgreen!8] (e2) at (16.0,-1.6)
+    {pretexto verossímil\\de urgência};
+  \draw[lig] (f5) -- (e1);
+  \draw[lig] (f5) -- (e2);
+  \node[manualgreen, font=\scriptsize, anchor=west] at (16.9,-1.6) {(nó E)};
+
+  \node[align=left, font=\scriptsize, manualgray, anchor=north west] at (-1.2,-1.0)
+    {\textbf{Custo estimado do caminho}\\
+     f1: baixo, dias\\
+     f2: baixo, horas\\
+     f3: muito baixo, minutos};
+\end{tikzpicture}
+```
+Árvore de ataque para a base de assinantes. O caminho mais barato — não o mais sofisticado — é o que descreve o adversário real.
+:::
+
+O valor da árvore aparece quando se anotam as folhas com **custo, tempo e habilidade requerida**. O caminho mais barato define o adversário mais provável, e é ali que o primeiro real de defesa rende mais. No exemplo, gastar em detecção sofisticada enquanto existe uma referência direta insegura explorável em minutos é investir no ramo errado da árvore.
+
+Árvores também mostram onde um único controle corta vários caminhos ao mesmo tempo — segundo fator na VPN elimina `f1` e encarece `f5`. Esse é o tipo de raciocínio que uma lista de vulnerabilidades ordenada por nota nunca produz.
+
+### Abuse cases
+
+O terceiro instrumento parte do que a equipe já escreve. Para cada **caso de uso**, escreve-se o **caso de abuso** correspondente: o mesmo ator, com intenção hostil, ou um ator novo que ninguém previu.
+
+> **Caso de uso.** Como assinante autenticado, quero consultar minha fatura para pagá-la.
+>
+> **Caso de abuso.** Como assinante autenticado, quero consultar a fatura **de outro assinante** alterando o identificador na URL.
+>
+> **Critério de aceitação derivado.** A requisição de fatura cujo identificador não pertence ao assinante da sessão retorna 404, registra o evento com origem e identificador tentado, e dispara alerta após cinco tentativas.
+
+O ganho dessa formulação é institucional: o caso de abuso vira **critério de aceitação** e depois **teste automatizado**, entrando no mesmo fluxo em que a equipe já trabalha. Segurança que vive numa planilha à parte é esquecida; segurança que vira teste que quebra o build sobrevive.
+
+## Outras abordagens, e quando usá-las
+
+STRIDE, árvores e casos de abuso cobrem a grande maioria das necessidades. Vale conhecer quatro alternativas pelo que cada uma acrescenta:
+
+- **PASTA** — processo de sete estágios centrado em risco de negócio, com simulação de ataque. Mais pesado; adequado quando a modelagem precisa dialogar com análise financeira de risco.
+- **LINDDUN** — o análogo do STRIDE para **privacidade**: vinculabilidade, identificabilidade, não repúdio (aqui como problema, não como propriedade desejável), detectabilidade, divulgação, inconsciência e não conformidade. É o instrumento certo para o relatório de impacto exigido pela LGPD, porque olha ameaças ao titular dos dados, não à empresa.
+- **OCTAVE** — orientado a organização e ativos críticos, mais que a sistemas; útil em nível de programa.
+- **MITRE ATT&CK** — não é método de modelagem, e sim catálogo de táticas e técnicas reais [@mitreattack]. Excelente como fonte de folhas para árvores de ataque e como régua de cobertura de detecção. O Volume 11 aprofunda.
+
+Uma nota sobre a **cadeia de ataque** (*kill chain*): modelar o ataque como sequência de etapas — reconhecimento, acesso inicial, execução, persistência, movimentação lateral, exfiltração — tem valor defensivo próprio, porque cada etapa é uma oportunidade de detecção e interrupção. Um adversário precisa vencer todas; o defensor precisa pegar uma.
+
+## Pergunta 3: o que fazer, e pergunta 4: fizemos bem?
+
+Cada ameaça identificada termina em uma de quatro decisões, e a decisão precisa estar **escrita, com dono e prazo**:
+
+- **Mitigar** — implantar controle que reduza probabilidade ou impacto.
+- **Eliminar** — remover a funcionalidade ou o dado que cria a exposição. Subestimada: a funcionalidade que ninguém usa e que só existe porque estava no escopo original é o alvo mais fácil.
+- **Transferir** — passar o risco a um terceiro (seguro, contrato, fornecedor especializado). Transfere o custo financeiro, nunca a responsabilidade perante o titular dos dados.
+- **Aceitar** — decidir conviver com ele, conscientemente, registrado, por quem tem autoridade para isso.
+
+A quarta pergunta de Shostack — *fizemos um bom trabalho?* — se responde com três checagens: todos os elementos do diagrama receberam as letras aplicáveis do STRIDE; alguém que não participou revisou o modelo; e as ameaças mitigadas geraram teste que detecta regressão.
+
+### Erros que esvaziam o exercício
+
+- **Modelar uma vez.** O modelo envelhece na primeira mudança de arquitetura. Revisar por gatilho, não por calendário.
+- **Modelar sem quem constrói.** Modelo feito só por segurança produz achados que a equipe de desenvolvimento não reconhece como reais, e nada é implementado.
+- **Buscar completude.** Não existe lista exaustiva de ameaças. Um modelo que cobre as fronteiras de confiança e os fluxos principais entrega quase todo o valor; perseguir os últimos 5% consome o tempo que faltará para corrigir os 95%.
+- **Parar na lista.** Sem decisão, dono e prazo, o documento é um inventário de preocupações.
+- **Confundir com teste de invasão.** A modelagem antecipa o que *pode* dar errado no desenho; o teste verifica o que *está* errado na implementação. São complementares e não se substituem — o Volume 9 trata do segundo.
+
+## ⚖️ Brasil em Foco
+
+A LGPD incorporou modelagem de ameaças ao ordenamento sem usar essa expressão. O art. 46, §2º determina que as medidas de segurança deverão ser observadas **desde a fase de concepção do produto ou do serviço até a sua execução** [@lgpd2018] — é a positivação do princípio de *security e privacy by design*, e a única forma prática de cumpri-la é analisar riscos antes de construir. Uma decisão de arquitetura tomada sem essa análise e que depois causa vazamento é, sob esse dispositivo, falha demonstrável de diligência.
+
+O **relatório de impacto à proteção de dados pessoais** do art. 38 é o produto formal mais próximo de um modelo de ameaças no direito brasileiro. Sua estrutura pede descrição dos tratamentos, dos riscos às liberdades civis e aos direitos fundamentais, e das salvaguardas adotadas — exatamente as perguntas 1, 2 e 3 de Shostack, com o foco deslocado: o risco a analisar é o risco **ao titular dos dados**, não à empresa. É por isso que o LINDDUN é mais adequado que o STRIDE para esse documento: uma funcionalidade pode ser perfeitamente segura para a organização e ainda assim criar vinculabilidade ou identificabilidade indevida para as pessoas.
+
+A distinção tem consequência concreta no caso de abertura. Sob a ótica da empresa, o incidente foi vazamento de dados de clientes. Sob a ótica do titular, foi a exposição de nome, CPF, endereço e valor de fatura de 4.000 pessoas a qualquer um com um navegador — situação que o art. 48 obriga a comunicar à ANPD e aos titulares afetados quando houver risco ou dano relevante, no prazo de três dias úteis fixado pela Resolução CD/ANPD nº 15/2024 [@anpd2024res15]. Modelar antes custaria uma tarde.
+
+No setor financeiro e de pagamentos, a Resolução CMN nº 4.893/2021 exige que a política de segurança cibernética contemple **avaliação prévia** de novas tecnologias e de mudanças relevantes, e que a instituição avalie riscos antes de contratar serviços de terceiros [@bcb4893]. Para telecomunicações, a Resolução Anatel nº 740/2020 exige que produtos sejam concebidos com requisitos de segurança, o que pressupõe análise na fase de projeto [@anatel740].
+
+Um ponto prático para provedores regionais: a **ANPD reconhece proporcionalidade**. Para agentes de pequeno porte, a autoridade não espera um processo formal de sete estágios — espera evidência de que os riscos foram considerados e as decisões registradas [@anpd2023guia]. Uma ata de duas páginas por projeto, com o diagrama, as ameaças levantadas e as decisões tomadas, é documento suficiente e mais defensável que a ausência de qualquer registro.
+
+## 🛠️ No Campo
+
+**1. A sessão de noventa minutos.** Quadro branco, três pessoas (quem desenvolve, quem opera, quem entende o negócio), um sistema por vez. Primeiros 20 minutos: desenhar o fluxo de dados e marcar as fronteiras de confiança. Próximos 45: percorrer STRIDE por elemento nos fluxos que cruzam fronteira. Últimos 25: decidir o que fazer com cada achado, com dono e prazo. Fotografar o quadro e anexar à ata é registro suficiente.
+
+**2. Modelar a rede, não só a aplicação.** Para quem administra infraestrutura, o exercício mais valioso é sobre o **acesso de gerência**. Fluxo: técnico → VPN → VLAN de gerência → OLT. Aplicando STRIDE ao fluxo que cruza a fronteira internet–VPN:
+
+| Letra | Pergunta | Achado típico |
+|---|---|---|
+| S | Alguém consegue se passar por técnico? | Conta compartilhada, sem segundo fator |
+| T | Dá para alterar a configuração em trânsito? | Telnet ou SNMPv2 na gerência |
+| R | Dá para negar que fez a alteração? | Login `admin` genérico no equipamento |
+| I | Dá para ler configuração ou tráfego? | Comunidade SNMP `public` habilitada |
+| D | Dá para derrubar a gerência? | Plano de gerência sem separação do de dados |
+| E | Dá para sair de um acesso limitado para total? | Um único nível de privilégio no equipamento |
+
+: STRIDE aplicado ao acesso de gerência de rede. {#tbl-stride-gerencia}
+
+**3. Transformar cada achado em verificação executável.** O caso de abuso vira teste. Para o incidente de abertura, a verificação é uma linha:
+
+```bash
+# Autentica como assinante A e tenta ler a fatura do assinante B.
+# Esperado: 404. Qualquer 200 aqui é falha de autorização por objeto.
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $TOKEN_ASSINANTE_A" \
+  https://portal.exemplo.br/api/fatura/48212
+```
+
+**4. Verificar as fronteiras que você acha que existem.** Modelo desenhado é hipótese; a rede é o fato. Vale confirmar que a DMZ não alcança a rede interna e que o servidor de aplicação não alcança o que não precisa:
+
+```bash
+# A partir de um host da DMZ: o que da rede interna responde? (esperado: só o previsto)
+nmap -Pn -n --top-ports 50 --open 10.20.0.0/24
+
+# Rotas e regras que contradizem a fronteira desenhada
+ip route show
+nft list ruleset | grep -A3 -E 'chain (forward|input)'
+```
+
+**5. Guardar o modelo junto do código.** Um arquivo Markdown no repositório, versionado com o sistema que descreve, com o diagrama e a tabela de ameaças e decisões. Modelo em pasta compartilhada some; modelo no repositório aparece na revisão de código.
+
+**6. Reservar dez minutos da revisão de mudança para a pergunta.** Antes de subir alteração relevante: *esta mudança cria fluxo novo que cruza fronteira de confiança?* Se sim, as seis letras. Se não, segue. É o formato mais barato de modelagem contínua que existe.
+
+**7. Fazer o exercício da funcionalidade removida.** Percorrer o sistema perguntando o que pode ser **desligado**: relatório que ninguém abre há um ano, campo coletado e nunca usado, integração de um projeto abandonado, endereço de API sem consumidor. Eliminar é a única mitigação com eficácia de 100% e custo de manutenção zero — e conversa diretamente com o princípio da necessidade da LGPD.
+
+## Resumo
+
+- Testes verificam que o sistema **faz o que deve**; modelagem de ameaças verifica que ele **não faz o que não deve**. Falhas como referência direta insegura passam por qualquer suíte de aceitação e são triviais de antecipar em uma sessão de quadro branco.
+- O método são quatro perguntas: o que estamos construindo, o que pode dar errado, o que faremos, e fizemos bem. As duas últimas são o que separa modelagem de conversa.
+- No diagrama de fluxo de dados, o elemento decisivo é a **fronteira de confiança** — é onde as ameaças se concentram e onde o esforço de análise deve se concentrar.
+- **STRIDE** é o complemento exato das propriedades dos capítulos anteriores: cada letra viola uma delas. Aplicado **por elemento**, converte-se numa lista finita de perguntas concretas.
+- **Árvores de ataque** partem do objetivo do adversário e revelam o caminho mais barato — que é o que descreve o atacante real — e os controles que cortam vários ramos de uma vez. **Casos de abuso** convertem achados em critério de aceitação e teste automatizado.
+- Cada ameaça termina em mitigar, eliminar, transferir ou aceitar, sempre com dono e prazo. Transferir move o custo financeiro, nunca a responsabilidade perante o titular dos dados.
+- No Brasil, o art. 46, §2º da LGPD exige segurança desde a concepção, e o relatório de impacto do art. 38 é o modelo de ameaças formalizado — com o foco deslocado para o risco ao **titular**, o que torna o LINDDUN mais adequado que o STRIDE nesse documento. Para agentes de pequeno porte, a ANPD espera proporcionalidade: registro das decisões, não processo formal pesado.
