@@ -1,3 +1,492 @@
 # Modelos de controle de acesso: DAC, MAC, RBAC e ABAC {#sec-cap022}
 
-*(em elaboracao)*
+Uma analista de suporte de um provedor regional recebe um chamado: cliente reclama que não consegue acessar o portal. Para investigar, ela abre a ferramenta interna de atendimento, digita o CPF e vê o cadastro completo — endereço, telefone, histórico de pagamento, contrato. Resolve o problema em três minutos e fecha o chamado.
+
+No mesmo dia, sem nenhum chamado aberto, ela digita o CPF da ex-companheira. E o do vizinho. E o de uma pessoa pública que mora na área de cobertura.
+
+Nenhum sistema foi invadido. Nenhuma senha foi quebrada. Nenhum controle técnico falhou, porque nenhum controle técnico existia para esse caso: o sistema perguntou "esta pessoa está autenticada e pertence ao grupo Suporte?", recebeu "sim" e liberou tudo. A pergunta que ninguém fez foi **"esta pessoa tem motivo para ver este registro específico, agora?"**.
+
+Esse é o problema do controle de acesso, e ele é diferente do problema da autenticação. Autenticar responde *quem é você*. Autorizar responde *o que você pode fazer com o quê, sob quais condições*. Os capítulos anteriores construíram a máquina de provar identidade; este volume começa perguntando o que fazer com a identidade depois de provada — e o Volume 3 inteiro não ajuda aqui, porque, como registrou o @sec-cap021, criptografia não substitui autorização.
+
+## O vocabulário mínimo
+
+Todo modelo de controle de acesso, por mais elaborado que seja, é uma resposta a uma pergunta de três termos:
+
+- **Sujeito** — quem age. Usuário, processo, serviço, dispositivo, chave de API. Não necessariamente uma pessoa.
+- **Objeto** — sobre o que se age. Arquivo, registro, endpoint, fila, tabela, porta de rede, painel.
+- **Operação** — o que se faz. Ler, escrever, executar, apagar, aprovar, exportar, delegar.
+
+A soma dessas três coisas é uma **permissão**. Uma **política** é o conjunto de regras que decide quais permissões existem. E o componente que aplica a decisão em tempo de execução é o **monitor de referência**, conceito formulado por James Anderson em 1972 e que ainda define o padrão-ouro: ele precisa ser **inviolável** (não pode ser contornado ou adulterado), **sempre invocado** (nenhum acesso escapa dele) e **pequeno o bastante para ser verificado** (auditável na prática, não em tese).
+
+A terceira propriedade é a que quase sempre se perde. Um monitor de referência espalhado por 4.000 verificações `if` no código da aplicação não é auditável — e é exatamente assim que a maioria dos sistemas corporativos implementa autorização.
+
+Butler Lampson formalizou em 1974 a representação mais direta disso: a **matriz de acesso**, com sujeitos nas linhas, objetos nas colunas e operações nas células [@lampson1974]. É uma abstração excelente e uma implementação péssima — uma organização com 5.000 usuários e 200.000 objetos precisaria de um bilhão de células, quase todas vazias. Todos os modelos deste capítulo são, em algum sentido, estratégias diferentes para **comprimir essa matriz**.
+
+::: {#fig-matriz-acesso}
+```{.tikz}
+%%| filename: matriz-acesso-decomposicao
+%%| alt: Matriz de acesso de Lampson com sujeitos nas linhas e objetos nas colunas, e as duas decomposições possíveis: por coluna gerando listas de controle de acesso e por linha gerando capacidades
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cel/.style={draw=manualgray, minimum width=1.55cm, minimum height=0.62cm,
+                font=\scriptsize, inner sep=1pt},
+    cab/.style={draw=manualblue, fill=manualblue!12, very thick,
+                minimum width=1.55cm, minimum height=0.62cm, font=\scriptsize\bfseries},
+    lin/.style={draw=manualblue, fill=manualblue!12, very thick,
+                minimum width=1.9cm, minimum height=0.62cm, font=\scriptsize\bfseries},
+    rot/.style={draw, very thick, rounded corners=3pt, align=center,
+                inner sep=4pt, font=\scriptsize}}
+
+  \node[cab] (o1) at (1.9,0)  {relatorio.pdf};
+  \node[cab] (o2) at (3.45,0) {folha.xlsx};
+  \node[cab] (o3) at (5.0,0)  {/api/clientes};
+
+  \node[lin] (s1) at (0,-0.62)  {Ana};
+  \node[lin] (s2) at (0,-1.24)  {Bruno};
+  \node[lin] (s3) at (0,-1.86)  {backup-svc};
+
+  \foreach \r/\a/\b/\c in {1/{ler, escrever}/{---}/{ler},
+                           2/{ler}/{ler, escrever}/{---},
+                           3/{ler}/{ler}/{---}} {
+    \node[cel] at (1.9,-0.62*\r)  {\a};
+    \node[cel] at (3.45,-0.62*\r) {\b};
+    \node[cel] at (5.0,-0.62*\r)  {\c};}
+
+  \draw[destaque, manualgreen, rounded corners=2pt]
+    (2.66,-0.28) rectangle (4.24,-2.17);
+  \draw[destaque, manualred, rounded corners=2pt]
+    (-0.98,-0.93) rectangle (5.8,-1.55);
+
+  \node[rot, draw=manualgreen, fill=manualgreen!12, text width=4.6cm] at (3.45,-3.35)
+    {\textbf{Corte por coluna $\rightarrow$ ACL}\\
+     ``quem pode agir sobre \emph{este objeto}''\\
+     Unix, NTFS, buckets, tabelas};
+  \node[rot, draw=manualred, fill=manualred!10, text width=4.6cm] at (9.6,-1.24)
+    {\textbf{Corte por linha $\rightarrow$ capacidade}\\
+     ``o que \emph{este sujeito} carrega''\\
+     descritor de arquivo, token, chave assinada};
+
+  \node[align=left, font=\scriptsize, text width=6.0cm, manualgray] at (2.6,-4.6)
+    {A matriz completa é inviável: 5.000 sujeitos $\times$ 200.000 objetos = $10^{9}$ células,
+     quase todas vazias. \textbf{Todo modelo deste capítulo é uma estratégia de compressão dela.}};
+\end{tikzpicture}
+```
+A matriz de acesso de Lampson e suas duas decomposições clássicas.
+:::
+
+O corte por coluna produz a **lista de controle de acesso** (ACL): cada objeto carrega a lista de quem pode fazer o quê com ele. É o modelo do Unix, do NTFS, das políticas de bucket. Responde bem a "quem tem acesso a este arquivo?" e mal a "a que tudo o Bruno tem acesso?".
+
+O corte por linha produz a **capacidade**: uma credencial não falsificável que o sujeito carrega e apresenta, e que já contém a autorização. Descritor de arquivo no Unix, token de portador em HTTP, URL assinada de bucket. Responde bem a "o que este sujeito pode fazer?" e mal a "revogue já" — porque a autorização está distribuída, não centralizada. A dificuldade de revogação de capacidades vai reaparecer com força no @sec-cap025, quando tokens OAuth entrarem em cena.
+
+## DAC — o dono decide
+
+No **controle de acesso discricionário**, quem cria o objeto vira seu proprietário e decide, a seu critério, quem mais pode acessá-lo. É o modelo mais familiar do mundo: `chmod` no Linux, aba Segurança no Windows, botão "Compartilhar" no Google Drive.
+
+```bash
+# DAC em Unix: o dono decide, e o dono pode delegar a decisao
+$ ls -l relatorio.pdf
+-rw-r-----  1 ana  financeiro  84213  relatorio.pdf
+#  ^^^ ^^^ ---
+#  dono grupo outros
+
+$ chmod o+r relatorio.pdf     # Ana, sozinha, expoe para todo o sistema
+$ setfacl -m u:bruno:rw relatorio.pdf   # ACL POSIX: granularidade por usuario
+```
+
+A vantagem do DAC é a autonomia: não há gargalo administrativo, quem produz o dado gerencia o dado. A desvantagem é exatamente a mesma frase lida com outro olhar: **a política de segurança da organização fica na mão de cada usuário individual**, e não há como garantir globalmente nada.
+
+O problema estrutural do DAC tem nome. Quando Ana concede leitura a Bruno, ela confia em Bruno — mas o modelo não distingue Bruno do *software que Bruno executa*. Um programa rodando com a identidade de Bruno herda todos os acessos de Bruno e pode copiar o conteúdo para onde quiser. É o **problema do cavalo de Troia**: o DAC controla quem lê, não o que acontece depois da leitura. Não existe, em DAC puro, o conceito de que um dado carrega restrições que o acompanham.
+
+Esse é o ponto exato onde o modelo seguinte nasceu.
+
+## MAC — a organização decide, e ninguém pode contrariar
+
+No **controle de acesso obrigatório**, a política é definida por uma autoridade central e é **imposta pelo sistema independentemente da vontade do dono**. Nem o criador do arquivo pode afrouxá-la. Objetos recebem **rótulos** de classificação, sujeitos recebem **habilitações**, e uma regra fixa compara os dois.
+
+O modelo formal clássico é o de **Bell-LaPadula**, criado para o Departamento de Defesa dos EUA e voltado exclusivamente à confidencialidade [@belllapadula1976]. Suas duas regras são curtas e contraintuitivas:
+
+- **Sem leitura para cima** (*no read up*): sujeito com habilitação "Confidencial" não lê documento "Secreto". Óbvio.
+- **Sem escrita para baixo** (*no write down*): sujeito com habilitação "Secreto" **não escreve** em documento "Confidencial". Nada óbvio — e é a regra que mata o cavalo de Troia. Um processo que leu um dado secreto fica impedido, pelo sistema, de gravá-lo num destino de classificação inferior. A restrição acompanha o fluxo do dado, não a intenção de quem age.
+
+Kenneth Biba propôs em 1977 o modelo espelhado para **integridade**, com as regras invertidas: sem leitura para baixo, sem escrita para cima [@biba1977]. Um processo de alta integridade não consome entrada de fonte não confiável; um processo de baixa integridade não modifica dado de alta integridade. É a formalização da ideia de que dado que veio da internet não deve ser tratado como dado que veio do banco corporativo.
+
+Quem administra Linux convive com MAC todo dia, ainda que sem esse nome:
+
+```bash
+# SELinux: rotulos MAC sobre objetos e processos
+$ ls -Z /var/www/html/index.html
+system_u:object_r:httpd_sys_content_t:s0   index.html
+
+$ ps -eZ | grep nginx
+system_u:system_r:httpd_t:s0    1284 ?  nginx: master process
+
+# A politica permite httpd_t ler httpd_sys_content_t.
+# Nao permite httpd_t ler shadow_t — mesmo que o processo rode como root,
+# mesmo que as permissoes Unix permitam. Essa e a diferenca do MAC.
+
+$ getenforce
+Enforcing
+
+# AppArmor faz o equivalente por caminho, e nao por rotulo
+$ aa-status | head -3
+apparmor module is loaded.
+42 profiles are loaded.
+```
+
+O ganho concreto é enorme e mal aproveitado: quando um servidor web é comprometido, o MAC é a diferença entre o atacante ter o que o `nginx` precisa e o atacante ter o que o `root` pode. É por isso que a primeira instrução de tantos tutoriais — `setenforce 0` — é uma das piores linhas de comando do ecossistema Linux. Ela desliga a única camada que continua funcionando depois que todas as outras falharam. O Volume 6 volta a isso em detalhe, com a configuração completa.
+
+::: {#fig-bell-lapadula}
+```{.tikz}
+%%| filename: bell-lapadula-biba
+%%| alt: Comparação entre os modelos Bell-LaPadula e Biba, mostrando os fluxos de informação permitidos e proibidos entre níveis de classificação
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    niv/.style={draw, very thick, rounded corners=3pt, minimum width=2.9cm,
+                minimum height=0.75cm, align=center, font=\scriptsize},
+    tit/.style={font=\small\bfseries, align=center},
+    leg/.style={font=\scriptsize, align=left}}
+
+  \node[tit] at (0,3.5) {Bell-LaPadula\\\scriptsize confidencialidade};
+  \node[niv, draw=manualred,    fill=manualred!12]    (bl3) at (0,2.3)  {Secreto};
+  \node[niv, draw=manualyellow, fill=manualyellow!14] (bl2) at (0,1.15) {Confidencial};
+  \node[niv, draw=manualgreen,  fill=manualgreen!12]  (bl1) at (0,0)    {Público};
+
+  \draw[destaque, manualgreen, ->, >=stealth] (-1.75,0.2) -- (-1.75,2.1)
+    node[leg, midway, left, xshift=-2pt] {ler\\(permitido\\de baixo)};
+  \draw[destaque, manualred, ->, >=stealth] (1.75,2.1) -- (1.75,0.2)
+    node[leg, midway, right, xshift=2pt] {escrever\\\textbf{proibido}\\(\emph{no write down})};
+
+  \node[tit] at (7.4,3.5) {Biba\\\scriptsize integridade};
+  \node[niv, draw=manualgreen,  fill=manualgreen!12]  (bi3) at (7.4,2.3)  {Alta integridade};
+  \node[niv, draw=manualyellow, fill=manualyellow!14] (bi2) at (7.4,1.15) {Média};
+  \node[niv, draw=manualred,    fill=manualred!12]    (bi1) at (7.4,0)    {Não confiável};
+
+  \draw[destaque, manualred, ->, >=stealth] (5.65,0.2) -- (5.65,2.1)
+    node[leg, midway, left, xshift=-2pt] {ler\\\textbf{proibido}\\(\emph{no read down})};
+  \draw[destaque, manualgreen, ->, >=stealth] (9.15,2.1) -- (9.15,0.2)
+    node[leg, midway, right, xshift=2pt] {escrever\\(permitido\\para baixo)};
+
+  \node[draw=manualgray, thick, fill=white, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.6cm] at (3.7,-1.55)
+    {\textbf{A regra contraintuitiva é a que importa.} ``Não escrever para baixo'' impede que um
+     processo comprometido, já com acesso legítimo ao dado secreto, o exporte para um destino de
+     classificação inferior. É o controle que o DAC não consegue expressar, porque no DAC a
+     autorização acompanha o \emph{sujeito}, e no MAC ela acompanha o \emph{dado}.};
+\end{tikzpicture}
+```
+Bell-LaPadula e Biba: a mesma estrutura formal aplicada a objetivos opostos.
+:::
+
+O custo do MAC é operacional. Definir e manter rótulos exige disciplina, e uma política mal ajustada bloqueia trabalho legítimo de formas difíceis de diagnosticar. Fora de ambientes militares, ele raramente é a política principal — vive como camada de contenção sob os outros modelos.
+
+## RBAC — permissões viajam por papel, não por pessoa
+
+O modelo dominante em sistemas corporativos surge de uma observação prática: **as permissões que uma pessoa precisa derivam da função que ela exerce, não de quem ela é**. Formalizado por Sandhu e colegas em 1996 e padronizado como ANSI/INCITS 359, o **controle de acesso baseado em papéis** insere uma camada entre sujeitos e permissões [@sandhu1996; @incits359].
+
+Em vez de conceder permissões a usuários, você:
+
+1. Define **papéis** que correspondem a funções reais (`analista-suporte-n1`, `dba-producao`, `aprovador-financeiro`).
+2. Atribui **permissões a papéis** — decisão técnica, feita uma vez, revisada periodicamente.
+3. Atribui **papéis a usuários** — decisão administrativa, feita a cada contratação, promoção e desligamento.
+
+A compressão da matriz é dramática: com 5.000 usuários, 200.000 objetos e 80 papéis, você gerencia 5.000 atribuições de papel mais 80 conjuntos de permissão, em vez de um bilhão de células.
+
+O padrão define quatro níveis cumulativos:
+
+| Nível | Nome | O que acrescenta |
+|---|---|---|
+| RBAC$_{0}$ | Núcleo | Usuários, papéis, permissões, sessões |
+| RBAC$_{1}$ | Hierárquico | Herança: `gerente-suporte` herda de `analista-suporte` |
+| RBAC$_{2}$ | Restrições | Segregação de funções, cardinalidade máxima por papel |
+| RBAC$_{3}$ | Consolidado | RBAC$_{1}$ + RBAC$_{2}$ |
+
+: Os quatro níveis do modelo RBAC. {#tbl-niveis-rbac}
+
+O nível RBAC$_{2}$ é o que raramente é implementado e o que mais evita fraude. **Segregação de funções** significa que dois papéis são mutuamente exclusivos porque a combinação permite fechar um ciclo sozinho: quem cadastra fornecedor não aprova pagamento; quem cria usuário não concede privilégio administrativo; quem desenvolve não faz o *deploy* em produção com poder de apagar log. A restrição pode ser **estática** (a pessoa não pode receber os dois papéis) ou **dinâmica** (pode ter os dois, mas não ativá-los na mesma sessão).
+
+::: {#fig-rbac-estrutura}
+```{.tikz}
+%%| filename: rbac-estrutura
+%%| alt: Estrutura do modelo RBAC mostrando usuários atribuídos a papéis, papéis com permissões, hierarquia de herança e restrição de segregação de funções
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    usr/.style={draw=manualblue, very thick, fill=manualblue!12, rounded corners=3pt,
+                minimum width=2.0cm, minimum height=0.6cm, font=\scriptsize},
+    pap/.style={draw=manualgreen, very thick, fill=manualgreen!12, rounded corners=3pt,
+                minimum width=2.6cm, minimum height=0.6cm, font=\scriptsize},
+    per/.style={draw=manualgray, thick, fill=white, rounded corners=3pt,
+                minimum width=3.1cm, minimum height=0.6cm, font=\scriptsize},
+    seta/.style={->, >=stealth, manualgray, thick}}
+
+  \node[font=\scriptsize\bfseries] at (0,2.15)   {USUÁRIOS};
+  \node[font=\scriptsize\bfseries] at (4.4,2.15) {PAPÉIS};
+  \node[font=\scriptsize\bfseries] at (9.3,2.15) {PERMISSÕES};
+
+  \node[usr] (u1) at (0,1.4)   {Ana};
+  \node[usr] (u2) at (0,0.6)   {Bruno};
+  \node[usr] (u3) at (0,-0.2)  {Carla};
+  \node[usr] (u4) at (0,-1.0)  {Diego};
+
+  \node[pap] (p1) at (4.4,1.7)  {gerente-suporte};
+  \node[pap] (p2) at (4.4,0.75) {analista-suporte};
+  \node[pap] (p3) at (4.4,-0.4) {cadastro-fornecedor};
+  \node[pap] (p4) at (4.4,-1.35){aprovador-pagamento};
+
+  \node[per] (r1) at (9.3,2.0)  {consultar cadastro};
+  \node[per] (r2) at (9.3,1.25) {editar chamado};
+  \node[per] (r3) at (9.3,0.5)  {exportar relatório};
+  \node[per] (r4) at (9.3,-0.4) {criar fornecedor};
+  \node[per] (r5) at (9.3,-1.35){liberar pagamento};
+
+  \draw[seta] (u1) -- (p1);
+  \draw[seta] (u2) -- (p2);
+  \draw[seta] (u3) -- (p2);
+  \draw[seta] (u3) -- (p3);
+  \draw[seta] (u4) -- (p4);
+
+  \draw[seta] (p2) -- (r1);
+  \draw[seta] (p2) -- (r2);
+  \draw[seta] (p1) -- (r3);
+  \draw[seta] (p3) -- (r4);
+  \draw[seta] (p4) -- (r5);
+
+  \draw[destaque, manualgreen, ->, >=stealth] (p1) -- (p2)
+    node[midway, right, font=\scriptsize, xshift=2pt, manualgreen] {herda};
+
+  \draw[destaque, manualred, <->, >=stealth] (3.1,-0.4) to[bend right=45] (3.1,-1.35);
+  \node[align=right, font=\scriptsize, manualred, text width=2.2cm] at (1.85,-0.9)
+    {segregação\\de funções\\\emph{(exclusivos)}};
+
+  \node[draw=manualgray, thick, fill=white, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.4cm] at (4.6,-2.75)
+    {\textbf{As duas atribuições têm donos diferentes.} Usuário $\rightarrow$ papel é decisão do gestor
+     (muda a cada contratação). Papel $\rightarrow$ permissão é decisão técnica de arquitetura (muda raramente,
+     e toda mudança deve passar por revisão). Confundir as duas é a causa raiz da explosão de papéis.};
+\end{tikzpicture}
+```
+Estrutura do RBAC: a camada de papéis é o que comprime a matriz de acesso.
+:::
+
+O RBAC tem duas doenças conhecidas, e ambas aparecem em quase toda implantação madura.
+
+A **explosão de papéis** ocorre quando cada exceção vira um papel novo: `analista-suporte-n1-filial-sul-sem-exportacao`. Uma organização com mais papéis que pessoas não tem RBAC — tem uma matriz de acesso com nomes bonitos. O sintoma é diagnóstico: se o número de papéis cresce proporcionalmente ao número de usuários, o modelo já falhou.
+
+O **acúmulo de privilégios** é mais insidioso e mais universal: a pessoa muda de área e ganha o papel novo, mas ninguém remove o antigo. Depois de dez anos e quatro mudanças de área, ela tem acesso a tudo por onde passou. É a razão pela qual **revogação é mais importante que concessão** — e a razão pela qual campanhas de recertificação de acesso existem, tema que o @sec-cap026 desenvolve.
+
+## ABAC — a decisão vira uma expressão
+
+Nenhum dos modelos anteriores consegue expressar a regra que abriria este capítulo: *"analista de suporte pode ver o cadastro do cliente **se houver chamado aberto atribuído a ele para esse cliente**, em horário de expediente, a partir da rede corporativa"*.
+
+Isso não é uma permissão sobre um objeto. É uma **função** que recebe atributos e devolve permitir ou negar. O **controle de acesso baseado em atributos**, especificado pelo NIST SP 800-162, torna a política uma expressão sobre quatro categorias de atributo [@nistsp800162]:
+
+- **do sujeito** — cargo, departamento, nível de habilitação, tempo de casa, gestor;
+- **do objeto** — classificação, dono, região de armazenamento, categoria de dado pessoal;
+- **da operação** — ler, exportar, apagar, aprovar;
+- **do ambiente** — horário, endereço IP, postura do dispositivo, nível de risco da sessão.
+
+A arquitetura correspondente separa quatro componentes, e a separação é a parte que importa:
+
+- **PEP** (*Policy Enforcement Point*) — onde o acesso é interceptado: o proxy, o gateway de API, o middleware.
+- **PDP** (*Policy Decision Point*) — onde a decisão é calculada, com base na política.
+- **PIP** (*Policy Information Point*) — de onde vêm os atributos: diretório, RH, CMDB, sinal de risco.
+- **PAP** (*Policy Administration Point*) — onde a política é escrita, versionada e revisada.
+
+::: {#fig-abac-fluxo}
+```{.tikz}
+%%| filename: abac-pep-pdp
+%%| alt: Fluxo de uma decisão ABAC entre PEP, PDP, PIP e PAP, com a requisição do sujeito sendo interceptada, avaliada contra atributos e política, e o resultado aplicado
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    comp/.style={draw, very thick, rounded corners=4pt, align=center,
+                 minimum width=2.5cm, minimum height=1.0cm, font=\scriptsize},
+    seta/.style={->, >=stealth, thick, manualgray},
+    num/.style={circle, draw=manualblue, fill=white, thick, inner sep=1pt,
+                font=\tiny\bfseries, minimum size=0.42cm}}
+
+  \node[comp, draw=manualblue, fill=manualblue!12]   (suj) at (0,0)     {Sujeito\\\scriptsize requisição};
+  \node[comp, draw=manualred,  fill=manualred!10]    (pep) at (3.9,0)   {\textbf{PEP}\\\scriptsize gateway, proxy,\\middleware};
+  \node[comp, draw=manualgreen,fill=manualgreen!12]  (pdp) at (8.0,0)   {\textbf{PDP}\\\scriptsize motor de\\decisão};
+  \node[comp, draw=manualgray, fill=white]           (rec) at (3.9,-2.4){Recurso\\\scriptsize API, registro, arquivo};
+  \node[comp, draw=manualyellow,fill=manualyellow!14](pip) at (11.9,0.9){\textbf{PIP}\\\scriptsize atributos: RH,\\diretório, risco};
+  \node[comp, draw=manualyellow,fill=manualyellow!14](pap) at (11.9,-1.1){\textbf{PAP}\\\scriptsize política escrita\\e versionada};
+
+  \draw[seta] (suj) -- node[num, midway]{1} (pep);
+  \draw[seta] (pep) -- node[num, midway]{2} (pdp);
+  \draw[seta] (pdp.north east) -- node[num, midway, yshift=1pt]{3} (pip.west);
+  \draw[seta] (pap.west) -- node[num, midway, yshift=-1pt]{4} (pdp.south east);
+  \draw[seta, manualgreen] ([yshift=-0.22cm]pdp.west) -- node[num, midway]{5}
+    ([yshift=-0.22cm]pep.east);
+  \draw[seta, manualgreen] (pep) -- node[num, midway]{6} (rec);
+
+  \node[draw=manualgray, thick, fill=white, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=6.4cm] at (8.6,-2.6)
+    {\textbf{1} requisição \quad \textbf{2} pedido de decisão\\
+     \textbf{3} coleta de atributos \quad \textbf{4} política aplicável\\
+     \textbf{5} \emph{permitir} ou \emph{negar} (+ obrigações)\\
+     \textbf{6} acesso efetivado ou bloqueado};
+
+  \node[align=left, font=\scriptsize, manualgray, text width=5.4cm] at (0.4,-4.3)
+    {O valor da arquitetura está na \textbf{separação}: a política deixa de estar espalhada
+     pelo código da aplicação e passa a ser um artefato único, versionado e testável.};
+\end{tikzpicture}
+```
+Fluxo de decisão ABAC. O PDP é o monitor de referência tornado explícito.
+:::
+
+Na prática moderna isso raramente se escreve em XACML (o padrão original, verboso a ponto de ser um obstáculo). Escreve-se em linguagem de política declarativa — Rego, Cedar, ou o motor embutido na plataforma:
+
+```rego
+# Rego (Open Policy Agent) — a regra que faltava na abertura do capitulo
+package autorizacao.suporte
+
+default permitir := false
+
+permitir if {
+    input.sujeito.papel == "analista-suporte"
+    input.operacao == "ler"
+    input.objeto.tipo == "cadastro-cliente"
+
+    # o vinculo que transforma "pode ver clientes" em "pode ver ESTE cliente"
+    some chamado in input.sujeito.chamados_abertos
+    chamado.cliente_id == input.objeto.cliente_id
+
+    input.ambiente.hora >= 8
+    input.ambiente.hora < 20
+    input.ambiente.origem == "rede-corporativa"
+}
+
+# Exportacao em massa exige justificativa e aprovacao — nunca so o papel
+permitir if {
+    input.operacao == "exportar"
+    input.sujeito.papel == "analista-suporte"
+    input.contexto.aprovacao_gestor == true
+    input.contexto.justificativa != ""
+    count(input.objeto.registros) <= 100
+}
+```
+
+A política ganha uma propriedade que nenhum `if` espalhado pelo código tem: **pode ser testada**. Escrevem-se casos — "analista sem chamado é negado", "analista com chamado de outro cliente é negado" — e eles rodam no pipeline a cada alteração. É o monitor de referência recuperando sua terceira propriedade, a de ser pequeno o bastante para ser verificado.
+
+O custo do ABAC também é real. Uma política expressiva o suficiente para tudo é complexa o suficiente para ninguém entender: quando ninguém consegue responder "quem tem acesso a este recurso?" sem rodar simulações, a auditabilidade se perdeu por outro caminho. E o PDP vira dependência crítica no caminho de cada requisição — com as consequências óbvias de latência e disponibilidade.
+
+## Os princípios que atravessam todos os modelos
+
+Saltzer e Schroeder publicaram em 1975 os princípios de projeto que envelheceram melhor que qualquer modelo específico [@saltzer1975]. Três deles governam controle de acesso diretamente.
+
+**Privilégio mínimo.** Cada sujeito opera com o conjunto mínimo de permissões necessário para a tarefa, pelo menor tempo necessário. A segunda metade da frase é a esquecida: privilégio permanente para tarefa eventual é o padrão em quase toda organização, e é o que a elevação temporária resolve (@sec-cap026).
+
+**Padrão à prova de falhas.** A decisão padrão é negar. O sistema concede acesso por regra explícita, e a ausência de regra é negação — não permissão. Sistema que libera quando o serviço de autorização está fora do ar tem uma condição de falha que é também um vetor de ataque: derrubar o PDP vira escalonamento de privilégio.
+
+**Mediação completa.** Toda requisição passa pela verificação, sempre. O erro clássico é verificar na tela e não na API: o botão some da interface, mas o `POST` direto ao endpoint continua funcionando. Esse achado tem nome próprio e capítulo próprio — é o IDOR, tema do Volume 7.
+
+A esses três a prática acrescentou o **princípio da necessidade de saber**, distinto do privilégio mínimo: ter habilitação para o nível não implica ter motivo para o registro. É precisamente o que faltava na abertura deste capítulo. A analista tinha o privilégio correto para sua função; o que ela não tinha era motivo para aqueles três CPFs.
+
+## Como os modelos convivem de verdade
+
+A pergunta "qual modelo adotar?" quase sempre está mal formulada. Sistemas reais empilham modelos, cada um resolvendo o que os outros não expressam:
+
+| Camada | Modelo | Exemplo concreto |
+|---|---|---|
+| Sistema operacional | MAC | SELinux confina o processo do `nginx` |
+| Sistema de arquivos | DAC | permissões Unix e ACL POSIX |
+| Aplicação corporativa | RBAC | papéis do ERP, grupos do Active Directory |
+| Decisão sensível ao contexto | ABAC | horário, dispositivo, vínculo com chamado |
+| Nuvem | ABAC sobre RBAC | políticas IAM com condições sobre etiquetas |
+
+: Convivência dos modelos em uma arquitetura real. {#tbl-convivencia-modelos}
+
+A recomendação prática que sobrevive ao contato com a realidade: **RBAC como espinha dorsal, ABAC nas bordas**. Papéis dão a estrutura auditável — respondem "quem pode o quê" de forma legível por um gestor não técnico. Atributos tratam as exceções e o contexto sem multiplicar papéis. Inverter essa ordem, começando por ABAC puro, produz sistemas em que a resposta a "quem tem acesso?" exige rodar o motor de políticas contra todas as combinações possíveis.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD exige controle de acesso em dois artigos, com naturezas diferentes.** O art. 46 impõe medidas de segurança aptas a proteger dado pessoal de acessos não autorizados — inclusive os internos, o que abrange exatamente o cenário da abertura. Já o art. 6º, I, consagra a **finalidade**: o tratamento deve ocorrer para propósitos legítimos, específicos e informados. Um sistema que permite a qualquer analista consultar qualquer CPF sem vínculo com um atendimento viola o princípio da finalidade mesmo que nenhum dado vaze para fora — a irregularidade está no acesso interno sem propósito, não no vazamento [@lgpd2018].
+
+**Acesso indevido de funcionário é o incidente que mais aparece e o que menos se investiga.** Provedores de internet, operadoras, planos de saúde e órgãos públicos concentram dados de milhões de titulares em ferramentas de atendimento com autorização por papel amplo. Quando a apuração chega, a pergunta da ANPD não é se havia senha: é se havia **controle de finalidade, registro de acesso e revisão periódica**. Log que registra apenas autenticação, sem registrar qual registro foi consultado e sob qual chamado, não sustenta a apuração — e a ausência de trilha vira, ela própria, um agravante [@anpd2024res15].
+
+**O sigilo de dados cadastrais e de conexão tem regime legal próprio.** O Marco Civil (arts. 10 e 22) e a Lei 9.296/1996 delimitam quem pode acessar registros de conexão, de acesso a aplicações e conteúdo de comunicação, e sob qual ordem judicial. Para um provedor, isso significa que o controle de acesso à base de registros não é escolha de arquitetura: é o mecanismo que materializa uma obrigação legal. Consulta a registro de conexão sem ordem judicial correspondente expõe a empresa e a pessoa que consultou [@marcocivil2014; @lei9296].
+
+**Acesso não autorizado a sistema de terceiro é crime tipificado.** A Lei 12.737/2012, com a redação atualizada pela Lei 14.155/2021, criminaliza a invasão de dispositivo informático — e a pena é agravada quando há obtenção de conteúdo de comunicações privadas ou segredos comerciais. O ponto que costuma escapar: o funcionário que usa sua credencial legítima para acessar dado fora da finalidade autorizada não está imune. A depender do caso, a conduta atrai enquadramentos de violação de sigilo e as sanções trabalhistas e civis correspondentes [@lei12737; @lei14155].
+
+**A segregação de funções é exigência explícita no setor regulado.** Nas normas do Banco Central sobre política de segurança cibernética e igualmente na conformidade PCI-DSS, a separação entre quem cadastra, quem aprova e quem executa não é boa prática opcional: é requisito verificado em auditoria. O requisito 7 do PCI-DSS trata de restrição de acesso por necessidade de saber; o requisito 8, de identificação individual — que é o que impede a conta compartilhada de destruir a atribuição de responsabilidade [@bcb4893; @pcidss4].
+
+## 🛠️ No Campo
+
+**1. Faça o inventário do que existe, antes de desenhar o que deveria existir.** A maioria dos projetos de RBAC falha por começar pelo desenho ideal. Comece extraindo a realidade:
+
+```powershell
+# Active Directory: usuarios por grupo, e grupos aninhados (a fonte das surpresas)
+Get-ADGroup -Filter * -Properties Members |
+  Select-Object Name, @{n='Membros';e={$_.Members.Count}} |
+  Sort-Object Membros -Descending | Select-Object -First 30
+
+# Quem esta em grupos privilegiados, incluindo por aninhamento
+Get-ADGroupMember -Identity "Domain Admins" -Recursive |
+  Select-Object name, objectClass
+```
+
+```bash
+# Linux: contas com shell valido, sudo irrestrito e grupos sensiveis
+awk -F: '$3>=1000 && $7 !~ /nologin|false/ {print $1}' /etc/passwd
+grep -rE '(ALL\s*:\s*ALL|NOPASSWD:\s*ALL)' /etc/sudoers /etc/sudoers.d/
+getent group sudo wheel docker adm
+```
+
+```sql
+-- PostgreSQL: privilegios amplos concedidos diretamente a usuario,
+-- isto e, fora de qualquer role — a origem silenciosa do acumulo
+SELECT grantee, table_schema, privilege_type, count(*)
+FROM information_schema.role_table_grants
+WHERE grantee <> 'PUBLIC'
+GROUP BY 1,2,3 ORDER BY 4 DESC LIMIT 20;
+```
+
+O resultado costuma ser desconfortável: grupos com centenas de membros, `Domain Admins` com contas de serviço, gente no grupo `docker` — que é equivalente a root, porque permite montar o sistema de arquivos do hospedeiro dentro de um contêiner.
+
+**2. Descubra papéis a partir dos dados, não da imaginação.** *Role mining* é o processo de agrupar usuários com conjuntos de permissão semelhantes e nomear os agrupamentos. Um exercício simples e revelador: exportar a matriz usuário × permissão, agrupar por similaridade e comparar o resultado com o organograma. As divergências são o achado — pessoas com acesso que sua função não justifica, e funções que precisam de acesso que não têm (e por isso compartilham credencial).
+
+**3. Escreva a matriz de segregação de funções e implemente-a como bloqueio.** Uma tabela de pares proibidos, curta e específica:
+
+| Papel A | Papel B | Risco da combinação |
+|---|---|---|
+| Cadastrar fornecedor | Aprovar pagamento | Fornecedor fictício com pagamento próprio |
+| Criar usuário | Conceder privilégio administrativo | Conta oculta com poder total |
+| Desenvolver | Publicar em produção sem revisão | Código não revisado em produção |
+| Operar backup | Apagar log de auditoria | Rastro removível pelo próprio operador |
+
+: Pares de papéis que devem ser mutuamente exclusivos. {#tbl-segregacao-funcoes}
+
+Documento que descreve a segregação sem impedi-la tecnicamente é decoração. A regra precisa estar no fluxo de concessão, rejeitando a atribuição na hora do pedido.
+
+**4. Trate o padrão de negação como decisão de arquitetura, não como configuração.** Verifique explicitamente o que acontece quando o serviço de autorização não responde. Em muitos sistemas a resposta é "libera" — e derrubar o PDP vira o caminho mais barato de escalonamento. Teste isso: pare o PDP em homologação e observe se o acesso é negado. Se não for, você tem um achado crítico.
+
+**5. Registre a decisão de autorização, não só a autenticação.** O log que sustenta uma apuração precisa responder: quem, qual registro específico, qual operação, sob qual justificativa ou chamado, permitido ou negado, e por qual regra. Negativas são especialmente valiosas — uma sequência de negações é o sinal mais limpo de que alguém está sondando os limites do próprio acesso. O Volume 12 constrói a detecção sobre esse insumo.
+
+**6. Instrumente detecção de acesso sem finalidade.** O controle preventivo ideal exige o vínculo (consulta só com chamado aberto). Onde ele ainda não existe, a alternativa detectiva é barata e eficaz: alertar sobre consulta a CPF sem chamado associado, volume de consultas muito acima da média do time, consulta a registros de pessoas com o mesmo sobrenome do operador e consulta a titulares marcados como sensíveis. É a mesma lógica dos controles bancários contra consulta indevida.
+
+**7. Recertifique acessos com periodicidade fixa e efeito real.** Campanha trimestral para acesso privilegiado, semestral para o restante, com uma regra que dá sentido ao exercício: **o que o gestor não confirmar ativamente é revogado**. Recertificação em que a inação significa manter o acesso mede apenas quanto tempo os gestores gastam clicando.
+
+**8. Ative o MAC antes de precisar dele.** SELinux em `Enforcing` ou AppArmor com perfis ativos é a camada que ainda funciona depois que a aplicação foi comprometida. Se algo quebrar, o caminho correto é ajustar a política — `audit2allow` lê as negações e gera o módulo correspondente —, nunca `setenforce 0`:
+
+```bash
+# Diagnostico correto de uma negacao SELinux
+ausearch -m AVC -ts recent | audit2why
+ausearch -m AVC -ts recent | audit2allow -M meu_modulo
+semodule -i meu_modulo.pp
+
+# Verificacao periodica: nenhuma maquina fora de Enforcing
+ansible all -m shell -a 'getenforce' | grep -v Enforcing
+```
+
+**9. Externalize a política quando ela começar a se repetir.** Enquanto a autorização couber em poucas verificações consistentes, mantenha-a no código. Quando a mesma regra aparecer em três serviços com três implementações ligeiramente diferentes, é hora de OPA, Cedar ou equivalente — com a política versionada no Git, testada no pipeline e implantada como qualquer outro artefato.
+
+## Resumo
+
+- **Autenticar e autorizar são problemas distintos.** Provar quem é você não diz nada sobre o que você pode fazer, e a maioria dos incidentes de acesso indevido acontece com credencial legítima.
+- Todo modelo é uma **estratégia de compressão da matriz de acesso** de Lampson. O corte por coluna gera ACL (bom para "quem acessa este objeto"); o corte por linha gera capacidade (bom para portabilidade, ruim para revogação).
+- **DAC** dá autonomia ao dono e não consegue impor política organizacional; é vulnerável ao cavalo de Troia porque a autorização acompanha o sujeito, não o dado.
+- **MAC** impõe rótulos que o dono não pode afrouxar. Bell-LaPadula protege confidencialidade (*no read up*, *no write down*); Biba espelha o modelo para integridade. Na prática cotidiana isso é SELinux e AppArmor — e `setenforce 0` desliga a camada que sobrevive ao comprometimento.
+- **RBAC** insere papéis entre usuários e permissões e é o padrão corporativo. Suas duas doenças são a explosão de papéis e o acúmulo de privilégios; o nível RBAC$_{2}$, com segregação de funções, é o menos implementado e o que mais evita fraude.
+- **ABAC** transforma a decisão numa expressão sobre atributos de sujeito, objeto, operação e ambiente, com PEP, PDP, PIP e PAP separados. Ganha expressividade e política testável; perde legibilidade se aplicado sozinho.
+- A arquitetura que funciona é **RBAC como espinha dorsal e ABAC nas bordas**, sobre MAC no sistema operacional.
+- Os princípios de Saltzer e Schroeder atravessam todos os modelos: **privilégio mínimo** (inclusive no tempo), **padrão à prova de falhas** (negar por omissão) e **mediação completa** (verificar na API, não só na tela). A **necessidade de saber** é o princípio adicional que separa ter o nível de ter motivo.
+- No Brasil, acesso interno sem finalidade viola o art. 6º da LGPD independentemente de vazamento; registros de conexão têm regime próprio no Marco Civil e na Lei 9.296; e a segregação de funções é requisito auditado no setor financeiro e em PCI-DSS.
