@@ -21,7 +21,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 ### Volume 2 — Redes e Sistemas: a Base Técnica
 
 - [x] **cap 008** - A pilha TCP/IP sob a ótica do atacante e do defensor - `vol02/cap008-a-pilha-tcp-ip-sob-a-otica-do-atacante-e-do.qmd`
-- [ ] **cap 009** - Endereçamento, roteamento e NAT - `vol02/cap009-enderecamento-roteamento-e-nat.qmd`
+- [x] **cap 009** - Endereçamento, roteamento e NAT - `vol02/cap009-enderecamento-roteamento-e-nat.qmd`
 - [ ] **cap 010** - Protocolos de aplicação e seus riscos: HTTP, DNS, SMTP e SNMP - `vol02/cap010-protocolos-de-aplicacao-e-seus-riscos-http.qmd`
 - [ ] **cap 011** - Fundamentos de sistemas operacionais: processos, permissões e memória - `vol02/cap011-fundamentos-de-sistemas-operacionais.qmd`
 - [ ] **cap 012** - Linux essencial para segurança - `vol02/cap012-linux-essencial-para-seguranca.qmd`

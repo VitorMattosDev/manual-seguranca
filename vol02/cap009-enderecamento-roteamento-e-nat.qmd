@@ -1,3 +1,279 @@
 # Endereçamento, roteamento e NAT {#sec-cap009}
 
-*(em elaboracao)*
+Um provedor de médio porte cresceu por aquisição. Herdou três redes que usavam `192.168.1.0/24` para a gerência dos equipamentos — a sua, a da empresa comprada em 2021 e a da comprada em 2023. Ninguém renumerou. A solução foi ir empilhando NAT: cada rede herdada fica atrás de um roteador que traduz seus endereços para um bloco distinto antes de entrar na rede principal.
+
+Funcionou por dois anos. Até a noite em que um servidor de monitoramento passou a registrar tentativas de acesso SSH vindas de `10.20.0.7`, um endereço que, dependendo de qual tabela de tradução se consulte, corresponde a três equipamentos diferentes em três cidades diferentes. A equipe levou seis horas para descobrir de qual deles vinha o tráfego, porque o registro do firewall guardava o endereço traduzido e não o original.
+
+O invasor teve seis horas de vantagem. Não por causa de uma falha de software: por causa de um plano de endereçamento que nunca existiu.
+
+Este capítulo trata da camada 3 do @sec-cap008 do ponto de vista de quem projeta e opera: como os endereços são atribuídos, como os pacotes encontram o caminho, e o que o NAT realmente faz — incluindo o que ele não faz, apesar de todo mundo acreditar que faz.
+
+## Endereçamento IPv4 e a matemática que não dá para evitar
+
+Um endereço IPv4 tem 32 bits, escritos em quatro octetos decimais. A **máscara de rede** separa esses 32 bits em duas partes: um prefixo que identifica a rede e um sufixo que identifica o host dentro dela. A notação CIDR escreve o tamanho do prefixo depois da barra — `198.51.100.0/24` significa 24 bits de rede e 8 de host [@rfc4632].
+
+A conta que todo profissional precisa fazer de cabeça:
+
+| Prefixo | Máscara | Endereços | Hosts utilizáveis | Uso típico |
+|---|---|---|---|---|
+| `/30` | 255.255.255.252 | 4 | 2 | Enlace ponto a ponto |
+| `/29` | 255.255.255.248 | 8 | 6 | Pequeno bloco de servidores |
+| `/28` | 255.255.255.240 | 16 | 14 | Sub-rede de DMZ |
+| `/24` | 255.255.255.0 | 256 | 254 | VLAN padrão de escritório |
+| `/22` | 255.255.252.0 | 1.024 | 1.022 | Rede de acesso de provedor |
+| `/16` | 255.255.0.0 | 65.536 | 65.534 | Espaço de agregação |
+
+: Prefixos CIDR de uso corrente. {#tbl-cidr}
+
+Os dois endereços subtraídos em cada linha são o de **rede** (todos os bits de host em zero) e o de **broadcast** (todos em um). A exceção é o `/31`, previsto na RFC 3021 para enlaces ponto a ponto, onde os dois endereços são utilizáveis — economia que importa quando um provedor tem centenas de enlaces.
+
+Há três faixas **privadas**, definidas pela RFC 1918, que não são roteáveis na internet pública [@rfc1918]:
+
+- `10.0.0.0/8` — 16,7 milhões de endereços;
+- `172.16.0.0/12` — de `172.16.0.0` a `172.31.255.255`;
+- `192.168.0.0/16` — 65.536 endereços.
+
+E vale conhecer duas faixas que causam confusão em diagnóstico. `127.0.0.0/8` é *loopback*: nunca sai da máquina. `169.254.0.0/16` é auto-configuração de enlace local — quando uma máquina aparece com um endereço dessa faixa, significa que **o DHCP não respondeu**. É o sintoma, não a causa, e a causa costuma ser cabo, VLAN errada ou servidor DHCP fora do ar.
+
+### O plano de endereçamento como controle de segurança
+
+O caso de abertura mostra por que endereçamento é assunto de segurança, e não apenas de conectividade. Um plano de endereçamento bem feito produz três benefícios diretos:
+
+**Legibilidade.** Ao ver `10.30.20.15` num alerta, quem está de plantão deve conseguir dizer, sem consultar planilha, que se trata da filial 30, VLAN de servidores, host 15. Isso se obtém reservando significado posicional aos octetos: por exemplo, o segundo octeto para o site, o terceiro para a função (10 = gerência, 20 = servidores, 30 = usuários, 40 = visitantes, 50 = câmeras).
+
+**Filtragem simples.** Se todas as VLANs de gerência de todos os sites estiverem em `10.x.10.0/24`, uma única regra `10.0.10.0/16` com máscara não contígua — ou, mais limpo, um bloco agregado dedicado — cobre a regra "gerência não fala com usuário". Endereçamento aleatório exige uma regra por sub-rede, e listas longas de regras são listas com erro.
+
+**Ausência de sobreposição.** Redes que se sobrepõem impedem VPN entre sites, impedem fusão de empresas e obrigam ao empilhamento de NAT do caso de abertura. Reservar de saída um bloco `/8` privado inteiro e distribuir `/16` por site custa nada e evita o problema para sempre.
+
+A @fig-plano-enderecamento mostra a estrutura de um plano assim.
+
+::: {#fig-plano-enderecamento}
+```{.tikz}
+%%| filename: plano-enderecamento
+%%| alt: Estrutura hierárquica de um plano de endereçamento privado, dividindo um bloco por site e cada site por função de rede
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    raiz/.style={draw=manualblue, very thick, fill=manualblue!10, rounded corners=3pt,
+                 align=center, inner sep=5pt, minimum width=3.6cm},
+    site/.style={draw=manualgray, thick, fill=manualgray!6, rounded corners=3pt,
+                 align=center, inner sep=4pt, minimum width=2.8cm},
+    func/.style={draw=manualgreen, thick, fill=manualgreen!8, rounded corners=2pt,
+                 align=center, inner sep=3pt, minimum width=3.5cm, font=\scriptsize},
+    lig/.style={->,>=stealth, thick, manualgray}}
+
+  \node[raiz] (r) at (5.6,6.4) {\textbf{10.0.0.0/8}\\\scriptsize espaço corporativo};
+
+  \node[site] (s1) at (1.4,4.4) {\textbf{10.10.0.0/16}\\\scriptsize matriz};
+  \node[site] (s2) at (5.6,4.4) {\textbf{10.20.0.0/16}\\\scriptsize filial norte};
+  \node[site] (s3) at (9.8,4.4) {\textbf{10.30.0.0/16}\\\scriptsize datacenter};
+
+  \draw[lig] (r) -- (s1);
+  \draw[lig] (r) -- (s2);
+  \draw[lig] (r) -- (s3);
+
+  \node[func] (f1) at (5.6,2.7) {10.20.\textbf{10}.0/24 --- gerência};
+  \node[func] (f2) at (5.6,1.95) {10.20.\textbf{20}.0/24 --- servidores};
+  \node[func] (f3) at (5.6,1.2) {10.20.\textbf{30}.0/24 --- usuários};
+  \node[func] (f4) at (5.6,0.45) {10.20.\textbf{40}.0/24 --- visitantes};
+  \node[func] (f5) at (5.6,-0.3) {10.20.\textbf{50}.0/24 --- câmeras e IoT};
+
+  \draw[lig] (s2) -- (f1);
+
+  \node[align=left, font=\scriptsize, manualblue] at (11.9,1.2)
+    {\textbf{O terceiro octeto}\\\textbf{tem o mesmo}\\\textbf{significado em}\\\textbf{todos os sites.}\\[2pt]
+     Uma regra de filtro\\vale para a rede inteira.};
+\end{tikzpicture}
+```
+Plano de endereçamento hierárquico. Posição com significado transforma um endereço em informação de diagnóstico.
+:::
+
+## IPv6: o que muda de verdade
+
+O IPv6 usa 128 bits, escritos em oito grupos hexadecimais de quatro dígitos, com regras de abreviação: zeros à esquerda de cada grupo podem ser omitidos e uma única sequência de grupos nulos vira `::`. Assim, `2001:0db8:0000:0000:0000:0000:0000:0001` escreve-se `2001:db8::1`. A faixa `2001:db8::/32` é reservada para documentação, e é dela que vêm todos os exemplos deste manual.
+
+Cinco pontos concentram o que importa para segurança:
+
+**Não existe NAT, e isso é bom e ruim.** Cada dispositivo pode ter endereço global roteável. Bom porque restaura a conectividade fim a fim e simplifica diagnóstico e registro; ruim porque desaparece o efeito colateral de ocultação que muita gente confundia com segurança. Com IPv6, **o firewall precisa ser explícito** — não há mais um NAT bloqueando por acidente o que ninguém liberou.
+
+**A varredura muda de natureza.** Uma sub-rede IPv6 padrão é `/64`: 18 quintilhões de endereços. Varrer sequencialmente é inviável. Isso não protege tanto quanto parece, porque atacantes usam DNS, certificados públicos, registros em serviços e padrões previsíveis de atribuição para descobrir hosts ativos. Endereçamento sequencial manual (`::1`, `::2`, `::3`) devolve a varredura à mesa.
+
+**Autoconfiguração e o vizinho malicioso.** O SLAAC permite que um host se configure a partir de anúncios de roteador (RA). Um RA forjado redireciona todo o tráfego da rede — o equivalente IPv6 do DHCP rogue. A defesa chama-se **RA Guard** e é configuração de switch, tal como as do @sec-cap008. O protocolo NDP substitui o ARP e herda os mesmos problemas de confiança, mitigados por **ND Inspection** e, em ambientes exigentes, por SEND.
+
+**Extensões de privacidade.** Endereços derivados do MAC identificavam a máquina em qualquer rede. As extensões da RFC 4941 geram endereços temporários rotativos, hoje o padrão nos sistemas operacionais. Para o operador, isso significa que um endereço IPv6 de cliente **muda com frequência**, com impacto direto em registro, correlação e resposta a incidentes.
+
+**Pilha dupla é dobro de superfície.** O erro mais comum na transição: a organização configura firewall rigoroso em IPv4, habilita IPv6 sem perceber (ele vem ligado por padrão em praticamente tudo) e deixa a política v6 permissiva ou inexistente. **Todo controle precisa existir nas duas pilhas** — regra de firewall, registro, monitoramento, lista de bloqueio. Um caminho v6 aberto anula meses de trabalho no v4.
+
+## Roteamento: como o pacote encontra o caminho
+
+Um roteador recebe um pacote, consulta sua tabela e decide por onde encaminhá-lo. A regra de decisão é o **prefixo mais longo**: entre `0.0.0.0/0`, `198.51.0.0/16` e `198.51.100.0/24`, o pacote para `198.51.100.7` sai pela rota `/24`, a mais específica.
+
+Rotas entram na tabela por três origens. As **conectadas** aparecem sozinhas quando uma interface recebe endereço. As **estáticas** são escritas à mão — previsíveis, sem tráfego de controle, mas sem reação a falha. As **dinâmicas** vêm de protocolos que trocam informação entre roteadores: OSPF e IS-IS dentro de um domínio administrativo, BGP entre domínios.
+
+### O interior: OSPF e amigos
+
+Protocolos de gateway interior propagam mudanças de topologia em segundos e recalculam caminhos automaticamente. Do ponto de vista de segurança, dois riscos:
+
+**Vizinhança não autenticada.** Um roteador não autorizado que estabeleça adjacência OSPF pode injetar rotas e atrair tráfego. A mitigação tem duas partes: **autenticação de área** com chave compartilhada ou HMAC-SHA, e marcação de todas as interfaces de usuário como `passive-interface`, para que não formem adjacência com nada.
+
+**Vazamento de topologia.** Um protocolo de estado de enlace distribui o mapa completo da rede a todos os participantes. Quem consegue escutar aprende a topologia inteira de graça — reconhecimento sem enviar um único pacote.
+
+### O exterior: BGP e a confiança global
+
+O BGP mantém a internet de pé anunciando quais blocos cada sistema autônomo (AS) alcança. E funciona, essencialmente, na base da palavra: por padrão, um AS que anuncia um prefixo é acreditado pelos vizinhos.
+
+Daí decorrem duas famílias de incidente. O **sequestro de prefixo** (*hijack*) ocorre quando um AS anuncia bloco que não é seu e atrai o tráfego destinado a ele — por erro de digitação ou por intenção, com casos documentados de desvio de tráfego para interceptação e de roubo de criptoativos por sequestro de rotas de DNS. O **vazamento de rota** (*route leak*) ocorre quando um AS repassa a um provedor rotas aprendidas de outro provedor, transformando-se involuntariamente em trânsito para tráfego que não deveria passar por ele — com congestionamento imediato.
+
+As defesas atuais são três, e todas dependem de adoção coletiva: **filtros de prefixo** entre vizinhos, construídos a partir de objetos de roteamento registrados; **RPKI com validação de origem** (ROV), que assina criptograficamente a autorização de um AS para anunciar um prefixo; e **limites de prefixos recebidos**, que derrubam a sessão quando um vizinho anuncia muito além do esperado, contendo vazamentos. O Volume 5 dedica um capítulo ao tema; aqui basta fixar que a autorização de anúncio é um problema de confiança global e ainda parcialmente resolvido.
+
+## NAT: o que ele faz e o que ele não faz
+
+A tradução de endereços de rede reescreve endereços — e frequentemente portas — nos cabeçalhos dos pacotes que atravessam um roteador. Nasceu como paliativo para a escassez de IPv4 e acabou virando peça estrutural de quase toda rede corporativa.
+
+O tipo dominante é o **NAT de sobrecarga** (PAT, ou *masquerade*), em que muitos hosts internos compartilham um endereço público, distinguidos pela porta de origem. A @fig-nat mostra a mecânica e a tabela de estado que a sustenta.
+
+::: {#fig-nat}
+```{.tikz}
+%%| filename: nat-traducao
+%%| alt: Funcionamento do NAT de sobrecarga, com dois hosts internos compartilhando um endereço público e a tabela de tradução que mapeia as sessões
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    host/.style={draw=manualblue, thick, fill=manualblue!8, rounded corners=2pt,
+                 align=center, inner sep=4pt, minimum width=2.6cm},
+    rot/.style={draw=manualgreen, very thick, fill=manualgreen!10, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=2.4cm, minimum height=2.4cm},
+    net/.style={draw=manualgray, thick, fill=manualgray!6, rounded corners=2pt,
+                align=center, inner sep=4pt, minimum width=2.4cm},
+    fl/.style={->,>=stealth, thick, manualgray},
+    et/.style={font=\scriptsize, align=center}}
+
+  \node[host] (h1) at (0,4.6) {\textbf{Host A}\\\scriptsize 10.20.30.11};
+  \node[host] (h2) at (0,2.4) {\textbf{Host B}\\\scriptsize 10.20.30.12};
+  \node[rot]  (r)  at (4.6,3.5) {\textbf{Roteador}\\\textbf{NAT}\\\scriptsize 198.51.100.1};
+  \node[net]  (i)  at (9.4,3.5) {\textbf{Internet}\\\scriptsize 203.0.113.80:443};
+
+  \draw[fl] (h1) -- node[above, et] {:51000} (r.west|-h1);
+  \draw[fl] (h2) -- node[below, et] {:49820} (r.west|-h2);
+  \draw[fl] (r) -- node[above, et] {198.51.100.1\\:51000 e :49821} (i);
+
+  \node[et, anchor=north west, align=left, draw=manualgray, thick,
+        fill=manualgray!5, rounded corners=2pt, inner sep=5pt] at (-0.6,0.9)
+    {\textbf{Tabela de tradução}\\[2pt]
+     10.20.30.11:51000 $\;\to\;$ 198.51.100.1:51000 $\;\to\;$ 203.0.113.80:443\\
+     10.20.30.12:49820 $\;\to\;$ 198.51.100.1:49821 $\;\to\;$ 203.0.113.80:443};
+
+  \node[et, manualred, align=left] at (11.6,1.6)
+    {\textbf{Sem esta tabela,}\\\textbf{o log externo não}\\\textbf{identifica quem foi.}};
+\end{tikzpicture}
+```
+NAT de sobrecarga. A tabela de tradução é o único elo entre o endereço público registrado e o host que originou a sessão.
+:::
+
+### O mito da segurança por NAT
+
+A crença de que "estar atrás de NAT é estar protegido" é uma das mais persistentes e mais caras da área. O que o NAT realmente oferece é um efeito colateral: como não há tradução prévia para conexões entrantes não solicitadas, elas não têm para onde ser encaminhadas e são descartadas. Isso se parece com um firewall — mas não é um.
+
+O que o NAT **não** faz:
+
+- **Não protege contra nada iniciado de dentro.** Um usuário que abre um anexo malicioso estabelece a conexão de dentro para fora, e o NAT cria a tradução com prazer. Praticamente todo malware moderno funciona assim, exatamente por isso.
+- **Não inspeciona conteúdo.** Não vê exploração, não vê exfiltração, não vê comando e controle.
+- **Não resiste a técnicas de travessia.** UPnP e NAT-PMP permitem que qualquer aplicação na rede interna abra portas no roteador sem autorização humana. STUN e *hole punching* estabelecem sessões diretas entre dois hosts atrás de NAT. Essas técnicas existem porque aplicações legítimas precisam delas — e servem igualmente ao que não é legítimo.
+- **Não impede movimentação lateral.** Dentro da rede traduzida, tudo se comunica livremente, a menos que haja segmentação de verdade.
+
+E o que o NAT **quebra**, em compensação: rastreabilidade (o caso de abertura), geolocalização e reputação por endereço, IPsec fim a fim em modo transporte, protocolos que carregam endereços na carga útil (SIP, FTP ativo) e, no caso do CGNAT, a própria capacidade de responder a um ofício judicial. A postura correta é: **NAT é solução de endereçamento; firewall é solução de segurança**. Quem precisa de proteção configura política explícita de filtragem, com ou sem NAT no caminho.
+
+### CGNAT e a obrigação de registrar
+
+Provedores que esgotaram seu espaço IPv4 usam CGNAT: centenas ou milhares de assinantes compartilham um mesmo endereço público, com o espaço `100.64.0.0/10` (RFC 6598) entre o cliente e a borda. É uma segunda camada de tradução, sobre a que o roteador do cliente já faz.
+
+O problema operacional é imediato e recorrente. Chega um ofício informando que, em determinada data e hora, o endereço `198.51.100.42` praticou um ilícito. Esse endereço foi compartilhado por 512 assinantes naquele instante. **Sem o registro de tradução — endereço interno, porta externa, destino, marca temporal com fuso — não há como identificar o assinante**, e a resposta ao ofício é a admissão de que a informação não existe.
+
+A prática consolidada, e que reduz o volume de registro em ordens de magnitude, é a **alocação determinística de blocos de portas**: cada assinante recebe uma faixa fixa de portas no endereço público, e basta registrar essa atribuição em vez de cada sessão. Um registro por assinante por dia substitui milhões de linhas de fluxo.
+
+## ⚖️ Brasil em Foco
+
+**O Marco Civil exige o registro que o CGNAT dificulta.** Os arts. 13 e 15 da Lei 12.965/2014 obrigam à guarda de registros de conexão por um ano e de registros de acesso a aplicações por seis meses [@marcocivil2014]. Com CGNAT, "registro de conexão" só é útil se incluir a **porta de origem** e a **marca temporal precisa** — sem isso, o endereço público sozinho aponta para centenas de assinantes e o provedor fica sem condições de responder. Guardar apenas o endereço é cumprir a obrigação de forma que não serve a ninguém.
+
+**Marca temporal e fuso horário derrubam investigações.** Registro sem fuso explícito, ou com relógio dessincronizado, produz identificação errada de assinante — com potencial de apontar pessoa inocente. Sincronização NTP obrigatória em todo equipamento que registra, e registro em UTC com fuso declarado, são requisitos práticos, não preciosismo. É o tipo de detalhe que só aparece quando já é tarde.
+
+**Sigilo dos registros.** Os arts. 10 e 11 do Marco Civil impõem que esses dados só sejam disponibilizados mediante ordem judicial, com indicação do período e do fato apurado. Entregar identificação de assinante a quem pede sem ordem — inclusive a autoridade policial fora do rito — é violação de sigilo, com responsabilização civil e administrativa. O @sec-cap007 tratou da postura correta: exigir a ordem, verificar sua abrangência e responder exatamente o requisitado.
+
+**A LGPD sobre a tabela de tradução.** Endereço IP associável a pessoa é dado pessoal. Os registros de CGNAT são, portanto, base de dados pessoais sob a LGPD [@lgpd2018], com necessidade de controle de acesso, registro de quem consulta, prazo de retenção definido (os prazos legais são mínimos, não permissão para guardar indefinidamente) e eliminação ao fim. Um provedor que retém cinco anos de tabela NAT "por precaução" está criando risco, não reduzindo.
+
+**Blocos e ASN vêm do registro.br.** No Brasil, prefixos IPv4/IPv6 e números de AS são atribuídos pelo NIC.br via registro.br, e o contato de abuso registrado é o canal por onde o CERT.br notifica máquinas comprometidas. Manter esse contato atualizado e monitorado é obrigação prática. **Adotar IPv6 nativo** é, além disso, a única saída estrutural para o problema de rastreabilidade do CGNAT — e o Brasil está entre os países com maior adoção, o que remove a desculpa de que o mercado não está pronto.
+
+## 🛠️ No Campo
+
+**1. Escrever o plano de endereçamento antes de precisar dele.** Uma planilha com bloco por site, significado fixo do terceiro octeto e faixas reservadas para crescimento. Depois de renumerar uma rede em produção, ninguém precisa ser convencido do valor disso.
+
+```text
+10.<site>.<função>.<host>/24
+
+site:    10=matriz  20=filial norte  30=DC  40..=novos
+função:  10=gerência 20=servidores 30=usuários 40=visitantes 50=IoT/CFTV
+reserva: 60..99 livres para crescimento por site
+```
+
+**2. Guardar registro de tradução que serve para responder ofício.** Com CGNAT, blocos determinísticos de porta reduzem o volume a uma linha por assinante:
+
+```bash
+# Exemplo com nftables: bloco determinístico de portas por assinante
+nft add rule ip nat postrouting ip saddr 100.64.0.10 \
+  snat to 198.51.100.42:2048-3071
+
+# Verificar sincronização de relógio em quem registra — sem isso, o log mente
+timedatectl show -p NTPSynchronized -p Timezone
+chronyc tracking | grep -E 'Stratum|System time'
+```
+
+**3. Auditar a sobreposição de endereços antes de cada aquisição ou VPN nova.** Cinco minutos que evitam meses de NAT empilhado:
+
+```bash
+# Lista as redes conectadas e as rotas aprendidas, para conferir contra o plano
+ip -4 route show | sort
+ip -6 route show | sort
+```
+
+**4. Fechar a pilha IPv6 com a mesma política do IPv4.** O erro mais comum da transição:
+
+```bash
+# As duas tabelas precisam ter política equivalente
+nft list ruleset | grep -A5 'table ip filter'
+nft list ruleset | grep -A5 'table ip6 filter'
+
+# Se IPv6 não for usado nem gerenciado, desabilitar é melhor que ignorar
+sysctl net.ipv6.conf.all.disable_ipv6
+```
+
+**5. Proteger o protocolo de roteamento interno.** Autenticação nas adjacências e interface passiva em tudo que dá para usuário:
+
+```text
+router ospf 1
+ area 0 authentication message-digest
+ passive-interface default
+ no passive-interface GigabitEthernet0/1   ! só o enlace de trânsito
+interface GigabitEthernet0/1
+ ip ospf message-digest-key 1 md5 <chave>
+```
+
+**6. Ligar RA Guard e DHCPv6 Guard nas portas de acesso.** O equivalente IPv6 do DHCP snooping, e igualmente desligado de fábrica:
+
+```text
+ipv6 nd raguard policy ACESSO
+ device-role host
+interface range GigabitEthernet0/1-46
+ ipv6 nd raguard attach-policy ACESSO
+```
+
+**7. Verificar o que está anunciado com o seu ASN.** Sequestro de prefixo é detectado por monitoramento externo, não pelo roteador de borda. Ferramentas públicas de olhar-de-vidro (*looking glass*) e serviços de monitoramento de BGP alertam quando um prefixo seu aparece anunciado por outro AS — configurar esse alerta leva minutos e é a única forma prática de descobrir o problema em tempo hábil.
+
+**8. Desligar UPnP na borda.** Permitir que qualquer aplicação da rede interna abra portas no roteador sem aprovação anula a política de firewall. Onde houver necessidade legítima, encaminhamento explícito e documentado, com revisão periódica da lista.
+
+## Resumo
+
+- Endereçamento é **controle de segurança**, não só conectividade: um plano hierárquico com significado posicional dá legibilidade ao alerta, permite regras de filtro curtas e evita a sobreposição que leva ao NAT empilhado e à perda de rastreabilidade.
+- As faixas privadas da RFC 1918 e as de documentação (`192.0.2.0/24`, `2001:db8::/32`) são o vocabulário obrigatório. Um `169.254.x.x` na máquina significa **DHCP sem resposta**, não configuração válida.
+- No **IPv6**, o que muda para segurança é a ausência de NAT (o firewall precisa ser explícito), a inviabilidade da varredura sequencial, os ataques de RA e NDP equivalentes aos de camada 2, os endereços temporários que dificultam correlação, e o risco de **pilha dupla com política só em v4**.
+- O roteamento decide por **prefixo mais longo**. Internamente, autenticar adjacências e marcar interfaces de usuário como passivas. Externamente, o BGP funciona na base da confiança, e as defesas contra sequestro e vazamento — filtros de prefixo, RPKI com validação de origem, limite de prefixos — dependem de adoção coletiva.
+- **NAT não é firewall.** Não protege contra o que é iniciado de dentro, não inspeciona conteúdo, é atravessado por UPnP e *hole punching* e não impede movimentação lateral. Em compensação, quebra rastreabilidade, geolocalização, IPsec fim a fim e protocolos que carregam endereços na carga útil.
+- Com **CGNAT**, o registro só é útil se incluir porta de origem e marca temporal sincronizada e com fuso declarado — sem isso, o Marco Civil não é atendido de forma útil e um ofício aponta para centenas de assinantes. Blocos determinísticos de portas reduzem o volume de registro em ordens de magnitude.
+- Registros de tradução são **dados pessoais sob a LGPD**: acesso controlado, retenção definida e eliminação ao fim do prazo. Adotar IPv6 nativo é a única solução estrutural para o problema de rastreabilidade.
