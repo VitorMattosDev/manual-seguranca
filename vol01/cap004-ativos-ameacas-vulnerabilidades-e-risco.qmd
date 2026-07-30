@@ -1,3 +1,309 @@
 # Ativos, ameaças, vulnerabilidades e risco {#sec-cap004}
 
-*(em elaboracao)*
+Numa sexta-feira à noite, o boletim do CERT.br e metade dos canais técnicos anunciam a mesma coisa: falha crítica de execução remota de código num servidor de aplicação amplamente usado, com exploração já observada na internet, nota máxima de severidade. O coordenador de TI do provedor lê o alerta e faz a única pergunta que importa: **nós temos isso rodando em algum lugar?**
+
+Ninguém sabe responder. Há trinta e dois servidores em produção, três deles herdados de uma aquisição de 2021, dois em nuvem contratados diretamente pelo comercial sem passar pela TI, e um que "acho que só serve o portal antigo, mas ninguém desliga porque tem medo". A resposta chega no domingo à tarde, depois de uma varredura improvisada: sim, dois servidores, um deles exposto à internet. O tempo entre a pergunta e a resposta — quarenta e uma horas — foi tempo de exposição pura, com exploração ativa acontecendo no mundo.
+
+Essa é a diferença prática entre uma organização que gerencia risco e uma que reage a manchete. E ela começa não pela ferramenta de correção, mas pelo termo mais entediante do vocabulário: **inventário**.
+
+O @sec-cap001 fixou o vocabulário mínimo numa tabela. Este capítulo abre cada um daqueles termos até o ponto em que eles viram método de trabalho: como levantar ativos, como caracterizar ameaças, como classificar vulnerabilidades com os identificadores que a indústria usa, e como combinar as três coisas em uma estimativa de risco que sustente uma decisão.
+
+## A cadeia que liga os quatro termos
+
+Os quatro conceitos não são uma lista: são uma cadeia causal, e cada elo tem um tipo de controle que age sobre ele (@fig-cadeia-risco).
+
+::: {#fig-cadeia-risco}
+```{.tikz}
+%%| filename: cadeia-risco
+%%| alt: Cadeia causal ligando fonte de ameaça, vulnerabilidade, ativo, evento e impacto, com controles preventivos à esquerda e detectivos e corretivos à direita
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{elo/.style={thick, rounded corners=3pt, align=center, inner sep=5pt,
+                       minimum width=2.5cm, minimum height=1.25cm}}
+
+  \node[elo, draw=manualred, fill=manualred!8] (amea) at (0,0)
+    {\textbf{Fonte de}\\\textbf{ameaça}\\\scriptsize grupo de extorsão};
+  \node[elo, draw=manualyellow, fill=manualyellow!8] (vuln) at (3.4,0)
+    {\textbf{Vulnerabilidade}\\\scriptsize VPN sem\\\scriptsize segundo fator};
+  \node[elo, draw=manualblue, fill=manualblue!8] (ativo) at (6.8,0)
+    {\textbf{Ativo}\\\scriptsize base de\\\scriptsize assinantes};
+  \node[elo, draw=manualgray, fill=manualgray!8] (evento) at (10.2,0)
+    {\textbf{Evento}\\\scriptsize cifragem\\\scriptsize do banco};
+  \node[elo, draw=black, fill=manualred!14] (impacto) at (13.6,0)
+    {\textbf{Impacto}\\\scriptsize 6 dias sem\\\scriptsize faturar};
+
+  \draw[vetor, manualgray] (amea) -- (vuln);
+  \draw[vetor, manualgray] (vuln) -- (ativo);
+  \draw[vetor, manualgray] (ativo) -- (evento);
+  \draw[vetor, manualgray] (evento) -- (impacto);
+
+  \node[align=center, manualgreen, font=\scriptsize] at (3.4,-1.75)
+    {\textbf{controles preventivos}\\reduzem a probabilidade};
+  \node[align=center, manualblue, font=\scriptsize] at (10.2,-1.75)
+    {\textbf{controles detectivos e corretivos}\\reduzem o impacto};
+
+  \draw[destaque, manualgreen, ->,>=stealth] (3.4,-1.25) -- (3.4,-0.7);
+  \draw[destaque, manualblue, ->,>=stealth] (10.2,-1.25) -- (10.2,-0.7);
+
+  \node[align=center, font=\scriptsize, manualgray] at (6.8,1.55)
+    {\textbf{Risco} = probabilidade de o evento ocorrer $\times$ impacto se ocorrer};
+\end{tikzpicture}
+```
+A cadeia do risco. Não se elimina a fonte de ameaça; o trabalho recai sobre a vulnerabilidade (probabilidade) e sobre o impacto.
+:::
+
+A leitura dessa cadeia responde a uma pergunta prática recorrente: onde investir? À esquerda, reduzindo a chance de o evento acontecer; à direita, reduzindo o estrago quando acontecer. Programas imaturos gastam quase tudo à esquerda. Programas maduros equilibram, porque a probabilidade nunca chega a zero e o custo marginal de reduzi-la cresce muito mais rápido que o de conter o impacto.
+
+## Ativos: o inventário é o alicerce
+
+**Ativo** é qualquer coisa que tenha valor para a organização. O @sec-cap001 separou ativos **primários** (a informação e os processos de negócio) de ativos de **suporte** (hardware, software, rede, instalações, pessoas). Falta agora o método: como construir e manter o inventário que responde à pergunta de sexta-feira à noite.
+
+### O que precisa constar
+
+Um inventário útil não é uma lista de nomes de máquina. Para cada ativo relevante, cinco campos fazem a diferença entre planilha decorativa e ferramenta de decisão:
+
+| Campo | Por que importa |
+|---|---|
+| Identificação e localização | Onde está fisicamente e logicamente (endereço, VLAN, provedor de nuvem, conta) |
+| **Dono** | Pessoa nomeada que decide sobre ele — não "a TI" |
+| Classificação | Qual informação trafega ou repousa ali, e sua sensibilidade |
+| Dependências | De que depende e quem depende dele; alimenta a análise de impacto |
+| Versões e fim de suporte | Sistema operacional, aplicação, firmware — é o campo que responde à pergunta do boletim |
+
+: Campos mínimos de um inventário de ativos que sustenta decisão. {#tbl-campos-inventario}
+
+O campo **dono** é o que costuma faltar e o que mais paralisa a resposta a incidente: sem alguém nomeado, a decisão de desligar um servidor às 23h de domingo não tem quem a tome.
+
+### Como levantar, na prática
+
+Nenhuma fonte isolada é completa; a interseção de várias é o que aproxima da realidade:
+
+- **Varredura ativa** da própria faixa de endereços — encontra o que responde.
+- **Escuta passiva** de ARP, DHCP e fluxos (NetFlow/sFlow) — encontra o que existe mas não responde a varredura, e o que aparece só de vez em quando.
+- **Fontes administrativas** — faturas do provedor de nuvem, contratos de licença, notas fiscais de compra, registros de domínio. É onde aparecem os dois servidores que o comercial contratou sozinho.
+- **Diretório e gerência de configuração** — objetos do Active Directory, agentes instalados, gerenciador de pacotes.
+- **A conversa.** Perguntar a cada área "que sistema você usa que a TI talvez não conheça?" produz achados que nenhuma varredura produz, porque nuvem contratada por cartão de crédito não aparece na rede interna.
+
+O que se descobre nesse cruzamento tem nome: **TI sombra** (*shadow IT*) e **ativos órfãos**. São, sistematicamente, os ativos com pior postura de segurança do ambiente, porque não estão em nenhuma rotina de correção, backup ou monitoramento.
+
+### Superfície de ataque
+
+Do inventário deriva o conceito operacional mais útil deste capítulo: a **superfície de ataque** é o conjunto de pontos por onde um adversário pode interagir com o sistema. Reduzi-la é o controle de melhor retorno que existe, porque um serviço que não está exposto não precisa ser corrigido com urgência.
+
+Ela tem três dimensões, e a terceira é a esquecida: a superfície de **rede** (portas e serviços alcançáveis), a de **software** (código, bibliotecas, dependências, funcionalidades habilitadas) e a **humana** (quem pode ser alvo de engenharia social, quantas pessoas têm privilégio administrativo, quantos terceiros têm acesso).
+
+## Ameaças: quem ou o quê, e com que capacidade
+
+**Ameaça** é a causa potencial de um incidente indesejado. O @sec-cap001 apresentou as três origens (deliberada, acidental, ambiental) e os perfis de agente. O que falta é como *usar* isso: caracterizar uma ameaça com três atributos.
+
+**Fonte.** Quem ou o quê. Para agentes deliberados, o perfil (oportunista automatizado, crime organizado, pessoa interna, ativismo, estado-nação); para os demais, o fenômeno (erro de operação, falha de equipamento, descarga atmosférica).
+
+**Capacidade e recursos.** O oportunista automatizado usa exploração pública contra falha conhecida e desiste diante de qualquer atrito. O crime organizado compra acesso inicial, tem semanas de paciência e um orçamento. Um estado-nação desenvolve exploração própria para falha desconhecida. A capacidade determina quais controles fazem diferença: bloquear o primeiro é barato; conter o terceiro é outro orçamento.
+
+**Motivação e alvo.** O oportunista não escolheu você; o crime organizado escolheu seu *setor*; a pessoa interna insatisfeita escolheu *você especificamente*. Isso muda a resposta: contra o indiscriminado, higiene básica resolve; contra o direcionado, é preciso assumir comprometimento e investir em detecção.
+
+Catálogos ajudam a não depender de imaginação. O **MITRE ATT&CK** organiza táticas e técnicas efetivamente observadas em ataques reais, e serve tanto para modelar ameaça quanto para medir cobertura de detecção [@mitreattack]; a ISO/IEC 27005 traz listas de fontes de ameaça e de vulnerabilidades típicas [@iso27005]. O Volume 11 dedica um capítulo ao ATT&CK.
+
+## Vulnerabilidades: quatro tipos, não um
+
+**Vulnerabilidade** é a fraqueza que pode ser explorada por uma ameaça. A palavra evoca falha de software, e essa associação estreita esconde três quartos do problema:
+
+- **De software.** Erro de implementação ou de projeto no código: estouro de buffer, injeção, desserialização insegura. É a que recebe identificador CVE.
+- **De configuração.** O software está correto; o modo como foi configurado, não. Credencial de fábrica, serviço administrativo exposto, permissão excessiva, cifra fraca habilitada, registro desligado. **É a categoria mais frequente em ambientes reais** e a que nenhum boletim avisa, porque não é falha do fornecedor.
+- **De processo.** Não há revisão de acessos, o desligamento não revoga credenciais, o backup nunca é testado, não existe procedimento de resposta. Não aparece em varredura alguma.
+- **Humana.** Suscetibilidade a engenharia social, senha reaproveitada, aprovação sem conferência. Tema do Volume 10.
+
+Um programa de segurança que só trata a primeira categoria está tratando a minoria dos casos com a maior parte do orçamento.
+
+### O ciclo de vida de uma vulnerabilidade e a janela de exposição
+
+Toda vulnerabilidade de software percorre uma linha do tempo, e o que importa nela são os intervalos, não os pontos (@fig-janela-exposicao).
+
+::: {#fig-janela-exposicao}
+```{.tikz}
+%%| filename: janela-exposicao
+%%| alt: Linha do tempo da vulnerabilidade com introdução, descoberta, divulgação, correção disponível e correção aplicada, destacando a janela de dia zero e a janela de n dias
+\begin{tikzpicture}[font=\footnotesize]
+  \draw[->,>=stealth, thick] (-0.6,0) -- (13.6,0) node[right] {tempo};
+
+  \foreach \x/\lbl in {0.6/{introduzida\\no código},
+                       3.2/{descoberta\\pelo atacante},
+                       6.0/{divulgada\\publicamente},
+                       8.6/{correção\\disponível},
+                       11.8/{correção\\aplicada}}{
+    \draw[manualgray, thick] (\x,-0.15) -- (\x,0.15);
+    \node[ponto] at (\x,0) {};
+    \node[anchor=north, align=center, font=\scriptsize] at (\x,-0.28) {\lbl};
+  }
+
+  \draw[<->,>=stealth, manualred, very thick] (3.2,1.2) -- (6.0,1.2)
+    node[midway, above, align=center, manualred, font=\scriptsize]
+    {\textbf{dia zero}\\explorável, ninguém sabe};
+
+  \draw[<->,>=stealth, manualyellow, very thick] (6.0,2.3) -- (8.6,2.3)
+    node[midway, above, align=center, manualyellow, font=\scriptsize]
+    {\textbf{sem correção}\\só mitigação temporária};
+
+  \draw[<->,>=stealth, manualblue, very thick] (8.6,1.2) -- (11.8,1.2)
+    node[midway, above, align=center, manualblue, font=\scriptsize]
+    {\textbf{$n$ dias}\\a janela que você controla};
+
+  \foreach \x in {3.2, 6.0, 8.6, 11.8}{ \draw[auxiliar] (\x,0) -- (\x,1.2); }
+  \draw[auxiliar] (6.0,1.2) -- (6.0,2.3);
+  \draw[auxiliar] (8.6,1.2) -- (8.6,2.3);
+\end{tikzpicture}
+```
+A linha do tempo de uma vulnerabilidade. O intervalo de $n$ dias é o único que depende inteiramente da organização.
+:::
+
+O ponto central da figura é político, não técnico. Contra o dia zero há pouco a fazer além de defesa em profundidade e detecção. Mas a janela de **$n$ dias** — entre a correção existir e a correção estar aplicada — é integralmente responsabilidade da organização, e é onde a esmagadora maioria dos comprometimentos reais acontece. Atacantes não gastam dia zero em provedor regional: usam falhas com correção publicada há meses.
+
+Vale a distinção: **exploração** (*exploit*) é o código ou a técnica que tira proveito da falha; **prova de conceito** demonstra que é possível; **exploração armada** é a versão confiável e automatizada. O intervalo entre divulgação e exploração armada disponível encurtou de meses para dias, e às vezes horas.
+
+### Os identificadores que a indústria usa
+
+Cinco siglas aparecem em todo boletim, e cada uma responde a uma pergunta diferente. Confundi-las leva a priorizar errado.
+
+| Sigla | O que é | Pergunta que responde |
+|---|---|---|
+| **CVE** | Identificador único de uma vulnerabilidade concreta em um produto | *Qual* falha é essa? |
+| **CWE** | Catálogo de tipos de fraqueza (ex.: CWE-89, injeção de SQL) | De que *classe* ela é? |
+| **CVSS** | Pontuação de severidade de 0 a 10, com métricas base, de ameaça e ambientais | Quão *grave* ela é? |
+| **EPSS** | Probabilidade estimada de exploração nos próximos 30 dias | Quão *provável* é ser explorada? |
+| **KEV** | Catálogo de vulnerabilidades com exploração confirmada em ataques reais | Já está sendo *usada*? |
+
+: Os identificadores de vulnerabilidade e a pergunta de cada um. {#tbl-identificadores-vuln}
+
+O erro mais comum e mais caro é tratar **CVSS como fila de prioridade**. O CVSS mede severidade *intrínseca*, sob a premissa do pior caso [@cvss40]. Numa base típica, milhares de itens pontuam 7,0 ou mais — corrigir por ordem de nota significa gastar semanas em falhas que ninguém explora, enquanto uma de nota 6,5 com exploração ativa segue aberta.
+
+A priorização que funciona combina três eixos, ilustrados na @fig-quadrantes-priorizacao: severidade (CVSS, ajustado pelas métricas ambientais que refletem *seu* contexto), probabilidade de exploração (EPSS e KEV) e **exposição real do ativo** — se o serviço vulnerável está atrás de VPN, sem alcance da internet, a urgência é outra.
+
+::: {#fig-quadrantes-priorizacao}
+```{.tikz}
+%%| filename: quadrantes-priorizacao
+%%| alt: Plano cartesiano com severidade CVSS no eixo vertical e probabilidade de exploração EPSS no eixo horizontal, dividido em quatro quadrantes de prioridade
+\begin{tikzpicture}[font=\footnotesize]
+  \fill[manualgray!12] (0,0) rectangle (6,4);
+  \fill[manualyellow!16] (0,4) rectangle (6,8);
+  \fill[manualyellow!16] (6,0) rectangle (12,4);
+  \fill[manualred!18] (6,4) rectangle (12,8);
+
+  \draw[->,>=stealth, thick] (0,0) -- (12.6,0)
+    node[anchor=north east, font=\scriptsize] {probabilidade de exploração (EPSS, KEV)};
+  \draw[->,>=stealth, thick] (0,0) -- (0,8.6)
+    node[anchor=north west, rotate=90, font=\scriptsize] {severidade (CVSS ambiental)};
+
+  \draw[auxiliar, thick] (6,0) -- (6,8);
+  \draw[auxiliar, thick] (0,4) -- (12,4);
+
+  \node[align=center, manualred, font=\scriptsize] at (9,6)
+    {\textbf{corrigir agora}\\grave e sendo explorada\\\scriptsize janela: horas};
+  \node[align=center, font=\scriptsize] at (3,6)
+    {\textbf{planejar}\\grave, sem exploração ativa\\\scriptsize janela: ciclo normal};
+  \node[align=center, font=\scriptsize] at (9,2)
+    {\textbf{corrigir logo}\\explorada, impacto menor\\\scriptsize janela: dias};
+  \node[align=center, manualgray, font=\scriptsize] at (3,2)
+    {\textbf{acompanhar}\\baixa em ambos\\\scriptsize janela: lote seguinte};
+
+  \node[align=center, manualblue, font=\scriptsize, anchor=west] at (12.9,4)
+    {a exposição do\\ativo desloca\\o ponto nos\\dois eixos};
+\end{tikzpicture}
+```
+Priorização por severidade e por probabilidade de exploração. A nota isolada do CVSS não distingue o quadrante superior esquerdo do superior direito.
+:::
+
+## Risco: juntando tudo
+
+**Risco** é o efeito da incerteza sobre os objetivos [@iso31000] — e, na formulação operacional que a segurança da informação usa, a combinação da probabilidade de um evento e do seu impacto:
+
+$$
+\text{Risco} = P(\text{evento}) \times \text{Impacto}(\text{evento})
+$$
+
+A fórmula é útil e é uma simplificação perigosa se levada ao pé da letra, por três motivos que valem registro desde já:
+
+1. **Nem todo impacto é comparável.** Um evento com 1% de chance e R$ 10 milhões de impacto e outro com 100% de chance e R$ 100 mil de impacto têm o mesmo valor esperado e exigem decisões completamente diferentes: o segundo é custo operacional, o primeiro é ameaça à existência da empresa.
+2. **As distribuições têm cauda pesada.** Perdas por incidente não se distribuem em torno de uma média bem-comportada; o valor esperado subestima sistematicamente o cenário ruim.
+3. **A probabilidade raramente é conhecida.** É estimada, e a qualidade da estimativa é o que o @sec-cap006 trata em detalhe.
+
+Duas distinções completam o quadro. **Risco inerente** é o risco antes de qualquer controle; **risco residual** é o que sobra depois deles aplicados — e é o número que a direção precisa conhecer e aceitar formalmente. E o impacto tem camadas: o **direto** (horas de indisponibilidade, custo de recuperação, dado perdido) costuma ser o menor; o **indireto** (multa da ANPD, ação de titulares, perda de assinantes, custo de aquisição para repor a base, reputação junto ao regulador) é que decide a sobrevivência da empresa.
+
+### Controles: três funções, três naturezas
+
+Fechando a cadeia, **controle** é a medida que modifica o risco. Duas classificações que se cruzam e organizam qualquer conversa sobre o assunto:
+
+Por **função**: **preventivo** (impede o evento — segundo fator, segmentação, menor privilégio), **detectivo** (revela que ocorreu — registro, alerta, integridade de arquivo), **corretivo** (restaura — backup, plano de resposta), e ainda **dissuasivo** (desestimula — aviso legal, câmera visível) e **compensatório** (substitui um controle inviável por outro de efeito equivalente).
+
+Por **natureza**: **técnico** (firewall, cifragem), **administrativo** (política, procedimento, treinamento, contrato) e **físico** (fechadura, cerca, controle de acesso à sala).
+
+A regra prática que decorre da @fig-cadeia-risco: um conjunto de controles só é defensável se cobrir as três funções. Só preventivos significa que, no dia em que um falhar, ninguém fica sabendo; só detectivos significa assistir ao incidente acontecer.
+
+## ⚖️ Brasil em Foco
+
+A **LGPD** transformou inventário e análise de risco em obrigação documental. O art. 37 exige que controlador e operador **mantenham registro das operações de tratamento** de dados pessoais que realizarem — na prática, um inventário de ativos primários com finalidade, base legal, categorias de titulares, prazo de retenção e compartilhamentos [@lgpd2018]. O art. 38 faculta à ANPD determinar a elaboração de **relatório de impacto à proteção de dados pessoais**, documento que descreve os tratamentos, os riscos às liberdades civis e as medidas de mitigação — ou seja, exatamente a cadeia deste capítulo, escrita.
+
+O art. 50 introduz as **regras de boas práticas e governança**, que a lei sugere considerando "a natureza, o escopo, a finalidade, a probabilidade e a gravidade dos riscos" — a linguagem é de gestão de risco, não de lista de controles obrigatórios. Isso tem consequência: no Brasil, não existe uma lista fechada de medidas que, cumprida, garante conformidade. O que se demonstra é o **processo**, e o processo começa por saber o que se tem.
+
+Para agentes de tratamento de **pequeno porte**, a Resolução CD/ANPD nº 2/2022 flexibilizou obrigações, e a ANPD publicou guia orientativo de segurança da informação para esse público, com um conjunto mínimo de medidas — leitura recomendada para provedores regionais e empresas de suporte, por ser o parâmetro que a própria autoridade declara esperar [@anpd2023guia].
+
+Do lado da telecomunicação, a Resolução Anatel nº 740/2020 exige que produtos de telecomunicações atendam a requisitos de segurança cibernética — sem senha padrão universal, com mecanismo de atualização de firmware e com correção de vulnerabilidades conhecidas [@anatel740]. Para quem entrega ONU e roteador ao assinante, isso significa incluir o **parque de equipamentos de cliente no inventário**: são dezenas de milhares de ativos sob responsabilidade do provedor, e um firmware vulnerável em massa é simultaneamente risco ao assinante, risco à rede e questão regulatória.
+
+No setor financeiro, a Resolução CMN nº 4.893/2021 exige classificação de dados e sistemas por relevância, avaliação de riscos e controles proporcionais, além de exigir a gestão de risco de **serviços de terceiros** relevantes [@bcb4893] — o que puxa fornecedores e integradores para dentro do escopo.
+
+Institucionalmente, o **CERT.br** publica estatísticas de incidentes notificados e mantém material de boas práticas para redes; para órgãos federais, o **CTIR Gov** emite alertas de vulnerabilidade e coordena resposta. Acompanhar essas fontes, mais o catálogo de vulnerabilidades exploradas conhecidas mantido pela CISA norte-americana, é o mínimo para não descobrir por manchete.
+
+## 🛠️ No Campo
+
+**1. Construir o inventário em uma semana, não em um projeto de seis meses.** A versão de 20% que existe vale infinitamente mais que a versão completa que nunca fica pronta. Uma planilha com os cinco campos da @tbl-campos-inventario, preenchida com o cruzamento de varredura, faturas e conversa, já responde à pergunta de sexta-feira à noite:
+
+```bash
+# Ativos que respondem na rede, com serviço e versão detectados
+nmap -sS -sV -Pn --top-ports 500 --open -oA inventario 10.20.0.0/22
+
+# Aprendizado passivo: quem já falou na rede recentemente
+ip neigh show | awk '$4=="lladdr" {print $1, $5}' | sort -V
+
+# Concessões de DHCP ativas — pega o que não estava ligado durante a varredura
+grep -E 'lease|binding state active' /var/lib/dhcp/dhcpd.leases | head -40
+```
+
+**2. Registrar dono e classificação, não só endereço IP.** É o que transforma inventário em ferramenta de decisão. Sem dono nomeado, nenhuma decisão urgente sai do lugar.
+
+**3. Medir a superfície exposta e persegui-la até zero.** Serviço administrativo alcançável da internet é o achado mais comum e mais caro. A meta não é reduzir: é zerar.
+
+```bash
+# O que este servidor escuta, em quais interfaces, e qual processo responde
+ss -tulnp | awk 'NR==1 || $5 !~ /^(127\.|\[::1\])/'
+
+# Conferir de fora: o que o mundo enxerga do seu bloco
+nmap -Pn -p- --open -T3 198.51.100.7
+
+# Regras de firewall que permitem qualquer origem
+iptables -S | grep -E '^-A (INPUT|FORWARD)' | grep -v ' -s '
+```
+
+**4. Priorizar correção por exploração ativa, não por nota.** A fila é: está no catálogo de exploração conhecida e o ativo está exposto → hoje. EPSS alto → esta semana. CVSS alto sem sinal de exploração e ativo interno → no ciclo mensal.
+
+```bash
+# Pacotes com atualização de segurança pendente (Debian/Ubuntu)
+apt-get -s upgrade | grep -i security | awk '{print $2}' | sort -u
+
+# Versões instaladas x fim de suporte — o campo que responde ao boletim
+hostnamectl | grep -E 'Operating System|Kernel'
+lsb_release -d 2>/dev/null; cat /etc/os-release | grep -E '^VERSION'
+```
+
+**5. Manter um registro de risco de uma página.** Dez linhas bastam: ativo, ameaça, vulnerabilidade, impacto estimado, probabilidade estimada, controle atual, controle proposto, dono, prazo, decisão. É o insumo do @sec-cap006 e o documento que a ANPD pede quando pergunta como a empresa avaliou seus riscos.
+
+**6. Incluir o parque de equipamentos de assinante.** Modelo, versão de firmware, se aceita atualização remota, se tem credencial padrão. Dezenas de milhares de dispositivos com a mesma falha são o maior ativo de risco de um provedor — e o de maior potencial de dano a terceiros.
+
+**7. Assinar as fontes de alerta e definir quem lê.** Boletins do CERT.br, avisos do fabricante dos equipamentos em uso, catálogo de vulnerabilidades exploradas. Um responsável nomeado, revisão semanal, e um caminho definido para escalar o que for urgente fora do horário. Alerta que chega numa caixa que ninguém abre é o mesmo que alerta que não chegou.
+
+## Resumo
+
+- Os quatro termos formam uma **cadeia causal**: a fonte de ameaça explora uma vulnerabilidade de um ativo, produzindo um evento com impacto. Controles preventivos agem sobre a probabilidade; detectivos e corretivos, sobre o impacto — e um programa defensável cobre as duas pontas.
+- **Inventário é o alicerce.** Sem dono nomeado, classificação e versões registradas, a pergunta "nós temos isso?" não tem resposta rápida, e a demora é exposição pura. TI sombra e ativos órfãos são sistematicamente os piores do ambiente.
+- Vulnerabilidade não é só falha de software: as de **configuração, de processo e humanas** somam a maioria dos casos reais e não aparecem em boletim nem em varredura.
+- A janela de **$n$ dias** — entre a correção existir e estar aplicada — é a única inteiramente sob controle da organização, e é onde ocorre a maior parte dos comprometimentos. Dia zero é raro contra alvos comuns.
+- **CVE, CWE, CVSS, EPSS e KEV** respondem perguntas diferentes. Priorizar pela nota do CVSS é o erro caro mais comum: a fila correta combina severidade ajustada ao contexto, probabilidade de exploração e exposição real do ativo.
+- **Risco = probabilidade × impacto** é útil como organizador e enganoso como número único: impactos catastróficos e recorrentes não são intercambiáveis, as distribuições têm cauda pesada, e o impacto indireto costuma superar o direto.
+- No Brasil, a LGPD converte inventário (art. 37) e avaliação de risco (arts. 38 e 50) em obrigação demonstrável; a Anatel 740/2020 traz o parque de equipamentos do assinante para dentro do escopo; e a Resolução CMN 4.893/2021 estende a gestão de risco aos fornecedores relevantes.
