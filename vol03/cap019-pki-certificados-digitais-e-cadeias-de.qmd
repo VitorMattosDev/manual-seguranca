@@ -1,3 +1,324 @@
 # PKI, certificados digitais e cadeias de confiança {#sec-cap019}
 
-*(em elaboracao)*
+Em agosto de 2011, um usuário iraniano do Gmail postou num fórum do Google uma pergunta simples: o navegador estava reclamando do certificado. Não era erro de configuração. Era um certificado válido para `*.google.com`, corretamente assinado, aceito sem alarme por qualquer sistema do planeta — e que o Google não havia solicitado.
+
+A emissora era a DigiNotar, uma autoridade certificadora holandesa de porte modesto, que atendia principalmente o setor público dos Países Baixos. Seus servidores haviam sido comprometidos, e o atacante emitira mais de 500 certificados fraudulentos para domínios do Google, da Microsoft, da Mozilla, da CIA e do Mossad. O certificado do Google foi usado para interceptar o tráfego de aproximadamente 300 mil usuários iranianos por semanas.
+
+O ponto que interessa é estrutural, não anedótico. A DigiNotar **jamais** teve relação com o Google. Nunca hospedou nada do Google, nunca foi indicada por ele, nunca teve autorização para falar em seu nome. E, mesmo assim, seu certificado para `*.google.com` era tecnicamente perfeito — porque, no modelo de PKI da web, **qualquer autoridade em que o navegador confie pode emitir certificado para qualquer domínio do mundo**. A confiança não é por domínio; é global.
+
+A DigiNotar foi removida dos armazéns de confiança em dias e decretou falência em menos de um mês. O modelo que a tornou perigosa continua em uso — com salvaguardas que este capítulo apresenta, e que existem por causa dela.
+
+## O problema que a PKI resolve
+
+O @sec-cap018 terminou com uma pergunta em aberto. Diffie-Hellman estabelece um segredo com quem estiver do outro lado; a assinatura prova que quem assinou detém determinada chave privada. Falta o elo: **como saber que aquela chave pública pertence a quem se pretende alcançar?**
+
+Sem resposta, todo o resto desmorona. Um atacante no caminho apresenta a **sua** chave pública, assina a troca com a **sua** privada, e tudo verifica corretamente. O canal é impecavelmente seguro — com a pessoa errada.
+
+Três modelos de confiança foram propostos, e a web adotou o terceiro:
+
+**Confiança direta.** As partes trocam chaves pessoalmente ou por canal fora de banda, e comparam impressões digitais. É o que o SSH faz na primeira conexão (*trust on first use*) e o que aplicativos de mensagem oferecem na verificação de código de segurança. É o modelo mais forte e o que menos escala.
+
+**Teia de confiança.** Cada participante assina as chaves de quem conhece, e a confiança se propaga por caminhos. É o modelo do PGP. Funciona em comunidades técnicas pequenas, e falhou em escalar por uma razão social: exigir que usuários comuns raciocinem sobre grafos de confiança e assinaturas cruzadas não funcionou na prática.
+
+**Hierárquica.** Um conjunto pequeno de **autoridades certificadoras** (ACs), previamente confiadas, atesta a ligação entre identidade e chave pública. É a PKI da web e da ICP-Brasil, e a razão de sua vitória é a escala: o navegador precisa confiar em algumas centenas de entidades para validar centenas de milhões de sites.
+
+## O certificado X.509
+
+Um certificado é um documento estruturado que afirma "**esta chave pública pertence a esta identidade**", assinado por uma autoridade. O formato é o X.509 [@rfc5280], e conhecer seus campos é o que separa quem lê um certificado de quem clica no cadeado.
+
+| Campo | O que contém | Por que importa |
+|---|---|---|
+| `Subject` | Identidade do titular | O `CN` está **obsoleto** para nomes de host |
+| `Subject Alternative Name` | Lista de nomes válidos | **É o campo que os navegadores usam.** Sem SAN, o certificado é rejeitado |
+| `Issuer` | Quem assinou | Aponta o próximo elo da cadeia |
+| `Validity` | `notBefore` e `notAfter` | Fonte da falha operacional mais comum que existe |
+| `Public Key Info` | Algoritmo e a chave | RSA-2048, P-256, Ed25519 |
+| `Basic Constraints` | `CA: TRUE/FALSE` | **Certificado folha com `CA:TRUE` é catastrófico** |
+| `Key Usage` | Operações permitidas | Assinatura digital, cifragem de chave, assinatura de certificado |
+| `Extended Key Usage` | Finalidade | Autenticação de servidor, de cliente, assinatura de código |
+| `CRL / OCSP` | Onde checar revogação | Ponto de distribuição e respondedor |
+| `SCT` | Provas de Certificate Transparency | Exigido pelos navegadores desde 2018 |
+| `Signature` | Assinatura da AC sobre tudo acima | O que amarra o conjunto |
+
+: Campos de um certificado X.509 que importam na prática. {#tbl-campos-x509}
+
+Três armadilhas merecem destaque. A primeira é o **`CN` obsoleto**: durante anos o nome do host ficava no `Common Name`, e ainda se vê certificado emitido só com ele. Navegadores modernos ignoram o `CN` por completo — se o nome não estiver no SAN, o certificado não vale, por mais correto que pareça. A segunda é o **`Basic Constraints`**: um certificado folha que declare `CA:TRUE` e seja aceito como tal permite ao titular assinar certificados para qualquer domínio. Foi exatamente a falha do *Basic Constraints* em navegadores antigos, e é o que o Flame, do @sec-cap017, obteve por outro caminho. A terceira é a **validade**: certificado expirado derruba serviço com a mesma eficiência de um ataque, e o setor caminha para prazos cada vez mais curtos — o que torna a automação obrigatória, não opcional.
+
+## A cadeia de confiança
+
+Um certificado sozinho não prova nada; o que prova é a **cadeia** que leva dele até uma raiz previamente confiada. A @fig-cadeia mostra a estrutura e a validação.
+
+::: {#fig-cadeia}
+```{.tikz}
+%%| filename: cadeia-confianca
+%%| alt: Cadeia de confiança de certificados, da autoridade raiz no armazém de confiança até o certificado folha do servidor, com as verificações feitas em cada elo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    raiz/.style={draw=manualgreen, very thick, fill=manualgreen!14, rounded corners=4pt,
+                 align=center, inner sep=5pt, minimum width=4.6cm, minimum height=1.3cm,
+                 font=\scriptsize},
+    inter/.style={draw=manualblue, very thick, fill=manualblue!12, rounded corners=4pt,
+                  align=center, inner sep=5pt, minimum width=4.6cm, minimum height=1.3cm,
+                  font=\scriptsize},
+    folha/.style={draw=manualyellow, very thick, fill=manualyellow!14, rounded corners=4pt,
+                  align=center, inner sep=5pt, minimum width=4.6cm, minimum height=1.5cm,
+                  font=\scriptsize},
+    armazem/.style={draw=manualgreen, thick, dashed, rounded corners=6pt},
+    nota/.style={align=left, font=\scriptsize, manualgray},
+    passo/.style={draw=manualgray, thick, fill=white, rounded corners=3pt,
+                  align=left, inner sep=5pt, minimum width=6.4cm, font=\scriptsize}}
+
+  \draw[armazem, fill=manualgreen!4] (-2.7,3.6) rectangle (2.7,6.2);
+  \node[nota, manualgreen, anchor=north] at (0,6.1) {\textbf{Armazém de confiança do sistema}};
+  \node[raiz] (r) at (0,4.6) {\textbf{AC Raiz}\\\scriptsize autoassinada, offline\\\scriptsize instalada pelo SO ou navegador};
+
+  \node[inter] (i) at (0,2.0) {\textbf{AC Intermediária}\\\scriptsize assinada pela raiz\\\scriptsize é ela que emite no dia a dia};
+
+  \node[folha] (f) at (0,-0.8) {\textbf{Certificado folha}\\\scriptsize SAN: exemplo.com.br\\\scriptsize chave pública do servidor\\\scriptsize assinado pela intermediária};
+
+  \draw[destaque, manualgray, ->, >=stealth] (r) -- node[nota, right] {assina} (i);
+  \draw[destaque, manualgray, ->, >=stealth] (i) -- node[nota, right] {assina} (f);
+
+  \node[passo] (p1) at (8.6,4.9)
+    {\textbf{1.} O servidor envia folha + intermediária.\\
+     \textcolor{manualred}{Esquecer a intermediária é o erro nº 1:}\\
+     funciona no navegador que já a tem em cache\\
+     e falha em \texttt{curl}, em Java e no celular.};
+  \node[passo] (p2) at (8.6,2.6)
+    {\textbf{2.} Cada assinatura é verificada com a chave\\
+     pública do elo acima, até chegar a uma raiz\\
+     presente no armazém local.};
+  \node[passo] (p3) at (8.6,0.6)
+    {\textbf{3.} Para cada certificado: validade na data\\
+     atual, \texttt{BasicConstraints}, \texttt{KeyUsage},\\
+     algoritmos aceitáveis e estado de revogação.};
+  \node[passo] (p4) at (8.6,-1.6)
+    {\textbf{4.} Só no fim: o nome pedido consta do\\
+     \texttt{SubjectAltName} da folha?\\
+     \textcolor{manualred}{Cadeia válida de outro domínio não serve.}};
+
+  \draw[auxiliar, manualgray, ->, >=stealth] (2.7,-0.8) -- (5.4,-1.6);
+  \draw[auxiliar, manualgray, ->, >=stealth] (2.7,2.0) -- (5.4,2.6);
+  \draw[auxiliar, manualgray, ->, >=stealth] (2.7,4.6) -- (5.4,4.9);
+\end{tikzpicture}
+```
+Cadeia de confiança e as quatro verificações. A ausência da intermediária é a falha operacional mais frequente.
+:::
+
+A **raiz** é autoassinada — ela afirma a própria identidade, e a confiança nela não vem da matemática, vem de estar no armazém do sistema. Por isso a chave privada da raiz fica em HSM, fisicamente isolada, acionada em cerimônias documentadas com múltiplas testemunhas: comprometê-la comprometeria tudo o que ela ancora, sem recurso.
+
+A **intermediária** existe exatamente para proteger a raiz. É ela que emite no dia a dia, e seu comprometimento é grave mas recuperável: revoga-se a intermediária, emite-se outra, a raiz permanece intocada.
+
+A **folha** é o certificado do serviço. Traz o SAN, a chave pública e a assinatura da intermediária.
+
+**O erro operacional mais comum de todos** está no passo 1 da figura: o servidor precisa enviar a folha **e a intermediária**. Muitos navegadores contornam a omissão porque já viram a intermediária antes e a mantêm em cache, ou porque seguem a extensão `AIA` para buscá-la. O resultado é o pior cenário de diagnóstico: funciona no navegador do administrador e falha em `curl`, em clientes Java, em aplicativos móveis e em integrações entre servidores. Testar com `openssl s_client` a partir de uma máquina que nunca acessou aquele domínio é o que revela o problema.
+
+## Como um certificado é emitido
+
+O processo tem quatro etapas, e a segunda é a única que envolve julgamento humano:
+
+1. **Geração do par.** A chave privada nasce no servidor de destino, ou dentro de um HSM, e **nunca sai de lá**. Autoridade que se ofereça para gerar o par e enviá-lo é uma autoridade a evitar.
+2. **CSR.** Uma requisição contendo a chave pública e os nomes pretendidos, assinada com a própria chave privada — o que prova posse.
+3. **Validação.** A AC verifica que o solicitante controla os nomes. É aqui que está a diferença real entre os tipos.
+4. **Emissão.** A AC assina e devolve o certificado, e o publica nos registros de Certificate Transparency.
+
+Quanto aos tipos de validação: **DV** verifica apenas o controle do domínio, por registro DNS, arquivo em caminho conhecido ou e-mail; é automatizável e é o que o ACME [@rfc8555] fez virar rotina com o Let's Encrypt. **OV** verifica também a existência jurídica da organização. **EV** acrescenta verificação reforçada, e perdeu quase toda a relevância prática quando os navegadores removeram a barra verde — estudos mostraram que nenhum usuário reagia a ela. Para segurança do canal, **os três são idênticos**: a diferença está na identidade afirmada, não na criptografia.
+
+O ACME merece destaque porque mudou a economia do problema. Certificado gratuito, emitido em segundos e renovado automaticamente por 90 dias tornou o HTTPS universal e — mais importante para este capítulo — tornou **a automação a norma**. Quem renova à mão descobre o custo num feriado.
+
+## A falha estrutural, e as três salvaguardas
+
+Voltando à DigiNotar: o problema não foi um bug, foi o modelo. Com centenas de raízes no armazém de um sistema típico, **a segurança de qualquer domínio é a segurança da AC mais fraca do conjunto** — muitas delas sujeitas a jurisdições e pressões variadas.
+
+Não é caso isolado. A Comodo foi comprometida em 2011. A TÜRKTRUST emitiu por engano, em 2013, um certificado intermediário que permitia assinar qualquer domínio. A Symantec, então a maior AC do mundo, emitiu certificados de teste para domínios do Google sem autorização, e após uma sucessão de descumprimentos teve toda a sua hierarquia distrustada pelos navegadores em 2018 — um evento que obrigou milhares de organizações a trocar certificados às pressas.
+
+Três mecanismos foram criados em resposta.
+
+**Certificate Transparency** [@rfc6962] é o mais eficaz. Toda AC pública precisa publicar cada certificado emitido em registros públicos, apenas-anexação, estruturados como árvores de Merkle — a estrutura do @sec-cap017. O certificado carrega provas (SCTs) de ter sido publicado, e navegadores rejeitam quem não as tiver. O efeito prático: **emissão indevida não pode mais ser secreta**. Não impede a emissão; garante que ela seja detectável — e qualquer organização pode monitorar seus próprios domínios de graça.
+
+**CAA** [@rfc8659] é um registro DNS que declara quais ACs estão autorizadas a emitir para aquele domínio. As ACs são obrigadas a consultá-lo e recusar emissão fora da lista. É uma linha de DNS, leva cinco minutos e reduz drasticamente o risco de emissão indevida por AC não relacionada.
+
+**Pinning** amarra um serviço a chaves específicas. A versão baseada em cabeçalho HTTP, o HPKP, foi **abandonada** por ser perigosa demais: um erro de configuração tornava o site inacessível por meses, sem recurso, e a técnica passou a ser usada como extorsão. O que permanece é o *pinning* embarcado em aplicativos móveis, onde há controle sobre o cliente e sobre o ciclo de atualização — e mesmo ali exige planejamento de rotação, sob pena de o aplicativo parar de funcionar na renovação do certificado.
+
+## Revogação: a parte que quase não funciona
+
+Certificado comprometido antes do vencimento precisa ser invalidado. O mecanismo existe, e funciona mal.
+
+**CRL** é uma lista assinada de números de série revogados, publicada pela AC. Cresce indefinidamente, exige download periódico e chega a dezenas de megabytes.
+
+**OCSP** [@rfc6960] consulta a AC sobre um certificado específico. Resolve o tamanho e cria dois problemas: latência a cada conexão, e um vazamento de privacidade — a AC passa a saber quais sites cada cliente visita.
+
+A @fig-revogacao mostra por que o mecanismo não entrega o que promete.
+
+::: {#fig-revogacao}
+```{.tikz}
+%%| filename: revogacao-softfail
+%%| alt: Diagrama do problema de revogação, mostrando que o cliente prossegue quando a consulta OCSP é bloqueada, e que OCSP stapling e certificados de vida curta são as respostas práticas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ator/.style={draw=manualblue, very thick, fill=manualblue!10, rounded corners=3pt,
+                 align=center, inner sep=5pt, minimum width=2.6cm, minimum height=1.0cm,
+                 font=\scriptsize},
+    serv/.style={draw=manualgray, thick, fill=white, rounded corners=3pt,
+                 align=center, inner sep=5pt, minimum width=2.8cm, minimum height=1.0cm,
+                 font=\scriptsize},
+    mau/.style={draw=manualred, very thick, fill=manualred!10, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=3.0cm, minimum height=1.0cm,
+                font=\scriptsize},
+    bom/.style={draw=manualgreen, very thick, fill=manualgreen!12, rounded corners=3pt,
+                align=left, inner sep=5pt, minimum width=5.6cm, font=\scriptsize},
+    et/.style={font=\scriptsize, align=center, manualgray}}
+
+  \node[ator] (cli) at (0,0) {\textbf{Cliente}};
+  \node[serv] (srv) at (4.2,0) {Servidor\\\scriptsize apresenta certificado};
+  \node[serv] (ocsp) at (9.0,0) {Respondedor\\\scriptsize OCSP da AC};
+
+  \draw[destaque, manualgray, <->, >=stealth] (cli) -- node[et, above] {handshake} (srv);
+  \draw[destaque, manualgray, ->, >=stealth] (5.7,0.35) -- node[et, above] {este certificado} node[et, below] {foi revogado?} (7.5,0.35);
+
+  \node[mau] (blk) at (6.6,-1.9) {\textbf{Atacante bloqueia}\\\scriptsize a consulta};
+  \draw[auxiliar, manualred, ->, >=stealth] (blk) -- (6.6,-0.35);
+
+  \node[mau, minimum width=6.0cm] (res) at (4.2,-3.6)
+    {\textbf{\textcolor{manualred}{soft-fail:} sem resposta, o cliente prossegue}\\
+     \scriptsize A revogação simplesmente deixa de existir};
+  \draw[auxiliar, manualred, ->, >=stealth] (blk) -- (res);
+
+  \node[bom] (s1) at (12.6,-1.2)
+    {\textbf{OCSP stapling}\\
+     O próprio servidor anexa ao handshake\\
+     uma resposta assinada e recente.\\
+     Sem latência, sem vazamento, sem bloqueio.};
+  \node[bom] (s2) at (12.6,-3.8)
+    {\textbf{Certificado de vida curta}\\
+     90 dias, ou os 47 para os quais o setor\\
+     caminha. Não conserta a revogação:\\
+     reduz a janela a ponto de ela importar menos.};
+\end{tikzpicture}
+```
+O problema da revogação. O `soft-fail` a torna anulável por quem estiver no caminho; a resposta prática é encurtar a validade.
+:::
+
+**O problema fatal é o `soft-fail`.** Se a consulta OCSP não responde — rede bloqueada, respondedor fora do ar, tempo esgotado —, o cliente **prossegue como se estivesse tudo bem**. A alternativa (`hard-fail`) tornaria a indisponibilidade de um respondedor equivalente à queda de todos os sites que ele atende, o que nunca foi aceitável. A consequência é dura de enunciar e importante de entender: **um atacante posicionado no caminho simplesmente bloqueia a consulta de revogação, e a revogação deixa de existir**.
+
+As respostas práticas foram três. **OCSP stapling** faz o próprio servidor anexar ao handshake uma resposta OCSP recente e assinada, eliminando latência e vazamento — é a configuração correta e é de uma linha. **Listas agregadas nos navegadores** (CRLSets do Chrome, CRLite do Firefox) distribuem revogações de alto impacto diretamente na atualização do produto. E a resposta que efetivamente resolve: **certificados de vida curta**. Um certificado de 90 dias — ou dos 47 dias para os quais o setor caminha — reduz a janela de exposição a ponto de tornar a revogação um problema menor. Não por consertar o mecanismo, mas por reduzir a importância dele.
+
+## PKI interna e autenticação mútua
+
+Nem toda PKI é pública. Organizações operam autoridades próprias para autenticar serviços internos, dispositivos, VPNs e usuários — e é aí que a autenticação mútua (**mTLS**) se torna viável.
+
+No TLS comum, só o servidor apresenta certificado; o cliente se autentica depois, por senha ou token. Em **mTLS**, o cliente também apresenta certificado, e a autenticação acontece **no handshake**, antes de qualquer dado de aplicação. É a base da comunicação entre microsserviços em malha de serviço, do acesso a APIs de alto valor e — no Brasil — da integração com o Pix e com o Open Finance.
+
+O ponto que costuma ser subestimado: **PKI interna é uma responsabilidade permanente, não um projeto**. Exige raiz offline, intermediária operacional, procedimento de emissão, revogação que efetivamente funcione (aqui `hard-fail` é viável, porque a escala é controlada), rotação e um plano para o dia em que a intermediária for comprometida. Uma raiz interna gerada com `openssl` numa tarde, sem procedimento por trás, é passivo: distribui-se por todo o parque e, quando sua chave vazar, todo o parque precisa ser reconfigurado. Ferramentas como `step-ca`, HashiCorp Vault e as ACs privadas de nuvem existem porque a operação manual não se sustenta.
+
+## ⚖️ Brasil em Foco
+
+**A ICP-Brasil é uma PKI hierárquica com raiz estatal única.** A MP 2.200-2/2001 estabeleceu o ITI como **Autoridade Certificadora Raiz**, no topo de uma cadeia que se ramifica em ACs de primeiro nível (Serpro, Caixa, Serasa, Certisign, Valid, entre outras) e em Autoridades de Registro (ARs), responsáveis pela identificação presencial ou por videoconferência do titular. A diferença estrutural em relação à PKI da web é decisiva: **não há centenas de raízes concorrentes, há uma só**, e o risco DigiNotar — uma AC não relacionada emitindo em nome de outro — não se coloca da mesma forma. Em compensação, concentra o risco: comprometer a AC Raiz comprometeria a cadeia inteira, o que explica o rigor das cerimônias de chave do ITI [@mp2200; @iti2024].
+
+**A validação presencial é a característica que define a ICP-Brasil.** Enquanto a PKI da web caminhou para validação automatizada de domínio, a ICP-Brasil manteve a verificação de identidade da pessoa — presencial na AR ou por videoconferência com conferência de documentos. É mais cara e mais lenta, e é o que sustenta a presunção legal de autoria: a cadeia liga uma chave a um CPF ou CNPJ verificado por um humano, não a um controle de domínio.
+
+**Certificado ICP-Brasil e certificado de servidor web resolvem problemas diferentes.** É uma confusão frequente e custosa. O e-CPF e o e-CNPJ servem para **assinar documentos e autenticar em sistemas de governo**; não são reconhecidos pelos navegadores para HTTPS público, porque as raízes da ICP-Brasil não estão nos armazéns do Chrome, do Firefox ou do Windows para essa finalidade. Um site brasileiro que precisa de HTTPS confiável no navegador usa uma AC pública comercial ou o Let's Encrypt. Já a integração com Receita Federal, e-Social, NF-e, PJe e Pix exige ICP-Brasil, e certificado de AC pública internacional não serve. **São dois parques de certificados distintos, com ciclos de renovação distintos**, e tratá-los como um só é fonte recorrente de indisponibilidade.
+
+**A NF-e e o Pix tornam a expiração um evento de faturamento.** Certificado A1 vence em um ano, A3 em até três. Um e-CNPJ expirado interrompe a emissão de nota fiscal — o que para a operação da empresa, não apenas um serviço de TI. No Pix, o certificado usado na comunicação com o SPI tem seu próprio ciclo, e sua expiração derruba a liquidação. Nos dois casos, o controle correto é o mesmo: inventário com data de expiração, alerta com 60 e 30 dias de antecedência, e responsável nomeado — não "o pessoal do fiscal renova" [@bcb4893].
+
+**Monitorar Certificate Transparency é um controle gratuito e subutilizado no Brasil.** Qualquer organização pode registrar alertas para seus domínios e receber aviso quando um certificado for emitido para eles. Serve para detectar emissão indevida e, com igual utilidade prática, para descobrir **shadow IT**: subdomínios que a equipe de segurança não sabia que existiam aparecem nos registros no momento em que alguém pede um certificado. Custa uma configuração e revela o parque real.
+
+## 🛠️ No Campo
+
+**1. Inspecione a cadeia como um cliente novo faria.** O teste que revela a intermediária ausente:
+
+```bash
+# -showcerts lista a cadeia inteira que o servidor de fato envia
+openssl s_client -connect exemplo.com.br:443 -servername exemplo.com.br -showcerts </dev/null
+
+# Validacao explicita contra o armazem do sistema, sem cache de navegador
+openssl s_client -connect exemplo.com.br:443 -servername exemplo.com.br \
+  -verify_return_error -CApath /etc/ssl/certs </dev/null 2>&1 | grep -E 'Verify return code|depth'
+```
+
+`Verify return code: 0 (ok)` é o único resultado aceitável. `unable to get local issuer certificate` quase sempre significa intermediária faltando na configuração do servidor — não certificado inválido.
+
+**2. Leia o certificado inteiro, não só o assunto.** Os campos que decidem se ele serve:
+
+```bash
+openssl s_client -connect exemplo.com.br:443 -servername exemplo.com.br </dev/null 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -dates -ext subjectAltName,basicConstraints,keyUsage,extendedKeyUsage
+```
+
+**3. Monitore expiração antes que ela monitore você.** Um script no cron e um alerta valem mais que qualquer painel:
+
+```bash
+#!/usr/bin/env bash
+# Alerta para certificados que vencem em menos de 30 dias
+for host in exemplo.com.br api.exemplo.com.br pix.exemplo.com.br; do
+  fim=$(openssl s_client -connect "$host":443 -servername "$host" </dev/null 2>/dev/null \
+        | openssl x509 -noout -enddate | cut -d= -f2)
+  restam=$(( ( $(date -d "$fim" +%s) - $(date +%s) ) / 86400 ))
+  [ "$restam" -lt 30 ] && echo "ATENCAO: $host vence em $restam dias ($fim)"
+done
+```
+
+Inclua no mesmo inventário os certificados **ICP-Brasil** — e-CNPJ, NF-e, Pix —, que não aparecem em varredura de porta 443 e são justamente os que param o faturamento.
+
+**4. Publique CAA hoje.** Cinco minutos, e fecha a porta para emissão por AC não relacionada:
+
+```dns
+exemplo.com.br.  IN  CAA  0 issue "letsencrypt.org"
+exemplo.com.br.  IN  CAA  0 issuewild ";"
+exemplo.com.br.  IN  CAA  0 iodef "mailto:seguranca@exemplo.com.br"
+```
+
+```bash
+dig +short CAA exemplo.com.br   # confirmar publicacao
+```
+
+O `issuewild ";"` proíbe curinga, que é o formato preferido de quem emite indevidamente. O `iodef` faz a AC notificar sua equipe quando alguém tentar emitir fora da política.
+
+**5. Ligue OCSP stapling.** Uma linha, e resolve latência e vazamento de privacidade de uma vez:
+
+```nginx
+ssl_stapling on;
+ssl_stapling_verify on;
+ssl_trusted_certificate /etc/ssl/certs/cadeia-completa.pem;
+resolver 1.1.1.1 9.9.9.9 valid=300s;
+```
+
+```bash
+openssl s_client -connect exemplo.com.br:443 -status </dev/null 2>/dev/null \
+  | grep -A2 'OCSP Response Status'
+```
+
+**6. Monitore Certificate Transparency para os seus domínios.** Barato, e detecta tanto emissão indevida quanto shadow IT:
+
+```bash
+# Consulta pontual ao registro publico crt.sh
+curl -s 'https://crt.sh/?q=%25.exemplo.com.br&output=json' \
+  | python -c 'import sys,json;[print(c["name_value"],c["not_before"]) for c in json.load(sys.stdin)]' \
+  | sort -u
+```
+
+Compare o resultado com o inventário. Nomes que você não reconhece são o achado — em qualquer das duas direções.
+
+**7. Automatize a renovação, sempre.** Certificado renovado à mão é incidente agendado. Com ACME, a renovação e o recarregamento do serviço são uma unidade:
+
+```bash
+certbot renew --deploy-hook 'systemctl reload nginx'
+systemctl list-timers | grep -i certbot     # confirmar que o temporizador existe e roda
+```
+
+Teste a renovação **antes** de precisar dela: `certbot renew --dry-run`. Renovação que nunca foi exercitada é backup que nunca foi restaurado.
+
+**8. Trate PKI interna como serviço, com dono e procedimento.** Raiz offline com chave em HSM ou, no mínimo, em mídia removível guardada em cofre; intermediária de vida curta para emissão; validade curta nos certificados de serviço, com emissão automatizada; revogação que funcione de verdade; e um exercício anual de comprometimento de intermediária. Uma AC criada com `openssl req -x509` numa tarde e distribuída para o parque inteiro é dívida técnica com data de vencimento desconhecida.
+
+## Resumo
+
+- A PKI responde à pergunta que o @sec-cap018 deixou aberta: **como confiar que uma chave pública pertence a quem se pretende alcançar**. Sem ela, criptografia forte protege perfeitamente o canal com o atacante.
+- Dos três modelos de confiança — direta, teia e hierárquica —, a web adotou o **hierárquico** por ser o único que escala para centenas de milhões de sites.
+- No certificado X.509, o que decide é o **`SubjectAltName`** (o `CN` está obsoleto), o `BasicConstraints`, o `KeyUsage` e a validade. Ler certificado é ler esses campos.
+- **A cadeia é o que prova, não o certificado.** Folha, intermediária e raiz no armazém local — e o erro operacional mais comum de todos é o servidor não enviar a intermediária, o que funciona no navegador do administrador e quebra em todo o resto.
+- O modelo tem uma **falha estrutural**: qualquer AC confiada pode emitir para qualquer domínio. DigiNotar, Comodo, TÜRKTRUST e Symantec são as demonstrações, e a DigiNotar interceptou 300 mil usuários com um certificado tecnicamente perfeito.
+- As salvaguardas são **Certificate Transparency** (torna a emissão indevida detectável), **CAA** (restringe quem pode emitir para o seu domínio) e *pinning* apenas onde há controle do cliente — o HPKP baseado em cabeçalho foi abandonado por ser perigoso demais.
+- **A revogação quase não funciona**, por causa do `soft-fail`: quem bloqueia a consulta OCSP anula a revogação. O que resolve na prática é **certificado de vida curta** com renovação automatizada, mais OCSP stapling.
+- **DV, OV e EV são criptograficamente idênticos.** A diferença está na identidade afirmada, e o EV perdeu relevância quando a barra verde saiu dos navegadores.
+- **PKI interna é serviço permanente, não projeto**, e é o que viabiliza mTLS entre serviços — com a vantagem de que, em escala controlada, a revogação pode funcionar de verdade.
+- No Brasil, a **ICP-Brasil é uma PKI de raiz estatal única** com validação presencial de identidade, e **não substitui certificado de AC pública para HTTPS** — são dois parques distintos, com dois ciclos de renovação, e confundi-los derruba tanto o site quanto o faturamento.
