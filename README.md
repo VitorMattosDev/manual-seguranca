@@ -67,9 +67,11 @@ Depois disso, reative o workflow (`Actions` → `Publicar livro` → `Run workfl
 python scripts/estrutura.py           # resumo (107 capítulos, 16 volumes)
 python scripts/estrutura.py --stubs   # cria stubs faltantes (regra stub-first)
 python scripts/estrutura.py --quarto  # imprime o bloco chapters: do _quarto.yml
-python scripts/estrutura.py --roadmap # regrava o ROADMAP.md
+python scripts/estrutura.py --roadmap # regrava o ROADMAP.md (preserva [x] e [~])
 python scripts/estrutura.py --tudo    # stubs + roadmap
 ```
+
+⚠️ `--roadmap` e `--tudo` **reescrevem o `ROADMAP.md` por inteiro**. O script relê os marcadores existentes e preserva `[x]` e `[~]`, confirmando na saída quantos concluídos manteve (`ROADMAP.md gravado (107 capitulos, N concluidos preservados)`). Se esse `N` vier menor do que o esperado, **não commitar** — o formato da linha `- [x] **cap NNN**` mudou e o status foi perdido. Quando só falta criar stubs, use `--stubs`.
 
 ## Extensão TikZ
 

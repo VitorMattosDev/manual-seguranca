@@ -97,6 +97,9 @@ Referência no texto via `@fig-handshake-tls`.
 ## Regras que já custaram build vermelho
 
 - **Stub-first**: em projeto `book`, renderizar um `.qmd` isolado falha com "Book chapter not found" se qualquer capítulo listado no `_quarto.yml` não existir em disco. Rodar `python scripts/estrutura.py --stubs` após qualquer mudança de estrutura.
+- **`--roadmap` e `--tudo` regravam o `ROADMAP.md` inteiro.** O `scripts/estrutura.py` hoje **preserva** os marcadores `[x]` e `[~]` (função `status_atuais`, que relê o arquivo antes de reescrever) — mas essa proteção é frágil por natureza: se o formato da linha (`- [x] **cap NNN**`) mudar, o regex para de casar e todo capítulo concluído volta a `[ ]` sem aviso. Não alterar o formato dessa linha, e conferir a contagem que o script imprime (`N concluidos preservados`) sempre que rodar. Na dúvida, usar só `--stubs`.
+- **`quarto render --to pdf` limpa o `_book/`** e deixa apenas o PDF. As checagens de `?@`, de `<svg` e de `[?]` são feitas no HTML, então a ordem é sempre: render HTML → validar → render PDF. Invertido, o grep não acha os arquivos e o silêncio parece aprovação.
+- **`execute: echo: true` vaza o fonte das células de diagrama.** Um bloco `{mermaid}` sai na página duas vezes: como `<pre class="sourceCode">` com botão de copiar (o vazamento) e como `<pre class="mermaid">` (o diagrama de verdade). Toda célula `{mermaid}` precisa de `%%| echo: false`. Blocos cercados estáticos (```` ```bash ````) não são células e não sofrem disso.
 - **Crossrefs**: `@sec-`, `@fig-` e `@tbl-` **só** para o que já foi escrito (mesmo volume ou anterior). Referência a capítulo futuro é menção textual ("tema do Volume 12"), nunca link. Label não resolvido vira `?@sec-x` em vermelho no HTML e no PDF.
 - **`lang: pt`** fica na raiz do `_quarto.yml`, não aninhado sob `book:`.
 - **`styles.css`** precisa de `/*-- scss:rules --*/` na primeira linha (está listado em `theme:`). Evitar `*/` logo após o marcador.
@@ -109,15 +112,22 @@ Referência no texto via `@fig-handshake-tls`.
 
 ## Validação antes de cada commit
 
+Ordem obrigatória: **HTML primeiro, validar, PDF por último** — `--to pdf` apaga o HTML do `_book/`.
+
 ```bash
 quarto render --to html
 # 1. figuras: contar <svg no HTML gerado vs {.tikz} no .qmd
 # 2. crossrefs quebrados — precisa retornar zero:
 grep -rhoE '\?@[a-z-]+' _book/**/*.html
 # 3. citações órfãs: procurar [?] no HTML
-# 4. PDF local antes de qualquer push (LaTeX quebra no que o HTML aceita):
+# 4. fonte de diagrama vazado: nenhum <pre class="sourceCode"> com o corpo
+#    de um bloco {mermaid} (sintoma de célula sem `%%| echo: false`)
+# 5. PDF local antes de qualquer push (LaTeX quebra no que o HTML aceita).
+#    Este passo destrói o HTML acima, então roda só depois de 1–4:
 quarto render --to pdf
 ```
+
+Para conferir se uma figura TikZ entrou no PDF, contar Form XObjects por página com `pypdf` — `pdftotext` não recupera texto acentuado dos rótulos e dá falso negativo.
 
 Commit no formato `cap NNN: <título>`, com o status do `ROADMAP.md` atualizado no mesmo commit.
 

@@ -36,6 +36,9 @@ YAML de referência: ver `.github/workflows/publish.yml` deste repositório.
 
 - **`styles.css` em `theme:`** → Quarto ≥1.9 trata como camada SCSS e exige `/*-- scss:rules --*/` na primeira linha. Sem isso o render inteiro falha com "doesn't contain at least one layer boundary". Cuidado com `*/` logo após o marcador.
 - **Stub-first**: em projeto `book`, `quarto render arquivo.qmd` isolado falha com "Book chapter not found" se qualquer capítulo do `_quarto.yml` não existir em disco. Registrou um `part:`? Cria os stubs na hora.
+- **Gerador de ROADMAP tem de preservar status.** Um script que regrava o `ROADMAP.md` a partir da estrutura canônica zera todo `[x]` se não reler os marcadores antes. Não é build vermelho, é pior: apaga silenciosamente a fila de produção e o próximo capítulo é reescrito por cima. Corrigido em `scripts/estrutura.py` (`status_atuais`), que imprime quantos concluídos preservou — conferir esse número.
+- **`quarto render --to pdf` limpa o diretório de saída** e deixa só o PDF. Toda validação que faz grep no HTML (`?@`, `<svg`, `[?]`) tem de rodar antes do PDF. Se rodar depois, o grep não acha arquivo e o resultado vazio passa por aprovação.
+- **`execute: echo: true` vaza o fonte de células de diagrama.** Um bloco `{mermaid}` é emitido duas vezes: `<pre class="sourceCode">` com botão de copiar (o vazamento visível na página) e `<pre class="mermaid">` (o diagrama). Toda célula `{mermaid}` precisa de `%%| echo: false`. Blocos cercados estáticos não são afetados.
 - **Crossrefs**: `@sec-`/`@fig-`/`@tbl-` só para o que já existe. Futuro é menção textual. Label não resolvido vira `?@sec-x` em vermelho.
 - **`lang: pt`** na raiz do `_quarto.yml`, nunca sob `book:`.
 - **Notação**: `^{*}`, não `^\*` — quebra o PDF.

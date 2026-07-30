@@ -230,7 +230,23 @@ def bloco_quarto():
     return "\n".join(linhas)
 
 
+def status_atuais(raiz="."):
+    """Le o ROADMAP.md existente e devolve {num_cap: marcador}.
+
+    Sem isso, regravar o ROADMAP zeraria todo capitulo ja concluido -- o
+    arquivo e a fila autoritativa de producao, nao um artefato descartavel.
+    """
+    destino = os.path.join(raiz, "ROADMAP.md")
+    if not os.path.exists(destino):
+        return {}
+    with open(destino, encoding="utf-8") as f:
+        conteudo = f.read()
+    achados = re.findall(r"^- \[([ x~])\] \*\*cap (\d{3})\*\*", conteudo, re.M)
+    return {int(num): marca for marca, num in achados}
+
+
 def gerar_roadmap(raiz="."):
+    status = status_atuais(raiz)
     L = ["# ROADMAP — Manual de Seguranca da Informacao", "",
          "Fila autoritativa de producao. Status: `[ ]` pendente | `[~]` em andamento | `[x]` concluido.",
          "", "Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit.", ""]
@@ -243,13 +259,17 @@ def gerar_roadmap(raiz="."):
         if vol != nvol:
             nvol = vol
             L += ["", f"### Volume {vol} — {titulo_vol}", ""]
-        L.append(f"- [ ] **cap {ncap:03d}** - {titulo} - `{path}`")
+        marca = status.get(ncap, " ")
+        L.append(f"- [{marca}] **cap {ncap:03d}** - {titulo} - `{path}`")
     total = len(caminhos())
+    concluidos = sum(1 for m in status.values() if m == "x")
     L += ["", "---", "",
-          f"**Total:** {total} capitulos em {nvol} volumes.", ""]
+          f"**Total:** {total} capitulos em {nvol} volumes "
+          f"({concluidos} concluidos).", ""]
     with open(os.path.join(raiz, "ROADMAP.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
-    print(f"ROADMAP.md gravado ({total} capitulos)")
+    print(f"ROADMAP.md gravado ({total} capitulos, "
+          f"{concluidos} concluidos preservados)")
 
 
 if __name__ == "__main__":

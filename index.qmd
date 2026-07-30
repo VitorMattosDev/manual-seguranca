@@ -16,6 +16,7 @@ Não é preciso conhecimento prévio de segurança. É preciso, sim, disposiçã
 ## Como o manual está organizado {.unnumbered}
 
 ```{mermaid}
+%%| echo: false
 %%| fig-cap: "Dependências entre as fases do manual"
 flowchart TD
     F1["<b>Fase 1</b><br/>Fundamentos<br/><i>Vol. 1–4</i>"] --> F2["<b>Fase 2</b><br/>Segurança Aplicada<br/><i>Vol. 5–8</i>"]
