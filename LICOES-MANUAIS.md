@@ -52,6 +52,9 @@ YAML de referência: ver `.github/workflows/publish.yml` deste repositório.
 
 ## Windows / Claude Code
 
+- **`tlmgr` no Git Bash é `tlmgr.bat`.** `command -v tlmgr` e `tlmgr install ...` falham com *command not found*, porque o Bash não resolve `.bat` pelo PATH sem a extensão. Chamar pelo caminho completo: `"$HOME/AppData/Roaming/TinyTeX/bin/windows/tlmgr.bat" install ...`. O `find` acha (`-name 'tlmgr*'`), o `command -v` não. Nada a ver com o PATH estar errado.
+- **`quarto install chrome-headless-shell` travando** quando a ferramenta já está instalada e só há atualização disponível. Checar antes com `quarto list tools`: se aparece "Update available", já dá para renderizar — não esperar o install.
+- **PDF via `pdftotext` não recupera acentos** das figuras TikZ (glifos compostos no encoding padrão). Para conferir se a figura entrou no PDF, contar Form XObjects por página com `pypdf` em vez de procurar o texto do rótulo.
 - Commits com `-m "..."` simples. Here-string do PowerShell (`@'...'@`) dentro do Bash vaza o `@` para a mensagem e exige `--amend`.
 - Emoji em `print()` de Python quebra no console do Windows. Em conteúdo de arquivo UTF-8 é seguro.
 - Substituição em massa de LaTeX (`\`, `*`, `^`): `str.replace` do Python. `sed` corrompe superscritos, `grep -c` dá contagem enganosa.
