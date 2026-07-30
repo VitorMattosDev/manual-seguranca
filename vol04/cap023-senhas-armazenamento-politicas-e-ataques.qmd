@@ -1,3 +1,437 @@
 # Senhas: armazenamento, políticas e ataques {#sec-cap023}
 
-*(em elaboracao)*
+Em 2012, o LinkedIn sofreu um vazamento. A empresa comunicou 6,5 milhões de resumos de senha expostos, forçou a troca dos usuários afetados e o assunto saiu do noticiário. Quatro anos depois, em 2016, o conjunto completo apareceu à venda: **167 milhões de contas**, não 6,5 milhões. O que a empresa achara que era um incidente contido tinha sido, o tempo todo, a base inteira.
+
+Duas decisões técnicas transformaram o vazamento em catástrofe. As senhas estavam protegidas com **SHA-1**, uma função projetada para ser rápida. E estavam **sem sal**. A combinação significa que resumos idênticos correspondem a senhas idênticas — dá para ordenar por frequência e quebrar as mais comuns uma vez, para milhões de contas simultaneamente. Em poucos dias, mais de 90% do conjunto estava em texto claro.
+
+O detalhe que dói: quebrar aquelas senhas não exigiu nenhuma técnica nova. A recomendação de usar função lenta e sal por usuário já tinha, em 2012, mais de uma década de idade e estava em qualquer manual.
+
+Este capítulo trata do que fazer com senhas em três frentes que se determinam mutuamente: como armazená-las, que política impor a quem as escolhe e o que exatamente acontece quando a base vaza.
+
+## Por que a senha ainda existe
+
+A senha tem defeitos conhecidos: é reutilizada, é adivinhável, é entregue por phishing, é anotada. E continua sendo o fator dominante de autenticação em praticamente todos os sistemas do planeta. A razão é econômica, não técnica — ela é o único fator com custo marginal zero de distribuição, funciona em qualquer dispositivo e não exige nenhuma logística de provisionamento.
+
+Compreender a senha como o **fator do conhecimento** é o que estrutura o assunto: ela prova identidade porque, em tese, só o titular conhece o segredo. Toda falha de senha é uma falha dessa premissa — o segredo deixou de ser exclusivo, ou nunca foi difícil o bastante para permanecer secreto. O @sec-cap024 trata dos fatores que compensam essa fragilidade, e o caminho de longo prazo é substituí-la. Enquanto isso não acontece, ela precisa ser bem feita.
+
+## Armazenamento: o único jeito certo
+
+A regra é curta: **nunca armazene a senha; armazene o resultado de uma função de derivação de chave lenta, com sal único por usuário**. Cada palavra dessa frase corrige um erro histórico específico.
+
+O @sec-cap017 já estabeleceu o mecanismo. Aqui interessa a aplicação e a operação.
+
+### A escada dos erros
+
+| Esquema | Por que falha | Custo para o atacante |
+|---|---|---|
+| Texto claro | Vazou, acabou | Zero |
+| Cifrado com chave da aplicação | Chave vive junto do dado (@sec-cap021) | Baixo |
+| `MD5(senha)` | Rápida e com tabelas prontas na internet | Consulta em tabela |
+| `SHA-256(senha)` | Rápida; sem sal, quebra em lote | Bilhões de tentativas por segundo em GPU |
+| `SHA-256(sal + senha)` | Sal impede lote e tabela, mas a função continua rápida | Ainda bilhões por segundo, agora por usuário |
+| bcrypt / scrypt / Argon2id | Lenta e parametrizável por projeto | Dezenas de milhares por segundo, no máximo |
+
+: A escada dos esquemas de armazenamento de senha. {#tbl-escada-senha}
+
+O salto que importa está na última linha, e ele não é sobre qual algoritmo é "mais forte": é sobre **custo por tentativa**. O sal resolve um problema (ataque em lote e tabelas pré-computadas); a lentidão resolve outro (força bruta contra um alvo). São defesas diferentes contra ataques diferentes, e as duas são necessárias.
+
+::: {#fig-custo-tentativa}
+```{.tikz}
+%%| filename: custo-por-tentativa-senha
+%%| alt: Comparação da ordem de grandeza de tentativas por segundo que uma GPU consegue contra diferentes esquemas de armazenamento de senha, e o tempo correspondente para esgotar um espaço de busca
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    barra/.style={draw, very thick, minimum height=0.55cm, anchor=west, inner sep=2pt},
+    rot/.style={font=\scriptsize, anchor=east},
+    val/.style={font=\scriptsize, anchor=west}}
+
+  \node[rot] at (0,3.6)  {MD5};
+  \node[rot] at (0,2.8)  {SHA-256};
+  \node[rot] at (0,2.0)  {SHA-256 + sal};
+  \node[rot] at (0,1.2)  {bcrypt (custo 12)};
+  \node[rot] at (0,0.4)  {scrypt (padrão)};
+  \node[rot] at (0,-0.4) {Argon2id (64\,MB, t=3)};
+
+  \draw[barra, draw=manualred,    fill=manualred!25]    (0.15,3.6)  rectangle ++(9.4,0.55);
+  \draw[barra, draw=manualred,    fill=manualred!20]    (0.15,2.8)  rectangle ++(8.5,0.55);
+  \draw[barra, draw=manualyellow, fill=manualyellow!25] (0.15,2.0)  rectangle ++(8.5,0.55);
+  \draw[barra, draw=manualgreen,  fill=manualgreen!22]  (0.15,1.2)  rectangle ++(2.1,0.55);
+  \draw[barra, draw=manualgreen,  fill=manualgreen!22]  (0.15,0.4)  rectangle ++(1.7,0.55);
+  \draw[barra, draw=manualgreen,  fill=manualgreen!25]  (0.15,-0.4) rectangle ++(1.2,0.55);
+
+  \node[val] at (9.7,3.87)  {$\sim 10^{11}$/s};
+  \node[val] at (8.8,3.07)  {$\sim 10^{10}$/s};
+  \node[val] at (8.8,2.27)  {$\sim 10^{10}$/s \emph{(por usuário)}};
+  \node[val] at (2.4,1.47)  {$\sim 3 \times 10^{4}$/s};
+  \node[val] at (2.0,0.67)  {$\sim 10^{4}$/s};
+  \node[val] at (1.5,-0.13) {$\sim 3 \times 10^{3}$/s};
+
+  \node[draw=manualgray, thick, fill=white, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=12.0cm] at (5.0,-1.9)
+    {\textbf{Ordens de grandeza aproximadas, para uma GPU de mercado.} A diferença entre a primeira e a
+     última linha é de \textbf{sete a oito ordens de grandeza}. Uma senha que cai em 3 segundos contra MD5
+     resiste por anos contra Argon2id com os mesmos parâmetros de ataque --- e o sal é o que impede
+     que esse trabalho seja feito \emph{uma vez} para a base inteira.};
+\end{tikzpicture}
+```
+Custo por tentativa: a única métrica que importa no armazenamento de senha.
+:::
+
+### O que usar hoje
+
+**Argon2id** é a recomendação padrão, vencedora da Password Hashing Competition e especificada na RFC 9106 [@rfc9106]. Sua característica distintiva é a **dureza de memória**: exigir memória, e não só tempo, é o que reduz a vantagem de GPUs e ASICs, cuja força está no paralelismo massivo com pouca memória por núcleo. A variante `id` combina resistência a canal lateral (do Argon2i) com resistência a compromisso tempo-memória (do Argon2d).
+
+**scrypt** é a alternativa madura e igualmente dura em memória. **bcrypt** continua aceitável e amplamente disponível, com duas ressalvas operacionais que precisam ser conhecidas: ele **trunca a entrada em 72 bytes** e algumas implementações lidam mal com o byte nulo. **PBKDF2** só se houver exigência regulatória de FIPS, com contagem de iterações alta — ele não é duro em memória e envelheceu pior que os demais.
+
+```python
+# Argon2id na pratica — a biblioteca faz sal, parametros e formato
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, InvalidHashError
+
+ph = PasswordHasher(
+    time_cost=3,        # numero de passagens
+    memory_cost=65536,  # 64 MiB — o parametro que atrapalha GPU
+    parallelism=4,
+    hash_len=32,
+    salt_len=16,
+)
+
+registro = ph.hash("senha-do-usuario")
+# $argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ...$RdescudvJCsgt3ub+b+dWRWJTmaaJObG
+#  ^^^^^^^^ ^^^^ ^^^^^^^^^^^^^^^ ^^^^^^^^^^^^ ^^^^
+#  algoritmo  ver   parametros        sal       resumo
+```
+
+O formato do registro é uma decisão de projeto tão importante quanto os parâmetros. Guardar algoritmo, versão, parâmetros e sal **junto do resumo** é o que torna possível trocar de esquema sem indisponibilidade — a mesma lição do identificador de chave do @sec-cap016.
+
+```python
+def verificar(registro_armazenado: str, senha_digitada: str) -> tuple[bool, str | None]:
+    """Retorna (autenticado, novo_registro_se_precisa_atualizar)."""
+    try:
+        ph.verify(registro_armazenado, senha_digitada)
+    except (VerifyMismatchError, InvalidHashError):
+        return (False, None)
+
+    # Parametros defasados? Recalcula agora, que a senha esta em maos.
+    # E assim que a migracao acontece: gradual, sem pedir nada ao usuario.
+    if ph.check_needs_rehash(registro_armazenado):
+        return (True, ph.hash(senha_digitada))
+    return (True, None)
+```
+
+### Calibração dos parâmetros
+
+Parâmetro copiado de tutorial está errado por definição — ele foi medido em outro hardware, em outro ano. A regra prática: **ajuste o custo até que a verificação leve entre 250 e 500 ms no seu servidor de produção**, sob a carga de pico esperada.
+
+```python
+# Calibracao: medir, nao copiar
+import time
+from argon2 import PasswordHasher
+
+for mem_mib in (16, 32, 64, 128, 256):
+    ph = PasswordHasher(time_cost=3, memory_cost=mem_mib * 1024, parallelism=4)
+    inicio = time.perf_counter()
+    ph.hash("referencia-de-calibracao")
+    print(f"{mem_mib:4d} MiB -> {(time.perf_counter() - inicio) * 1000:6.1f} ms")
+```
+
+Há um cuidado de disponibilidade que costuma ser descoberto tarde: cada verificação concorrente aloca `memory_cost` bytes. Com 64 MiB e 200 autenticações simultâneas, são 12,8 GiB de pico. Uma rajada de tentativas de autenticação vira, sem limitação de taxa, uma negação de serviço contra o próprio serviço de identidade.
+
+### Pimenta: a defesa que o vazamento de banco não derruba
+
+O sal é público e fica junto do resumo. A **pimenta** é um segredo global que **não** fica no banco: vive em variável de ambiente, em cofre ou, no melhor caso, dentro de um HSM. Aplicada como HMAC antes ou depois da derivação, ela garante que quem obtiver apenas um *dump* de SQL — por injeção, por backup exposto, por réplica mal protegida — não consiga sequer começar a quebrar as senhas.
+
+```python
+import hmac, hashlib, os
+
+PIMENTA = os.environ["PIMENTA_SENHA"]  # nunca no banco, nunca no repositorio
+
+def proteger(senha: str) -> str:
+    temperada = hmac.new(PIMENTA.encode(), senha.encode(), hashlib.sha256).hexdigest()
+    return ph.hash(temperada)
+```
+
+O custo é operacional e precisa ser encarado de frente: rotacionar a pimenta exige recifrar tudo ou versioná-la por registro, e perdê-la invalida todas as senhas. É uma decisão de arquitetura com plano de continuidade associado, não uma linha extra de código.
+
+## Ataques: o que realmente acontece com a base vazada
+
+### As modalidades
+
+**Força bruta online** tenta senhas contra o sistema em produção. É a menos eficaz — limitação de taxa, bloqueio progressivo e MFA a contêm — e a mais barulhenta.
+
+**Preenchimento de credenciais** (*credential stuffing*) é o ataque que domina o cenário atual. Não adivinha nada: usa pares usuário-senha já vazados de **outros** serviços, apostando na reutilização. A taxa de sucesso fica tipicamente entre 0,1% e 2%, o que parece pouco até multiplicar por dez milhões de tentativas. Do ponto de vista do sistema atacado, cada requisição isolada é uma autenticação perfeitamente legítima — a defesa não pode ser "senha mais forte", porque a senha está correta.
+
+**Pulverização de senha** (*password spraying*) inverte o laço: uma senha muito provável (`Brasil@2026`, `Empresa123`) contra milhares de usuários. É a forma de contornar bloqueio por tentativas, já que cada conta recebe uma ou duas tentativas apenas. É o vetor mais comum contra Active Directory exposto e portais de webmail.
+
+**Quebra offline** ocorre depois do vazamento da base. Sem limitação de taxa, sem log, sem pressa. É contra ela que Argon2id e pimenta trabalham.
+
+::: {#fig-ataques-senha}
+```{.tikz}
+%%| filename: modalidades-ataque-senha
+%%| alt: Comparação das quatro modalidades de ataque a senhas quanto a alvo, visibilidade nos registros, defesa principal e eficácia relativa
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, very thick, rounded corners=4pt, align=left, inner sep=5pt,
+               text width=5.3cm, font=\scriptsize, minimum height=2.0cm}}
+
+  \node[cx, draw=manualgray, fill=manualgray!8] at (0,0)
+    {\textbf{Força bruta online}\\
+     \emph{muitas senhas, um usuário}\\[2pt]
+     Visível: rajada de falhas na mesma conta\\
+     Defesa: limitação de taxa, bloqueio\\
+     \textcolor{manualgreen}{\textbf{Eficácia hoje: baixa}}};
+
+  \node[cx, draw=manualred, fill=manualred!10] at (6.2,0)
+    {\textbf{Preenchimento de credenciais}\\
+     \emph{pares vazados de outro serviço}\\[2pt]
+     Visível: muitos IPs, muitos usuários, 1 tentativa cada\\
+     Defesa: MFA, senha vazada bloqueada, análise de risco\\
+     \textcolor{manualred}{\textbf{Eficácia hoje: a maior}}};
+
+  \node[cx, draw=manualyellow, fill=manualyellow!14] at (0,-2.6)
+    {\textbf{Pulverização de senha}\\
+     \emph{uma senha, milhares de usuários}\\[2pt]
+     Visível: só correlacionando \textbf{entre} contas\\
+     Defesa: bloquear senhas comuns, detecção horizontal\\
+     \textcolor{manualred}{\textbf{Eficácia hoje: alta}}};
+
+  \node[cx, draw=manualred, fill=manualred!10] at (6.2,-2.6)
+    {\textbf{Quebra offline}\\
+     \emph{a base já vazou}\\[2pt]
+     Visível: \textbf{invisível} --- ocorre fora do seu ambiente\\
+     Defesa: Argon2id, sal, pimenta\\
+     \textcolor{manualyellow}{\textbf{Eficácia: depende do armazenamento}}};
+
+  \node[draw=manualgray, thick, fill=white, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.8cm] at (3.1,-4.9)
+    {\textbf{As duas modalidades mais eficazes são invisíveis para a detecção por conta.}
+     Preenchimento e pulverização só aparecem quando se olha \emph{horizontalmente}, entre contas.
+     Alerta configurado apenas para ``N falhas no mesmo usuário'' não vê nenhum dos dois.};
+\end{tikzpicture}
+```
+As quatro modalidades, e por que a detecção por conta não é suficiente.
+:::
+
+### Como a quebra offline funciona de verdade
+
+Ataque real não é força bruta exaustiva. É **ataque por dicionário com regras de mutação**, porque senhas humanas seguem padrões humanos com fidelidade quase decepcionante.
+
+```
+# Regras de mutacao (formato Hashcat) aplicadas sobre um dicionario.
+# Cada linha transforma cada palavra da lista, multiplicando a cobertura.
+c            # Capitaliza: senha -> Senha
+$1 $2 $3     # Sufixo comum: senha -> senha123
+c $@ $2 $0 $2 $6   # Padrao brasileiro tipico: senha -> Senha@2026
+sa@ se3 si1 so0    # Substituicao "leet": seguranca -> s3gur@nc@
+```
+
+A consequência para a política de senha é direta e frequentemente mal compreendida: **`S3nh@2026!` satisfaz qualquer regra de complexidade e está entre as primeiras milhões de tentativas de qualquer ataque sério.** A regra de complexidade não mediu a resistência da senha — mediu a conformidade dela com um formato que o atacante também conhece.
+
+O material do ataque é abundante: `rockyou.txt` com 14 milhões de senhas, listas por país e por idioma, e as compilações de vazamentos. Para o português brasileiro, os padrões previsíveis incluem nome de time, `@2026`, nome próprio com sufixo numérico e as sequências de teclado (`qwerty`, `asdf`, `1q2w3e`).
+
+## Política de senha: o que a evidência mudou
+
+Por vinte anos a política padrão foi: mínimo de 8 caracteres, maiúscula, minúscula, número, símbolo, troca a cada 90 dias, sem repetir as últimas cinco. Bill Burr, autor do documento do NIST que popularizou essas regras em 2003, declarou publicamente em 2017 que se arrependia delas.
+
+A revisão veio na série NIST SP 800-63B, e inverte quase tudo [@nistsp80063b]:
+
+| Regra antiga | Recomendação atual | Por quê |
+|---|---|---|
+| Complexidade obrigatória | **Não exigir** | Produz `Senha@2026`, previsível e difícil de lembrar |
+| Troca periódica | **Só ao suspeitar de comprometimento** | Troca forçada gera incremento: `Senha1` → `Senha2` |
+| Mínimo de 8 | **Mínimo de 8, recomendado 15+** | Comprimento supera composição |
+| Máximo de 16 | **Aceitar 64 caracteres** | Limite baixo impede frases-senha |
+| Bloquear colagem | **Permitir colagem** | Bloquear inviabiliza gerenciadores de senha |
+| Perguntas de recuperação | **Não usar** | A resposta está no perfil público da pessoa |
+| — | **Verificar contra lista de vazadas** | O único controle que ataca o problema real |
+
+: O que mudou na política de senha, e a razão de cada mudança. {#tbl-politica-senha}
+
+A mudança conceitual é abandonar regras de *forma* em favor de verificação de *fato*. Não importa se a senha tem símbolo; importa se ela já apareceu num vazamento. Essa é a verificação que barra o preenchimento de credenciais na origem, e ela pode ser feita sem enviar a senha a lugar nenhum:
+
+```python
+import hashlib, requests
+
+def senha_ja_vazou(senha: str) -> int:
+    """Consulta por k-anonimato: envia so os 5 primeiros digitos do SHA-1.
+    O servico nunca recebe a senha nem o resumo completo."""
+    sha1 = hashlib.sha1(senha.encode()).hexdigest().upper()
+    prefixo, sufixo = sha1[:5], sha1[5:]
+
+    resp = requests.get(f"https://api.pwnedpasswords.com/range/{prefixo}",
+                        timeout=3)
+    for linha in resp.text.splitlines():
+        h, contagem = linha.split(":")
+        if h == sufixo:
+            return int(contagem)
+    return 0
+
+# No cadastro e na troca — nao no login, para nao criar dependencia externa
+# no caminho critico de autenticacao.
+if senha_ja_vazou(nova_senha) > 0:
+    recusar("Esta senha aparece em vazamentos públicos. Escolha outra.")
+```
+
+Para quem prefere não depender de serviço externo, a mesma verificação roda localmente contra uma lista baixada — filtro de Bloom ou tabela indexada resolvem o volume sem custo de latência.
+
+### Comprimento versus composição
+
+A aritmética resolve a discussão. Uma senha aleatória de 8 caracteres sobre um alfabeto de 95 símbolos tem cerca de 52 bits de entropia. Quatro palavras aleatórias de uma lista de 7.776 (o método *diceware*) têm cerca de 51 bits — equivalente. Cinco palavras chegam a 64 bits, superior a qualquer senha de 8 caracteres, e é incomparavelmente mais fácil de memorizar.
+
+A ressalva essencial: essa conta só vale para escolha **aleatória**. Frase-senha escolhida por uma pessoa — um verso conhecido, um bordão, o nome do time com o ano do título — tem uma fração dessa entropia, porque o espaço real de busca é o das frases que humanos escolhem, não o das combinações possíveis.
+
+## O ciclo de vida completo
+
+Senha não é só o campo do banco. Todo ponto do ciclo de vida é um ponto de ataque.
+
+**Criação.** Verificar contra lista de vazadas, comparar com dados do próprio usuário (nome, e-mail, CPF, nome da empresa), medir força com estimador realista — `zxcvbn` avalia padrões e não conta símbolos — e nunca impor complexidade cega.
+
+**Autenticação.** Comparação em tempo constante (o `verify` da biblioteca já faz), mensagem de erro genérica que não distingue "usuário inexistente" de "senha errada" (@sec-cap021), e **custo uniforme**: se a verificação só roda quando o usuário existe, a diferença de tempo enumera a base de usuários. A correção é executar uma verificação descartável contra um resumo fixo quando o usuário não existir.
+
+**Recuperação.** Este é, com folga, o elo mais fraco — e o mais negligenciado. Todo o investimento em Argon2id é irrelevante se o fluxo de "esqueci minha senha" pode ser abusado. O que precisa estar certo:
+
+```python
+import secrets, hashlib
+from datetime import datetime, timedelta, timezone
+
+def gerar_token_recuperacao(usuario_id: int) -> str:
+    token = secrets.token_urlsafe(32)          # CSPRNG, nunca Math.random
+
+    # Armazena o RESUMO do token, nao o token: vazamento do banco de
+    # recuperacao nao pode dar acesso as contas.
+    registro = {
+        "usuario_id": usuario_id,
+        "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+        "expira_em": datetime.now(timezone.utc) + timedelta(minutes=15),
+        "usado": False,
+    }
+    salvar(registro)
+    return token   # so este valor vai para o e-mail
+
+# Regras que acompanham:
+#  - uso unico, invalidado na primeira utilizacao
+#  - resposta identica para e-mail existente e inexistente (nao enumerar)
+#  - limitacao de taxa por conta e por IP de origem
+#  - ao concluir a troca: invalidar TODAS as sessoes ativas do usuario
+#  - notificar o titular por e-mail, com horario e origem
+```
+
+A última regra é a que mais falta na prática: trocar a senha sem invalidar as sessões existentes deixa o invasor conectado depois da "resposta ao incidente". O @sec-cap026 desenvolve a invalidação em escala.
+
+**Rotação e comprometimento.** Não force troca periódica sem motivo. Force troca quando houver evidência: a senha apareceu num vazamento, houve autenticação suspeita confirmada, ou o incidente exige. E aí a troca precisa vir acompanhada de invalidação de sessão e de tokens de recuperação pendentes.
+
+## Gerenciadores de senha
+
+Toda a discussão anterior pressupõe que a pessoa escolha e memorize senhas. O gerenciador remove essa premissa: senhas longas, aleatórias e diferentes por serviço, sem esforço de memória. É a recomendação mais eficaz e a menos adotada.
+
+A objeção óbvia — "concentra tudo num único ponto" — merece resposta honesta em vez de descarte. Sim, concentra. Mas a alternativa real não é "senhas fortes e distintas memorizadas": é a mesma senha em quarenta serviços, que é a condição que torna o preenchimento de credenciais lucrativo. Trocar quarenta pontos de falha correlacionados por um ponto de falha protegido por senha-mestra forte e MFA é uma melhora clara de postura.
+
+O que exigir na escolha: cifragem de ponta a ponta com derivação da chave a partir da senha-mestra **no cliente** (o operador nunca deve conseguir ler o cofre), MFA na conta, código auditado ou aberto, e exportação possível — para que a migração seja viável. Em ambiente corporativo, um cofre com compartilhamento por equipe elimina a planilha de senhas compartilhadas, que é o achado mais comum de qualquer auditoria interna.
+
+## ⚖️ Brasil em Foco
+
+**Base de senhas vazada é incidente com dever de avaliação sob a LGPD, e o esquema de armazenamento decide o desfecho.** Se as senhas estavam protegidas com Argon2id, sal e pimenta, é defensável sustentar que o risco ao titular é reduzido. Se estavam em MD5 sem sal, ou pior, o dado deve ser tratado como exposto — e a comunicação aos titulares e à ANPD passa a ser praticamente inevitável, sob os arts. 48 e 50. A Resolução CD/ANPD 15/2024 estrutura essa avaliação, e a decisão sobre comunicar frequentemente se resume à qualidade do esquema escolhido anos antes do incidente [@lgpd2018; @anpd2024res15].
+
+**Senha é dado pessoal, e reutilização entre serviços amplia o dano de um vazamento seu.** Quando a senha vazada da sua aplicação abre a conta bancária do titular, o nexo causal não desaparece porque o titular reutilizou. A adoção de verificação contra listas de vazamento e a oferta de MFA são, nesse contexto, medidas de mitigação com valor probatório — demonstram diligência sob o art. 46, e essa demonstração vale na dosimetria de eventual sanção [@lgpd2018].
+
+**Golpes de conta com senha vazada alimentam a fraude do Pix.** O ecossistema brasileiro de pagamento instantâneo, com liquidação irreversível em segundos, transforma o acesso indevido a conta em prejuízo consumado. Por isso as normas do Banco Central sobre segurança cibernética e o arranjo do Pix exigem autenticação robusta, controles antifraude e mecanismos de bloqueio — e por isso o MEDs e os limites por horário existem. Senha isolada não é controle suficiente em nenhum ponto desse arranjo [@bcb4893].
+
+**A Lei 14.155/2021 endureceu a resposta penal ao uso de credencial alheia.** Ela agravou as penas da invasão de dispositivo informático e criou o tipo de fraude eletrônica com aumento quando praticada por meio de dispositivo eletrônico, com agravamento adicional se a vítima for idosa. Para quem opera sistemas, a implicação prática é sobre a preservação de evidência: registros de autenticação com data, hora, endereço de origem e agente de usuário são o insumo do inquérito, e a retenção precisa ser compatível com o prazo de apuração [@lei14155; @lei12737].
+
+**Contas gov.br concentram acesso a serviços públicos e elevam a aposta.** Os níveis bronze, prata e ouro correspondem a graus distintos de confiabilidade da identidade, e o nível ouro exige validação biométrica ou certificado ICP-Brasil. Para o cidadão, uma senha fraca ali expõe declaração de imposto, benefícios e assinatura de documentos; para o gestor público, a comunicação sobre elevação de nível e sobre MFA é medida de segurança, não campanha institucional [@govbr2024; @iti2024].
+
+## 🛠️ No Campo
+
+**1. Descubra qual esquema está realmente em uso — em todos os sistemas, não só no principal.** A resposta costuma variar entre aplicações da mesma empresa:
+
+```bash
+# O prefixo do registro identifica o esquema
+#   $2a$ $2b$ $2y$  -> bcrypt          $argon2id$ -> Argon2id
+#   $6$             -> SHA-512 crypt   $scrypt$   -> scrypt
+#   32 hex          -> provavel MD5    40 hex     -> provavel SHA-1
+grep -rhoE '^\$[a-z0-9]+\$' dump_usuarios.txt | sort | uniq -c | sort -rn
+
+# Nenhum prefixo e comprimento fixo = hash cru, sem sal: achado critico
+awk -F'\t' '{print length($2)}' dump_usuarios.txt | sort | uniq -c
+```
+
+```sql
+-- Distribuicao de esquemas na tabela de usuarios (PostgreSQL)
+SELECT
+  CASE
+    WHEN senha_hash LIKE '$argon2%' THEN 'argon2'
+    WHEN senha_hash LIKE '$2%'      THEN 'bcrypt'
+    WHEN senha_hash LIKE '$6$%'     THEN 'sha512crypt'
+    WHEN length(senha_hash) = 32    THEN 'md5 (CRITICO)'
+    WHEN length(senha_hash) = 40    THEN 'sha1 (CRITICO)'
+    ELSE 'desconhecido'
+  END AS esquema,
+  count(*), max(ultimo_login) AS login_mais_recente
+FROM usuarios GROUP BY 1 ORDER BY 2 DESC;
+```
+
+**2. Migre sem pedir nada ao usuário.** O algoritmo de migração é o mesmo do @sec-cap017 e não exige conhecer as senhas: aplique a função nova **sobre o resumo antigo**, registre o esquema composto e, na próxima autenticação bem-sucedida, recalcule do zero.
+
+```python
+# Migracao em duas fases, sem janela de indisponibilidade
+# Fase 1 (lote, hoje): argon2(md5_existente) — a base deixa de ser
+#                      quebravel em massa imediatamente
+# Fase 2 (gradual):    no login correto, recalcula argon2(senha) puro
+def verificar_migrado(reg: dict, senha: str) -> bool:
+    if reg["esquema"] == "argon2(md5)":
+        if not ph_verifica(reg["hash"], md5(senha)):
+            return False
+        reg.update(esquema="argon2", hash=ph.hash(senha))  # fase 2, agora
+        salvar(reg)
+        return True
+    return ph_verifica(reg["hash"], senha)
+```
+
+Contas que nunca mais autenticam permanecem na fase 1 — protegidas, ainda que não ideais. Contas inativas há mais de um ano são candidatas a desativação, o que resolve o resíduo.
+
+**3. Meça os parâmetros no seu hardware e dimensione a memória de pico.** Alvo de 250 a 500 ms por verificação, e cálculo explícito do consumo: `memory_cost × autenticações simultâneas`. Sem limitação de taxa na frente, esse número vira o vetor de negação de serviço mais barato contra seu serviço de identidade.
+
+**4. Bloqueie senhas vazadas no cadastro e na troca.** É o controle de melhor relação custo-benefício deste capítulo. Consulta por k-anonimato à API pública, ou lista local com filtro de Bloom. Faça no cadastro e na troca, não no login — dependência externa no caminho crítico de autenticação é risco de disponibilidade.
+
+**5. Configure a detecção horizontal, não só a vertical.** Alerta de "5 falhas na mesma conta" não vê pulverização nem preenchimento. As consultas que veem:
+
+```sql
+-- Pulverizacao: muitos usuarios distintos falhando, poucas tentativas cada
+SELECT ip_origem, count(DISTINCT usuario) AS alvos, count(*) AS tentativas
+FROM log_autenticacao
+WHERE sucesso = false AND horario > now() - interval '1 hour'
+GROUP BY ip_origem HAVING count(DISTINCT usuario) > 20
+ORDER BY alvos DESC;
+
+-- Preenchimento de credenciais: taxa de sucesso anomala no conjunto
+SELECT date_trunc('minute', horario) AS minuto,
+       count(*) FILTER (WHERE sucesso) * 100.0 / count(*) AS pct_sucesso,
+       count(*) AS total, count(DISTINCT ip_origem) AS ips
+FROM log_autenticacao
+WHERE horario > now() - interval '6 hours'
+GROUP BY 1 HAVING count(*) > 100 AND
+       count(*) FILTER (WHERE sucesso) * 100.0 / count(*) < 5
+ORDER BY 1 DESC;
+```
+
+Taxa de sucesso muito **baixa** com volume alto e muitos IPs é a assinatura clássica do preenchimento de credenciais.
+
+**6. Prefira bloqueio progressivo a bloqueio duro.** Bloquear a conta após N tentativas transfere ao atacante o poder de causar indisponibilidade em massa: basta errar cinco vezes em cada conta. Atraso crescente, desafio adicional após a terceira falha e bloqueio por origem em vez de por conta preservam a disponibilidade e continuam elevando o custo do ataque.
+
+**7. Audite o fluxo de recuperação com o mesmo rigor do fluxo de login.** Faça o roteiro completo: o token é gerado por CSPRNG? Expira em minutos? É de uso único? O banco guarda o resumo do token ou o token? A resposta é idêntica para e-mail existente e inexistente? Há limitação de taxa? A troca invalida sessões e tokens pendentes? O titular é notificado? Cada "não" é um achado, e é comum encontrar quatro deles em sistemas cujo armazenamento de senha está impecável.
+
+**8. Elimine contas compartilhadas e senhas padrão de fábrica.** `admin/admin` em equipamento de rede, credencial padrão de câmera IP, conta `suporte` usada por seis pessoas. A conta compartilhada destrói a atribuição de responsabilidade — a trilha de auditoria passa a apontar para um cargo, não para uma pessoa. Onde a credencial compartilhada for tecnicamente inevitável, ela precisa ir para um cofre com registro de retirada e rotação automática (@sec-cap026).
+
+**9. Trate a senha como controle de transição.** O destino é a autenticação sem senha, com passkeys — assunto do @sec-cap024. A senha bem armazenada é o que sustenta a operação enquanto essa migração acontece, e sustentá-la bem é a diferença entre um vazamento contornável e um vazamento como o do LinkedIn.
+
+## Resumo
+
+- **O que vaza não é a senha, é o esquema de armazenamento.** SHA-1 sem sal transformou o incidente do LinkedIn em 167 milhões de senhas em texto claro, quatro anos depois do fato.
+- **Armazene com Argon2id** (ou scrypt, ou bcrypt), com sal único por usuário e parâmetros medidos no seu hardware — alvo de 250 a 500 ms por verificação. Guarde algoritmo, versão e parâmetros junto do resumo, para poder migrar sem indisponibilidade.
+- **Sal e lentidão defendem de ataques diferentes:** o sal impede lote e tabelas pré-computadas; a lentidão impede força bruta contra um alvo. As duas são necessárias.
+- A **pimenta** é o segredo fora do banco que torna inútil o *dump* isolado — com custo operacional de rotação e continuidade que precisa ser planejado.
+- **Preenchimento de credenciais e pulverização são os ataques dominantes**, e ambos são invisíveis para alertas por conta. A detecção precisa ser horizontal, entre contas e por origem.
+- A política moderna (NIST SP 800-63B) **abandona complexidade obrigatória e troca periódica** e adota comprimento maior, aceitação de frases-senha, colagem permitida e **verificação contra listas de senhas vazadas** — o único controle que ataca a reutilização.
+- A **recuperação é o elo mais fraco**: token por CSPRNG, resumo armazenado em vez do token, expiração curta, uso único, resposta não enumerável, limitação de taxa e invalidação de todas as sessões ao concluir.
+- **Gerenciador de senha é a recomendação mais eficaz e menos adotada**; em ambiente corporativo, o cofre com compartilhamento por equipe elimina a planilha de senhas.
+- No Brasil, o esquema de armazenamento decide o desfecho da avaliação de incidente sob a LGPD; a irreversibilidade do Pix eleva o custo do acesso indevido; e o log de autenticação é o insumo probatório da apuração criminal sob a Lei 14.155.

@@ -41,7 +41,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 ### Volume 4 — Identidade, Autenticação e Controle de Acesso
 
 - [x] **cap 022** - Modelos de controle de acesso: DAC, MAC, RBAC e ABAC - `vol04/cap022-modelos-de-controle-de-acesso-dac-mac-rbac-e.qmd`
-- [ ] **cap 023** - Senhas: armazenamento, políticas e ataques - `vol04/cap023-senhas-armazenamento-politicas-e-ataques.qmd`
+- [x] **cap 023** - Senhas: armazenamento, políticas e ataques - `vol04/cap023-senhas-armazenamento-politicas-e-ataques.qmd`
 - [ ] **cap 024** - Autenticação multifator e fatores de autenticação - `vol04/cap024-autenticacao-multifator-e-fatores-de.qmd`
 - [ ] **cap 025** - Federação de identidade: SAML, OAuth 2.0 e OpenID Connect - `vol04/cap025-federacao-de-identidade-saml-oauth-2-0-e.qmd`
 - [ ] **cap 026** - Gestão de identidades e de acessos privilegiados (IAM e PAM) - `vol04/cap026-gestao-de-identidades-e-de-acessos.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (22 concluidos).
+**Total:** 107 capitulos em 16 volumes (23 concluidos).
 
