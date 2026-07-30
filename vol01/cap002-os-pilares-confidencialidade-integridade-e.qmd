@@ -1,3 +1,299 @@
 # Os pilares: confidencialidade, integridade e disponibilidade {#sec-cap002}
 
-*(em elaboracao)*
+O provedor havia feito tudo certo com o backup. Rotina diária às 2h, retenção de trinta dias, cópia replicada para um segundo site a 40 km, alerta por e-mail em caso de falha do job. Em quatro anos, nenhum alerta.
+
+Em novembro, a equipe descobriu que a tabela de contratos estava com os campos de vencimento embaralhados: assinantes com vencimento no dia 10 apareciam com dia 25, e uma fatia menor tinha vencimento nulo. A causa foi uma migração mal-feita nove meses antes, que rodou uma atualização sem cláusula `WHERE` correta e afetou 3.100 dos 4.000 registros. O sistema não caiu. Ninguém foi invadido. Nada vazou.
+
+E o backup não ajudou: a retenção era de trinta dias, e o dano tinha nove meses. As trinta cópias disponíveis continham, todas, os mesmos dados errados — fielmente preservados, replicados com integridade de arquivo perfeita, disponíveis a qualquer hora. Reconstruir o cadastro exigiu conferir contrato por contrato em papel, um trabalho de sete semanas.
+
+Esse incidente ilustra o ponto central deste capítulo: as três propriedades que definem segurança da informação são **independentes**. Um sistema pode ser exemplar em duas e catastrófico na terceira, e nenhum controle protege as três de graça. Este capítulo abre confidencialidade, integridade e disponibilidade uma a uma — o que cada uma significa com precisão, como cada uma falha, o que a defende e onde as três colidem.
+
+## As três propriedades, com precisão
+
+A tríade CID (em inglês, *CIA triad*) organiza a disciplina desde os anos 1970 e sobrevive porque é ao mesmo tempo curta e completa o bastante para servir de checklist [@iso27000]. A @fig-triade-cid resume as definições e as tensões.
+
+::: {#fig-triade-cid}
+```{.tikz}
+%%| filename: triade-cid
+%%| alt: Triângulo com confidencialidade, integridade e disponibilidade nos vértices, e nas arestas as tensões entre cada par de propriedades
+\begin{tikzpicture}[font=\footnotesize]
+  \coordinate (C) at (90:3.3);
+  \coordinate (I) at (-30:3.3);
+  \coordinate (D) at (210:3.3);
+
+  \draw[manualgray, thick, fill=manualgray!5] (C) -- (I) -- (D) -- cycle;
+
+  \node[draw=manualblue, thick, fill=manualblue!10, rounded corners=3pt,
+        align=center, inner sep=5pt] at (C)
+    {\bfseries Confidencialidade\\[1pt]\scriptsize só quem tem direito acessa};
+  \node[draw=manualgreen, thick, fill=manualgreen!10, rounded corners=3pt,
+        align=center, inner sep=5pt] at (I)
+    {\bfseries Integridade\\[1pt]\scriptsize correta, completa\\\scriptsize e não alterada};
+  \node[draw=manualred, thick, fill=manualred!10, rounded corners=3pt,
+        align=center, inner sep=5pt] at (D)
+    {\bfseries Disponibilidade\\[1pt]\scriptsize alcançável quando\\\scriptsize se precisa dela};
+
+  \node[align=center, manualgray, font=\scriptsize] at ($(C)!0.5!(I) + (1.7,0.45)$)
+    {cifrar dificulta\\conferir e indexar};
+  \node[align=center, manualgray, font=\scriptsize] at ($(C)!0.5!(D) + (-1.7,0.45)$)
+    {chave perdida\\= dado perdido};
+  \node[align=center, manualgray, font=\scriptsize] at ($(I)!0.5!(D) + (0,-0.85)$)
+    {validação rigorosa rejeita\\o que é legítimo};
+\end{tikzpicture}
+```
+A tríade CID e as tensões entre cada par. Reforçar um vértice quase sempre pressiona os outros dois.
+:::
+
+Vale notar que os três termos têm sentido técnico mais estreito que o do uso corrente. "Confidencial" na linguagem comum sugere sigilo absoluto; em segurança da informação, confidencialidade é um controle *relacional* — sempre em relação a um conjunto definido de sujeitos autorizados, nunca sigilo em abstrato.
+
+## Confidencialidade
+
+**Confidencialidade** é a garantia de que a informação só é acessível a quem tem direito a ela. A definição embute uma pergunta prévia que costuma ficar sem resposta: *quem* tem direito? Sem classificação de informação e sem uma decisão explícita sobre quem precisa de que acesso, "proteger a confidencialidade" não tem conteúdo operacional.
+
+### Como a confidencialidade falha
+
+O vazamento por invasão é o caso mais visível e o menos frequente. Os caminhos reais são mais prosaicos:
+
+- **Excesso de permissão.** O compartilhamento de rede com acesso a "todos", o *bucket* de armazenamento em nuvem com listagem pública, o grupo de mensagens da equipe técnica com cliente dentro. Ninguém invadiu nada: o acesso estava concedido.
+- **Perda física.** Notebook furtado, pen drive esquecido, disco de servidor trocado por defeito e devolvido ao fornecedor com os dados legíveis.
+- **Canal lateral e metadado.** A informação não vaza, mas se deduz. Um formulário de recuperação de senha que responde "e-mail não cadastrado" confirma quem é cliente. Tráfego cifrado revela, pelo padrão de tamanho e horário dos pacotes, qual serviço está sendo usado. Registro de conexão sem conteúdo ainda revela com quem alguém falou e quando — e é por isso que o Marco Civil trata log como dado sob sigilo.
+- **Agregação e inferência.** Nome sozinho é público. Nome com CEP, data de nascimento e plano contratado identifica uma pessoa específica com precisão desconfortável. Bases anonimizadas por remoção de nome frequentemente reidentificam quando cruzadas com outra base.
+- **Vazamento pelo canal legítimo.** O log de aplicação que grava o corpo da requisição, senha incluída. A mensagem de erro que devolve o rastro de execução com a *string* de conexão do banco. O relatório em PDF distribuído com texto "tarjado" por retângulo preto sobreposto — que o `pdftotext` recupera integralmente.
+
+### O que a defende
+
+Quatro famílias de controle, em ordem de eficácia por real gasto:
+
+1. **Minimização.** Dado que não se coleta não vaza; dado que se apaga no fim do prazo legal não vaza depois. É o único controle cuja eficácia é de 100% e cujo custo é negativo. A LGPD faz disso princípio jurídico (necessidade, art. 6º, III).
+2. **Controle de acesso.** Autenticação, autorização e o princípio do menor privilégio. Cobre o caso do excesso de permissão, que é o mais comum. O Volume 4 é inteiro sobre isso.
+3. **Cifragem.** Em repouso (disco, banco, backup) e em trânsito (TLS, VPN). Note o que a cifragem realmente faz: transfere o problema do dado para a **chave**. É uma troca excelente — proteger uma chave de 32 bytes é muito mais fácil que proteger 400 GB —, mas é uma troca, não uma solução mágica.
+4. **Controles de descarte.** Sobrescrita verificável, apagamento criptográfico em disco autocifrante, destruição física. Fecha a última etapa do ciclo de vida da informação, apresentado no @sec-cap001.
+
+## Integridade
+
+**Integridade** é a garantia de que a informação está correta e completa, e de que alterações não autorizadas são impedidas ou, no mínimo, detectáveis. Convém separar três níveis que costumam ser confundidos:
+
+- **Integridade de bits.** Os bytes gravados são os bytes lidos. Ataca corrupção silenciosa de disco, erro de transmissão, falha de memória. Ferramentas: soma de verificação, memória com correção de erro, sistemas de arquivos com verificação de bloco (ZFS, Btrfs).
+- **Integridade semântica.** O dado faz sentido segundo as regras do negócio. Vencimento entre 1 e 31, CPF válido, contrato ativo com endereço preenchido, saldo que nunca fica negativo sem lançamento correspondente. Ferramentas: restrições no banco, validação de entrada, transações com garantia ACID, conciliação.
+- **Integridade de origem.** O dado veio de quem se afirma — que é autenticidade, tema do @sec-cap003, e se apoia em assinatura digital e código de autenticação de mensagem.
+
+O incidente de abertura foi uma falha de integridade **semântica** com integridade de bits perfeita. É a categoria mais perigosa porque não dispara alarme: os sistemas continuam consistentes consigo mesmos, propagando o erro para relatórios, faturas e backups.
+
+### Por que a integridade é a mais difícil das três
+
+Confidencialidade e disponibilidade têm sinais externos claros: o vazamento aparece, a queda aparece. A perda de integridade é silenciosa por construção. Some-se a isso o fato de que o dano se **propaga** — dado errado alimenta cálculo, que alimenta relatório, que alimenta decisão — e que a **detecção tardia inviabiliza a correção**, porque o backup íntegro já saiu da janela de retenção.
+
+Daí três consequências práticas frequentemente ignoradas:
+
+- Retenção de backup deve ser dimensionada pelo **tempo esperado até a detecção**, não pelo tempo de recuperação. Trinta dias cobrem exclusão acidental; não cobrem corrupção lenta.
+- Vale manter, além das diárias de curto prazo, cópias **mensais e anuais de longa retenção** — o esquema avô-pai-filho existe justamente para isso.
+- Conciliação periódica com uma fonte independente (contagem física, extrato bancário, base de outro sistema) é o único mecanismo que detecta erro semântico consistente.
+
+### O que a defende
+
+Soma de verificação e hash criptográfico para detecção; assinatura digital para detecção *e* atribuição; controle de versão e registro de alterações para reconstrução; transações e restrições de integridade referencial para prevenção; armazenamento imutável (WORM, bloqueio de objeto, cópia instantânea com retenção travada) para impedir sobrescrita — que é, hoje, o controle mais eficaz contra ransomware, porque ataca a estratégia do adversário de apagar as cópias antes de cifrar o original.
+
+## Disponibilidade
+
+**Disponibilidade** é a garantia de que quem tem direito à informação a alcança quando precisa. É a propriedade mais fácil de medir e a que consome mais orçamento de infraestrutura.
+
+A métrica canônica é o percentual de tempo em operação num período. A @fig-disponibilidade-noves mostra o que cada patamar significa em minutos por ano — e é o argumento mais eficiente que existe contra a promessa de "99,99%" feita sem cálculo.
+
+::: {#fig-disponibilidade-noves}
+```{.tikz}
+%%| filename: disponibilidade-noves
+%%| alt: Gráfico de barras horizontais em escala logarítmica com a indisponibilidade anual tolerada para 99, 99,9, 99,95, 99,99 e 99,999 por cento
+\begin{tikzpicture}[font=\footnotesize]
+\begin{axis}[
+  width=12cm, height=6.6cm,
+  xbar,
+  xmode=log,
+  log basis x=10,
+  xlabel={Indisponibilidade tolerada por ano (minutos, escala logarítmica)},
+  xmin=3, xmax=30000,
+  symbolic y coords={A,B,C,D,E},
+  ytick=data,
+  yticklabels={99{,}999\%, 99{,}99\%, 99{,}95\%, 99{,}9\%, 99\%},
+  nodes near coords,
+  nodes near coords style={font=\scriptsize, anchor=west},
+  point meta=explicit symbolic,
+  bar width=13pt,
+  enlarge y limits=0.16,
+  axis lines=left,
+]
+\addplot[draw=manualblue, fill=manualblue!35] coordinates {
+  (5.3,A) [5 min]
+  (52.6,B) [53 min]
+  (263,C) [4 h 23 min]
+  (526,D) [8 h 46 min]
+  (5256,E) [3 d 15 h]};
+\end{axis}
+\end{tikzpicture}
+```
+Indisponibilidade anual tolerada por patamar de disponibilidade. Cada nove adicional custa aproximadamente uma ordem de grandeza a mais.
+:::
+
+Dois cuidados de leitura. Primeiro, disponibilidade **composta**: se um serviço depende de quatro componentes em série, cada um com 99,9%, a disponibilidade do conjunto é $0{,}999^4 \approx 99{,}6\%$ — quatro vezes mais tempo fora do ar que o de cada peça isolada. Segundo, o número sozinho não descreve a experiência: 52 minutos fora do ar distribuídos em paradas de 30 segundos durante a madrugada e 52 minutos contínuos numa terça às 10h são o mesmo 99,99% e situações incomparáveis.
+
+### RTO e RPO
+
+Disponibilidade em regime é uma coisa; recuperação depois de um desastre é outra, e tem duas métricas próprias, ilustradas na @fig-rto-rpo.
+
+::: {#fig-rto-rpo}
+```{.tikz}
+%%| filename: rto-rpo
+%%| alt: Linha do tempo com o último backup à esquerda, o incidente ao centro e o retorno ao serviço à direita, marcando o RPO como perda de dados e o RTO como tempo fora do ar
+\begin{tikzpicture}[font=\footnotesize]
+  \draw[->,>=stealth, thick] (-6.6,0) -- (6.6,0) node[right] {tempo};
+
+  \draw[manualgray, thick] (-5.4,-0.18) -- (-5.4,0.18);
+  \node[anchor=north, manualgray, font=\scriptsize] at (-5.4,-0.25) {backup 02h};
+
+  \node[ponto, manualgreen, fill=manualgreen] at (-3.0,0) {};
+  \node[anchor=north, align=center, manualgreen, font=\scriptsize] at (-3.0,-0.25)
+    {último backup\\válido};
+
+  \node[ponto, manualred, fill=manualred] at (0,0) {};
+  \node[anchor=north, align=center, manualred, font=\scriptsize] at (0,-0.25)
+    {incidente\\(cifragem do banco)};
+
+  \node[ponto, manualblue, fill=manualblue] at (4.4,0) {};
+  \node[anchor=north, align=center, manualblue, font=\scriptsize] at (4.4,-0.25)
+    {serviço\\restabelecido};
+
+  \draw[<->,>=stealth, manualgreen, very thick] (-3.0,1.15) -- (0,1.15)
+    node[midway, above, align=center, manualgreen]
+    {\bfseries RPO\\[-1pt]\scriptsize dados perdidos aceitáveis};
+  \draw[<->,>=stealth, manualblue, very thick] (0,2.35) -- (4.4,2.35)
+    node[midway, above, align=center, manualblue]
+    {\bfseries RTO\\[-1pt]\scriptsize tempo fora do ar aceitável};
+
+  \draw[auxiliar] (-3.0,0) -- (-3.0,1.15);
+  \draw[auxiliar] (0,0) -- (0,2.35);
+  \draw[auxiliar] (4.4,0) -- (4.4,2.35);
+\end{tikzpicture}
+```
+RPO mede quanto trabalho se perde; RTO mede quanto tempo se fica parado. São decisões de negócio, não de infraestrutura.
+:::
+
+O **RPO** (*recovery point objective*) é a quantidade máxima aceitável de dados perdidos, expressa em tempo: backup diário às 2h implica RPO de até 24 horas. O **RTO** (*recovery time objective*) é o tempo máximo aceitável até o serviço voltar. Ambos são definidos pela área de negócio e *depois* traduzidos em arquitetura — a inversão comum, em que a infraestrutura existente define o RPO por acidente, é a razão de tantas surpresas no dia do incidente.
+
+### O que a ameaça e o que a defende
+
+Contra disponibilidade jogam falha de hardware, erro humano, esgotamento de capacidade, dependência externa (energia, link, fornecedor de nuvem), evento ambiental e, por último na lista de frequência, ataque deliberado. Defendem-na redundância sem ponto único de falha, capacidade folgada, backup testado, monitoramento com alarme antes do limite, e — o item mais barato e mais esquecido — **procedimento escrito de recuperação que alguém já executou pelo menos uma vez**.
+
+## As três colidem
+
+A @tbl-conflitos-cid reúne os tradeoffs mais comuns. Reconhecê-los como escolhas, e não como falhas de projeto, é o que separa uma decisão de segurança de um reflexo.
+
+| Decisão | Ganha | Pressiona |
+|---|---|---|
+| Cifrar backups | Confidencialidade | Disponibilidade (chave perdida = backup inútil) |
+| Bloquear a conta após 3 erros de senha | Confidencialidade | Disponibilidade (negação de serviço trivial contra usuários) |
+| Validação rigorosa de entrada | Integridade | Disponibilidade (rejeita o legítimo atípico) |
+| Replicação síncrona entre sites | Disponibilidade e integridade | Custo e desempenho; propaga o erro lógico instantaneamente |
+| Retenção longa de log | Integridade e responsabilização | Confidencialidade (mais dado sensível guardado por mais tempo) |
+| Segundo fator em tudo | Confidencialidade | Disponibilidade (celular perdido trava o acesso) e aceitação do usuário |
+| Alta disponibilidade por múltiplas cópias | Disponibilidade | Confidencialidade (mais lugares de onde vazar) |
+
+: Conflitos típicos entre os pilares. Nenhum tem resposta universal; todos têm resposta correta *dado o contexto*. {#tbl-conflitos-cid}
+
+## A ordem de prioridade muda com o contexto
+
+Não existe hierarquia fixa entre os três pilares — existe a hierarquia daquele ambiente, e ela precisa ser declarada, porque é ela que resolve os conflitos da tabela anterior.
+
+| Contexto | Ordem típica | Por quê |
+|---|---|---|
+| Hospital, prontuário eletrônico | D > I > C | Prontuário inacessível na emergência custa vidas; o sigilo é gravíssimo, mas cede |
+| Instituição financeira, núcleo bancário | I > D > C | Saldo errado destrói a instituição; a operação para até conciliar |
+| Provedor de acesso, rede de transporte | D > I > C | O produto vendido é a conectividade; a métrica contratual é o tempo em operação |
+| Provedor de acesso, base cadastral | C > I > D | CPF, endereço e meio de pagamento, sob a LGPD |
+| Automação industrial e OT | D > I > C | Parada de linha e risco físico a pessoas |
+| Órgão de inteligência e defesa | C > I > D | Vazamento é irreversível; indisponibilidade é contornável |
+
+: A ordem de prioridade é uma decisão de contexto e precisa estar escrita. {#tbl-prioridade-contexto}
+
+Repare que o mesmo provedor aparece duas vezes com ordens opostas. Não é contradição: são **ativos diferentes**, e é exatamente por isso que a classificação da informação precede a escolha de controle.
+
+## Além da tríade
+
+A tríade não é a última palavra. Duas extensões merecem registro.
+
+Donn Parker propôs o **hexágono parkeriano**, acrescentando três propriedades que a tríade não captura bem [@parker1998]: **posse ou controle** (perder o disco é dano ainda que ele esteja cifrado e nada tenha sido lido), **autenticidade** (a origem é quem afirma ser) e **utilidade** (o dado existe, íntegro e acessível, mas está num formato que ninguém consegue mais abrir — a fita sem leitor, o arquivo do sistema descontinuado). A distinção "posse" é a mais útil na prática: notificar um incidente à ANPD não depende de provar que alguém leu os dados.
+
+A segunda extensão é a que este manual adota: **autenticidade, não repúdio e responsabilização** como propriedades de primeira classe, tratadas no @sec-cap003. Sem elas, não se descreve corretamente nem uma transação financeira nem uma trilha de auditoria.
+
+## ⚖️ Brasil em Foco
+
+As três propriedades aparecem no direito brasileiro com nome próprio e consequência distinta para cada uma.
+
+A **LGPD** trata a tríade explicitamente. O art. 6º lista entre os princípios do tratamento a **qualidade dos dados** (inciso V — exatidão, clareza, relevância e atualização, que é integridade em linguagem jurídica), a **segurança** (inciso VII — proteção contra acessos não autorizados e situações acidentais ou ilícitas de destruição, perda, alteração, comunicação ou difusão, que cobre os três pilares de uma vez) e a **prevenção** (inciso VIII) [@lgpd2018]. O art. 46 impõe o dever de adotar medidas técnicas e administrativas, e o art. 18 dá ao titular o direito de exigir **correção de dados incompletos, inexatos ou desatualizados** — um direito subjetivo de integridade, exercível contra a empresa. No incidente de abertura deste capítulo, cada assinante com vencimento trocado tinha esse direito.
+
+Vale sublinhar o alcance do art. 48: o dever de comunicar incidente à ANPD e aos titulares **não se restringe a vazamento**. A redação fala em incidente de segurança que possa acarretar risco ou dano relevante, e a Resolução CD/ANPD nº 15/2024 detalha o rito e o prazo de três dias úteis [@anpd2024res15]. Destruição acidental de base e indisponibilidade prolongada de dados pessoais são hipóteses de comunicação — a leitura de que "só notifica quem vaza" é incorreta e comum.
+
+Do lado da **disponibilidade**, quem presta serviço de telecomunicações tem obrigação regulatória direta: a Anatel fixa indicadores de qualidade e disponibilidade no RQUAL (Resolução nº 717/2019), com coleta, meta e possibilidade de sanção [@anatel717]. Disponibilidade, nesse caso, não é apenas expectativa do cliente — é indicador reportado ao regulador.
+
+Do lado da **integridade**, o Marco Civil exige a guarda de registros de conexão por um ano e de acesso a aplicações por seis meses (arts. 13 e 15), sob sigilo e com disponibilização mediante ordem judicial [@marcocivil2014]. Um log só cumpre sua função probatória se for íntegro e se o horário for confiável: sem NTP sincronizado e sem proteção contra alteração, o registro perde valor exatamente quando é necessário. O art. 13, §2º prevê ainda a requisição cautelar de guarda por prazo maior — o que só se atende se o dado ainda existir quando o pedido chegar.
+
+No setor financeiro, a Resolução CMN nº 4.893/2021 exige política de segurança cibernética com controles de confidencialidade, integridade e disponibilidade dos dados e sistemas, além de plano de continuidade e de testes periódicos [@bcb4893]. Para o Pix, a disponibilidade do arranjo é acompanhada pelo Banco Central com indicadores próprios, e a instituição responde pela indisponibilidade que afete a liquidação.
+
+## 🛠️ No Campo
+
+O que muda concretamente para quem administra rede e servidores, organizado por pilar.
+
+**Confidencialidade.** Cifragem de disco em todo equipamento que sai do prédio, sem exceção — notebook do comercial incluído. Cifragem também no backup, com a chave guardada em local independente do servidor (cofre de senhas da equipe, com cópia impressa em envelope lacrado, é solução legítima). TLS obrigatório em tudo, inclusive na rede interna. Revisão trimestral de quem tem acesso a quê:
+
+```bash
+# Quem consegue autenticar via SSH nesta máquina
+grep -E '^(AllowUsers|AllowGroups|PermitRootLogin|PasswordAuthentication)' /etc/ssh/sshd_config
+getent group sudo wheel adm 2>/dev/null
+
+# Compartilhamentos Samba abertos a convidado — achado clássico
+grep -rniE 'guest ok *= *yes|public *= *yes' /etc/samba/smb.conf
+
+# Arquivos de configuração legíveis por qualquer usuário (senhas costumam morar aqui)
+find /etc /opt /srv -type f \( -name '*.conf' -o -name '*.env' -o -name '*.ini' \) \
+  -perm -o=r 2>/dev/null | head -40
+```
+
+**Integridade.** Verificação periódica de mídia e de backup, agendada e com alerta em caso de divergência:
+
+```bash
+# ZFS: varredura completa de blocos com verificação de soma
+zpool scrub tank && zpool status tank
+
+# Verificação de integridade do repositório de backup (restic)
+restic -r /mnt/backup check --read-data-subset=10%
+
+# Conferência de um artefato baixado, antes de instalar
+sha256sum -c imagem.iso.sha256
+
+# Saúde do disco antes de ele falhar — atributos que antecipam corrupção
+smartctl -A /dev/sda | grep -Ei 'reallocated|pending|uncorrect|crc'
+```
+
+Três hábitos valem mais que qualquer ferramenta: **restaurar de verdade** um backup por trimestre e conferir o conteúdo, não só o código de retorno do comando; manter **retenção longa** (mensal por 12 meses, anual por 5) para cobrir detecção tardia; e **conciliar** mensalmente uma amostra do cadastro contra uma fonte independente.
+
+**Disponibilidade.** Redundância que resolve ponto único de falha real, e não redundância decorativa: dois links do mesmo provedor entrando pela mesma canaleta são um link. Monitorar tendência, não só limiar — disco a 78% crescendo 2% ao dia é um incidente agendado para daqui a onze dias:
+
+```bash
+# Uso de disco por sistema de arquivos, dos mais cheios para os mais vazios
+df -h --output=pcent,size,used,target -x tmpfs -x devtmpfs | sort -rn | head
+
+# Reinicializações e quedas registradas
+last -x reboot shutdown | head
+
+# Serviços que falharam desde o último boot
+systemctl --failed --no-pager
+```
+
+E a checagem que fecha o ciclo: escrever, para os três serviços mais críticos, o RTO e o RPO **acordados com quem responde pelo negócio**, comparar com o que a infraestrutura atual entrega de fato, e levar a diferença para a mesa como decisão consciente de risco — que é o assunto do @sec-cap006.
+
+## Resumo
+
+- Confidencialidade, integridade e disponibilidade são propriedades **independentes**: excelência em duas não compensa falha na terceira, e cada uma falha por caminhos próprios.
+- A confidencialidade quase nunca falha por invasão — falha por excesso de permissão, perda física, metadado, inferência e vazamento pelo canal legítimo. Minimizar o dado coletado é o controle mais eficaz e o de menor custo.
+- A integridade é a mais difícil das três porque falha em silêncio, propaga o dano e pode ser detectada tarde demais para o backup ajudar. Retenção deve ser dimensionada pelo tempo até a detecção, e conciliação com fonte independente é o que revela erro semântico.
+- Disponibilidade é composta e se degrada em série: quatro componentes de 99,9% entregam 99,6%. **RPO** mede dados perdidos, **RTO** mede tempo parado, e ambos são decisão de negócio traduzida depois em arquitetura.
+- Os pilares **conflitam**, e a ordem de prioridade depende do contexto e do ativo — hospital, banco e provedor ordenam de formas diferentes, e o mesmo provedor ordena diferente para a rede de transporte e para a base cadastral.
+- No Brasil, os três têm âncora normativa: LGPD (arts. 6º, 18, 46 e 48, com comunicação de incidente em três dias úteis e direito de correção), Marco Civil (guarda íntegra de registros), Anatel RQUAL (disponibilidade como indicador regulado) e Resolução CMN 4.893/2021 no setor financeiro.

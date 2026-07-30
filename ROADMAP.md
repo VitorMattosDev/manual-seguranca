@@ -11,7 +11,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 ### Volume 1 — Fundamentos da Segurança da Informação
 
 - [x] **cap 001** - O que é segurança da informação - `vol01/cap001-o-que-e-seguranca-da-informacao.qmd`
-- [ ] **cap 002** - Os pilares: confidencialidade, integridade e disponibilidade - `vol01/cap002-os-pilares-confidencialidade-integridade-e.qmd`
+- [x] **cap 002** - Os pilares: confidencialidade, integridade e disponibilidade - `vol01/cap002-os-pilares-confidencialidade-integridade-e.qmd`
 - [ ] **cap 003** - Autenticidade, não repúdio e responsabilização - `vol01/cap003-autenticidade-nao-repudio-e-responsabilizacao.qmd`
 - [ ] **cap 004** - Ativos, ameaças, vulnerabilidades e risco - `vol01/cap004-ativos-ameacas-vulnerabilidades-e-risco.qmd`
 - [ ] **cap 005** - Modelagem de ameaças: STRIDE, árvores de ataque e abuse cases - `vol01/cap005-modelagem-de-ameacas-stride-arvores-de-ataque.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (1 concluidos).
+**Total:** 107 capitulos em 16 volumes (2 concluidos).
 

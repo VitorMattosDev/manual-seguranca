@@ -50,6 +50,8 @@ YAML de referência: ver `.github/workflows/publish.yml` deste repositório.
 - Filtro `tikz` **antes** de `quarto` na lista de filters; `tikz: svg-engine: dvisvgm`.
 - O template sempre chama `\usepackage{pgfplots}` — toda figura depende dele, mesmo uma seta.
 - Estilos e cores predefinidos vêm do template: usar direto, nunca redefinir.
+- **`\\` dentro de grupo `{...}` aninhado no texto de um nó quebra a figura inteira.** Com `align=center`, o TikZ implementa `\\` como fim de linha do alinhamento; dentro de um grupo extra isso desbalanceia o grupo e o erro sai como `Undefined control sequence` em `\tikz@finish@orig ...=\tikzscope@linewidth`, seguido de `I do not know the key '/tikz/<estilo>'` nos nós seguintes — sintomas que não apontam para a causa. O SVG sai vazio (~220 bytes no HTML) e o render **não** falha alto. Regra: quebra de linha só no nível superior do texto do nó. Trocar `{\bfseries\color{x}Título}\\...` por `\textbf{\textcolor{x}{Título}}\\...`, e usar `\scriptsize\color{y}` como chave (switch) em vez de `{\scriptsize\color{y}...}` quando houver `\\` depois.
+- **Conferir tamanho do SVG, não só a ausência de erro.** `grep -c '<svg'` conta figura quebrada como figura boa. Medir cada bloco `<svg>...</svg>`: abaixo de ~1 KB é figura vazia.
 - **Bloqueio mais comum é PATH, não pacote faltando.** `quarto install tinytex` não adiciona o bin ao PATH da sessão. Sintoma: figura não renderiza e `tikz.lua` falha com `imgdata nil` (~linha 587). Prepend do bin do TinyTeX antes de qualquer render.
 - Pacotes: `tlmgr install standalone pgf pgfplots dvisvgm xcolor amsmath amsfonts`
 
