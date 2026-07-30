@@ -1,3 +1,298 @@
 # Protocolos de aplicação e seus riscos: HTTP, DNS, SMTP e SNMP {#sec-cap010}
 
-*(em elaboracao)*
+O departamento financeiro de uma distribuidora recebe um e-mail do fornecedor habitual informando mudança de conta bancária. O remetente aparece corretamente como `financeiro@fornecedor.exemplo.br`. O texto cita o número do pedido em aberto, o valor exato e o nome da pessoa que costuma assinar. O pagamento de R\$ 180 mil sai naquela tarde.
+
+Duas semanas depois, o fornecedor cobra a fatura. A investigação mostra que o e-mail nunca passou pelo servidor do fornecedor: o campo `From:` foi simplesmente escrito pelo atacante, porque o SMTP permite escrever o que se quiser ali. O domínio do fornecedor não tinha registro SPF, não assinava com DKIM e não publicava política DMARC. A informação sobre o pedido veio de uma caixa postal comprometida meses antes, lida em silêncio.
+
+Nenhum software foi explorado. O ataque consistiu em usar quatro protocolos exatamente como eles foram especificados.
+
+Os dois capítulos anteriores trataram da infraestrutura que move pacotes. Este sobe à camada 7 — onde estão os dados que interessam a quem ataca, e onde a maior parte dos incidentes efetivamente acontece.
+
+## O padrão comum: texto claro e confiança presumida
+
+Os protocolos de aplicação fundamentais da internet foram especificados entre 1971 e 1990, e compartilham três traços que explicam quase todos os seus problemas de segurança.
+
+**São textuais e legíveis.** Comandos em ASCII, respostas em ASCII. Isso foi decisão deliberada — facilita depuração, permite falar o protocolo à mão com um `telnet` — e significa que qualquer um no caminho lê tudo.
+
+**Não autenticam a origem.** O SMTP aceita qualquer remetente. O DNS aceita qualquer resposta que case com a pergunta. O HTTP não tem noção de identidade.
+
+**Não verificam integridade.** Nada impede que um intermediário altere o conteúdo em trânsito.
+
+A resposta histórica foi a mesma em todos os casos: envolver o protocolo original em TLS e acrescentar mecanismos de autenticação por cima. A @tbl-protocolos resume o quadro atual.
+
+| Protocolo | Porta em claro | Porta protegida | O que vaza sem proteção | Camada de autenticação |
+|---|---|---|---|---|
+| HTTP | 80 | 443 (TLS) | Conteúdo, cookies, credenciais | TLS + HSTS |
+| DNS | 53 | 853 (DoT), 443 (DoH) | Todo o histórico de navegação | DNSSEC (integridade) |
+| SMTP | 25 | 587/465 (STARTTLS, TLS) | Mensagens, credenciais | SPF, DKIM, DMARC, MTA-STS |
+| IMAP / POP3 | 143 / 110 | 993 / 995 | Caixa postal inteira | TLS + autenticação forte |
+| FTP | 21 | 990 (FTPS), 22 (SFTP) | Credenciais e arquivos | Substituir por SFTP |
+| Telnet | 23 | — | Sessão administrativa completa | Substituir por SSH |
+| SNMP v1/v2c | 161 | 161 (SNMPv3) | Inventário e configuração | SNMPv3 com authPriv |
+| LDAP | 389 | 636 (LDAPS) | Diretório e credenciais | LDAPS ou StartTLS |
+
+: Protocolos de aplicação, portas e o que cada um expõe sem proteção. {#tbl-protocolos}
+
+Duas leituras práticas dessa tabela. A primeira: **a coluna do meio ainda está em uso** em quase toda rede corporativa, tipicamente em equipamentos antigos, sistemas legados e impressoras. A segunda: para os quatro protocolos que este capítulo detalha, a defesa não é apenas ligar TLS — cada um tem um problema estrutural próprio que o TLS não resolve.
+
+## HTTP: simples por fora, complexo por dentro
+
+O HTTP é um protocolo de requisição e resposta sem estado [@rfc9110]. O cliente envia um método, um caminho e cabeçalhos; o servidor responde com um código e um corpo. Toda a complexidade — e a superfície de ataque — vem do que foi acrescentado por cima dessa simplicidade.
+
+### Os cabeçalhos que importam para segurança
+
+Os cabeçalhos de resposta são o principal controle de segurança que uma aplicação web configura sem tocar no código:
+
+| Cabeçalho | O que faz | Sem ele |
+|---|---|---|
+| `Strict-Transport-Security` | Obriga HTTPS naquele domínio | Janela de *downgrade* na primeira visita |
+| `Content-Security-Policy` | Restringe origens de script, estilo e mídia | XSS explora sem restrição |
+| `X-Content-Type-Options: nosniff` | Impede adivinhação de tipo | Upload vira script executável |
+| `X-Frame-Options` / `frame-ancestors` | Impede enquadramento em outro site | *Clickjacking* |
+| `Referrer-Policy` | Limita o que vaza na navegação | URLs internas com token vazam a terceiros |
+| `Set-Cookie: Secure; HttpOnly; SameSite` | Protege o cookie de sessão | Roubo por script ou por HTTP; CSRF |
+
+: Cabeçalhos de resposta HTTP com função de segurança. {#tbl-cabecalhos-http}
+
+O @sec-cap005 chamaria isso de controles que atuam sobre a exploração, não sobre a falha. São baratos, testáveis por ferramenta automática e mesmo assim ausentes na maioria dos sistemas internos — precisamente porque "é só a intranet".
+
+### O estado que o protocolo não tem
+
+Como o HTTP não guarda estado, a sessão é reconstruída a cada requisição por um **cookie**, um cabeçalho `Authorization` ou um token. Isso desloca o problema: quem obtiver esse identificador **é** o usuário, sem precisar da senha. Daí a importância dos atributos do cookie e da rotação do identificador de sessão após a autenticação — assunto que o Volume 7 aprofunda.
+
+Três abusos merecem menção desde já, porque aparecem em qualquer análise de tráfego:
+
+**Métodos indevidamente habilitados.** `TRACE` viabiliza roubo de cabeçalhos por *cross-site tracing*; `PUT` e `DELETE` abertos em servidor mal configurado permitem escrita direta. A regra é permitir apenas o que a aplicação usa.
+
+**Redirecionamento aberto.** Um parâmetro que recebe URL de destino sem validação transforma o domínio confiável em trampolim de phishing: o usuário vê o domínio do banco no link e termina no site do atacante.
+
+**Vazamento por resposta.** Cabeçalhos `Server` e `X-Powered-By` com versão exata, páginas de erro com pilha de execução, comentários em HTML com caminho interno. Nada disso é vulnerabilidade por si; tudo isso encurta o trabalho de reconhecimento.
+
+### HTTPS não é opcional, e "só interno" não é argumento
+
+O @sec-cap008 mostrou como um intermediário na rede local intercepta tráfego. Toda aplicação HTTP interna — o painel do switch, o sistema de chamados, a impressora — entrega credenciais a quem esteja nessa posição. Certificados internos assinados por uma CA própria, ou ACME interno automatizado, resolvem o problema sem custo de certificado público. O Volume 3 trata do TLS em detalhe; a decisão de política, porém, é deste nível: **não existe rede confiável o bastante para justificar HTTP em claro**.
+
+## DNS: a lista telefônica que qualquer um pode adulterar
+
+Toda conexão começa por uma consulta DNS. Isso faz do DNS, simultaneamente, o alvo mais estratégico e o sensor mais rico de uma rede.
+
+A @fig-resolucao-dns mostra o caminho de uma consulta e os quatro pontos onde ele pode ser subvertido.
+
+::: {#fig-resolucao-dns}
+```{.tikz}
+%%| filename: resolucao-dns
+%%| alt: Caminho de uma consulta DNS do cliente ao servidor autoritativo, com os quatro pontos de ataque marcados ao longo do trajeto
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw=manualblue, thick, fill=manualblue!8, rounded corners=3pt,
+               align=center, inner sep=5pt, minimum width=2.7cm, minimum height=1.1cm},
+    srv/.style={draw=manualgray, thick, fill=manualgray!6, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=2.7cm, minimum height=1.1cm},
+    atk/.style={draw=manualred, thick, fill=manualred!8, rounded corners=2pt,
+                align=center, inner sep=4pt, font=\scriptsize, minimum width=3.1cm},
+    fl/.style={->,>=stealth, thick, manualgray}}
+
+  \node[cx]  (cli) at (0,3.4)    {\textbf{Cliente}\\\scriptsize navegador};
+  \node[srv] (rec) at (4.4,3.4)  {\textbf{Recursivo}\\\scriptsize do provedor};
+  \node[srv] (raiz) at (8.8,3.4) {\textbf{Raiz e TLD}\\\scriptsize .br, .com};
+  \node[srv] (aut) at (13.2,3.4) {\textbf{Autoritativo}\\\scriptsize do domínio};
+
+  \draw[fl] (cli) -- (rec);
+  \draw[fl] (rec) -- (raiz);
+  \draw[fl] (raiz) -- (aut);
+  \draw[fl, manualgreen, dashed] (aut) to[out=-70,in=-110] node[below, font=\scriptsize] {resposta percorre o caminho de volta} (cli);
+
+  \node[atk] (a1) at (0,5.6)    {\textbf{1. Resolvedor trocado}\\malware altera o DNS do host};
+  \node[atk] (a2) at (4.4,5.6)  {\textbf{2. Cache envenenado}\\resposta forjada aceita};
+  \node[atk] (a3) at (8.8,5.6)  {\textbf{3. Sequestro de registro}\\conta de registrador invadida};
+  \node[atk] (a4) at (13.2,5.6) {\textbf{4. Servidor comprometido}\\zona alterada na origem};
+
+  \draw[destaque, manualred, ->,>=stealth] (a1) -- (cli);
+  \draw[destaque, manualred, ->,>=stealth] (a2) -- (rec);
+  \draw[destaque, manualred, ->,>=stealth] (a3) -- (raiz);
+  \draw[destaque, manualred, ->,>=stealth] (a4) -- (aut);
+\end{tikzpicture}
+```
+Os quatro pontos de subversão de uma resolução DNS. Só o segundo é mitigado por DNSSEC.
+:::
+
+### Envenenamento de cache e o que o DNSSEC resolve
+
+O DNS usa UDP por padrão e casa perguntas com respostas por um identificador de 16 bits mais a porta de origem. Um atacante que consiga entregar uma resposta forjada com esses valores corretos antes da resposta legítima insere no cache do recursivo um registro falso — que será servido a todos os clientes daquele recursivo até expirar o TTL. A técnica descrita por Dan Kaminsky em 2008 tornou isso viável a ponto de forçar a adoção emergencial de aleatorização de porta de origem em toda a internet.
+
+O **DNSSEC** resolve o problema na raiz: assina criptograficamente os registros, encadeando a confiança da raiz até o domínio. O que ele **não** faz merece ênfase igual — DNSSEC garante integridade e autenticidade, **não confidencialidade**. A consulta continua visível. Quem observa o tráfego sabe exatamente que sites foram acessados, mesmo com todo o conteúdo em HTTPS.
+
+Confidencialidade veio depois, com **DoT** (DNS sobre TLS, porta 853) e **DoH** (DNS sobre HTTPS, porta 443) [@rfc8484]. E aqui há uma tensão real para quem opera rede: DoH esconde as consultas do próprio operador, quebrando filtros de conteúdo corporativos, bloqueio de domínios maliciosos e visibilidade para resposta a incidentes. Navegadores que habilitam DoH por padrão para um resolvedor externo tiram do administrador um dos seus melhores sensores. A resposta madura não é bloquear DoH e sim **oferecer DoH interno**: o mesmo benefício de privacidade contra terceiros, com o controle e a visibilidade permanecendo na organização.
+
+### O DNS como sensor e como canal de fuga
+
+Do lado defensivo, o registro de consultas DNS é o dado mais custo-eficiente de uma rede: uma única fonte revela acesso a domínios de comando e controle, a sites de phishing recém-registrados, a serviços não autorizados, e denuncia máquinas infectadas antes de qualquer outro sinal.
+
+Do lado ofensivo, o mesmo protocolo é o canal de exfiltração mais confiável que existe. Como quase toda rede permite DNS de saída, dados podem ser codificados em nomes de subdomínio — `ZGFkb3NleGZpbHRyYWRvcw.atacante.exemplo` — e recuperados no servidor autoritativo do atacante. **Tunelamento DNS** carrega sessões interativas inteiras assim, lentamente e sem chamar atenção. Os indicadores são reconhecíveis: volume anormal de consultas a um único domínio, nomes muito longos, alta proporção de respostas `NXDOMAIN`, uso intenso de tipos `TXT` e `NULL`, entropia elevada nos rótulos.
+
+## SMTP: o protocolo que confia no remetente
+
+O SMTP entrega mensagens numa sequência de comandos textuais. O ponto que explica o caso de abertura deste capítulo é a existência de **dois remetentes** numa mesma mensagem, e o fato de que só o segundo aparece na tela.
+
+O **envelope** (`MAIL FROM`) é usado no transporte e é o que o SPF verifica. O **cabeçalho** (`From:`) é o que o cliente de e-mail exibe. São campos independentes, e nada no protocolo obriga que coincidam. Escrever qualquer coisa no `From:` é comportamento previsto — é assim que listas de discussão e sistemas de notificação funcionam.
+
+Sobre essa base foram construídos três mecanismos que, **juntos**, fecham a falsificação:
+
+**SPF** publica em DNS quais servidores podem enviar em nome do domínio [@rfc7208]. Verifica o envelope, não o `From:` exibido, e quebra ao encaminhar mensagens — daí não bastar sozinho.
+
+**DKIM** assina criptograficamente cabeçalhos e corpo com uma chave cujo público está no DNS [@rfc6376]. Sobrevive ao encaminhamento e prova integridade, mas não diz o que fazer quando falha.
+
+**DMARC** amarra os dois ao `From:` exibido, exigindo **alinhamento**, e publica a política a aplicar em caso de falha — `none` (só relatar), `quarantine` ou `reject` — além de habilitar relatórios agregados [@rfc7489].
+
+A @fig-dmarc mostra a sequência de verificação no servidor receptor.
+
+::: {#fig-dmarc}
+```{.tikz}
+%%| filename: verificacao-dmarc
+%%| alt: Fluxo de verificação de uma mensagem no servidor receptor, com SPF e DKIM alimentando a decisão de alinhamento do DMARC
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw=manualgray, thick, fill=manualgray!6, rounded corners=3pt,
+               align=center, inner sep=5pt, minimum width=3.3cm, minimum height=1.05cm},
+    ver/.style={draw=manualblue, thick, fill=manualblue!8, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=3.6cm, minimum height=1.15cm},
+    dec/.style={draw=manualyellow, very thick, fill=manualyellow!12, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=3.8cm, minimum height=1.25cm},
+    ok/.style={draw=manualgreen, very thick, fill=manualgreen!12, rounded corners=3pt,
+               align=center, inner sep=4pt, minimum width=3.0cm, font=\scriptsize},
+    no/.style={draw=manualred, very thick, fill=manualred!12, rounded corners=3pt,
+               align=center, inner sep=4pt, minimum width=3.0cm, font=\scriptsize},
+    fl/.style={->,>=stealth, thick, manualgray}}
+
+  \node[cx]  (msg) at (0,3.2) {\textbf{Mensagem}\\\scriptsize chega ao receptor};
+  \node[ver] (spf) at (4.6,4.5) {\textbf{SPF}\\\scriptsize IP autorizado a enviar\\\scriptsize pelo envelope?};
+  \node[ver] (dkim) at (4.6,1.9) {\textbf{DKIM}\\\scriptsize assinatura confere\\\scriptsize com a chave no DNS?};
+  \node[dec] (dm) at (9.6,3.2) {\textbf{DMARC}\\\scriptsize algum deles passou\\\scriptsize \emph{e} alinha com o \texttt{From:}?};
+
+  \node[ok] (entrega) at (14.0,4.4) {\textbf{Entrega}\\\scriptsize registra no relatório};
+  \node[no] (rejeita) at (14.0,2.0) {\textbf{Política do domínio}\\\scriptsize none / quarantine / reject};
+
+  \draw[fl] (msg) -- (spf);
+  \draw[fl] (msg) -- (dkim);
+  \draw[fl] (spf) -- (dm);
+  \draw[fl] (dkim) -- (dm);
+  \draw[fl, manualgreen] (dm) -- node[above, font=\scriptsize] {sim} (entrega);
+  \draw[fl, manualred] (dm) -- node[below, font=\scriptsize] {não} (rejeita);
+
+  \node[align=center, font=\scriptsize, manualred] at (9.6,0.7)
+    {Sem registro DMARC publicado,\\o receptor não tem instrução\\e costuma entregar assim mesmo.};
+\end{tikzpicture}
+```
+Verificação de autenticidade de e-mail. O alinhamento com o `From:` exibido é a peça que só o DMARC fornece.
+:::
+
+**A publicação em `p=none` é o erro mais comum.** É o ponto de partida correto — permite observar os relatórios sem quebrar fluxos legítimos —, mas muitas organizações param ali e acreditam estar protegidas. Enquanto a política não avançar para `quarantine` e depois `reject`, o receptor não recebe instrução para rejeitar nada. A publicação de `p=none` protege exatamente zero mensagens.
+
+Vale ainda distinguir dois ataques que a defesa trata de forma diferente. A **falsificação direta do domínio** é o que SPF, DKIM e DMARC bloqueiam. O **domínio parecido** — `fornecedor-exemplo.com.br` no lugar de `fornecedor.exemplo.br`, ou caracteres visualmente similares — passa por todas as verificações, porque é um domínio legítimo do atacante, devidamente autenticado. Contra esse, os controles são outros: monitoramento de registros semelhantes, marcação visual de remetente externo no cliente de e-mail, e processo de negócio que exija confirmação por canal independente para mudança de dados bancários. O caso de abertura teria sido evitado por qualquer um dos três — e o Volume 10 trata do assunto em profundidade.
+
+## SNMP: a porta dos fundos do parque de equipamentos
+
+O SNMP monitora e configura equipamentos de rede. É a fonte dos gráficos de banda e, quando mal configurado, o mapa completo da infraestrutura entregue a quem perguntar.
+
+O problema está nas versões. **SNMPv1 e v2c autenticam por uma *community string*, que trafega em claro** e funciona como senha compartilhada. Duas delas vêm de fábrica em praticamente todo equipamento: `public` para leitura e `private` para escrita. Com leitura, o atacante obtém inventário de interfaces, tabela ARP, tabela de roteamento, versão de firmware, nomes de host, tempo de atividade — reconhecimento interno completo sem tocar em nenhum sistema. Com escrita, reconfigura o equipamento.
+
+O SNMP é ainda um dos vetores clássicos de **amplificação** descritos no @sec-cap008: uma consulta `GetBulk` de poucos bytes gera resposta muitas vezes maior, e o serviço roda sobre UDP.
+
+As três medidas, em ordem de prioridade: **migrar para SNMPv3** com `authPriv` (autenticação SHA e cifragem AES); onde o equipamento legado não suportar v3, **restringir por lista de acesso** ao endereço do coletor e usar apenas leitura, com *community* longa e única por equipamento; e **nunca expor o 161/UDP à internet**, o que ainda ocorre com frequência em roteadores de borda de provedores pequenos.
+
+## O inventário de protocolos: o exercício que ninguém faz
+
+Fecha o capítulo o exercício mais revelador e menos praticado: listar o que efetivamente escuta na rede. Ele produz invariavelmente três descobertas — um serviço que ninguém sabia que estava ligado, um protocolo em claro que deveria ter sido desativado anos atrás, e um sistema exposto à internet por engano.
+
+A ordem de tratamento que funciona é por consequência:
+
+1. **Administração em claro exposta** — Telnet, HTTP de painel, SNMP v2c com escrita. Sessão administrativa capturada é comprometimento imediato.
+2. **Autenticação em claro** — FTP, POP3, IMAP, LDAP sem TLS. Credenciais capturadas costumam ser reutilizadas em outros sistemas.
+3. **Serviços amplificadores abertos** — DNS recursivo, NTP, SNMP, memcached. Aqui a vítima é um terceiro, mas a responsabilidade e a reputação do bloco são da organização.
+4. **Serviços legítimos sem TLS** — o resto.
+
+## ⚖️ Brasil em Foco
+
+**A fraude do caso de abertura tem nome e tipo penal.** O golpe do boleto e a fraude do e-mail corporativo (*BEC*) configuram estelionato, e desde a Lei 14.155/2021 o art. 171, §2º-A do Código Penal prevê pena de reclusão de 4 a 8 anos quando praticado por meio eletrônico [@lei14155]. A pena aumenta quando a vítima é idosa. Para a empresa que pagou, resta a via civil — e a discussão sobre quem tinha o dever de cuidado costuma envolver justamente a ausência de SPF, DKIM e DMARC no domínio do fornecedor.
+
+**Domínio `.br` e o registro.br.** Registro de domínio e publicação de SPF, DKIM e DMARC são feitos no painel do registro.br, e a proteção da conta de registrador é crítica: é o ponto 3 da @fig-resolucao-dns, e o comprometimento dessa conta permite redirecionar e-mail e site do domínio inteiro. Segundo fator obrigatório nessa conta e nas contas de DNS não é recomendação, é requisito básico.
+
+**Registro de consultas DNS é dado pessoal.** O histórico de resolução de um assinante revela hábitos, saúde, orientação política e religiosa — dado potencialmente sensível no sentido do art. 5º, II da LGPD [@lgpd2018]. Um provedor que registra consultas precisa de base legal, finalidade declarada, prazo de retenção e controle de acesso. Usar esse registro para fins comerciais, como perfilamento publicitário, exige base legal própria e esbarra também na neutralidade de rede do art. 9º do Marco Civil [@marcocivil2014].
+
+**Bloqueio de porta 25 e o combate ao spam.** A gestão da porta 25, coordenada no Brasil pelo CGI.br e pelo CERT.br desde 2012, é caso de política pública técnica bem-sucedida: o encaminhamento de mensagens passou a usar a porta 587 com autenticação, e a saída direta pela 25 a partir de redes de acesso residencial foi bloqueada. Provedores que não aplicam a medida veem seus blocos entrarem em listas de bloqueio internacionais, com prejuízo para todos os assinantes — inclusive os que não têm relação alguma com o problema.
+
+**Anatel e a segurança do equipamento do assinante.** A Resolução 740/2020 alcança os produtos de telecomunicações fornecidos ao cliente [@anatel740]. Roteadores entregues com senha padrão, painel de administração acessível pela WAN ou SNMP aberto são, além de risco técnico, exposição regulatória do provedor — e foram vetor de campanhas em larga escala de alteração de DNS de assinantes no Brasil, exatamente o ponto 1 da @fig-resolucao-dns.
+
+## 🛠️ No Campo
+
+**1. Publicar SPF, DKIM e DMARC — e avançar a política.** Vinte minutos que fecham a falsificação direta do domínio:
+
+```text
+; SPF — encerrar com -all, nunca com ?all
+exemplo.com.br.        IN TXT "v=spf1 include:_spf.provedor.exemplo.br -all"
+
+; DMARC — começar em none para observar, avançar em semanas
+_dmarc.exemplo.com.br. IN TXT "v=DMARC1; p=none; rua=mailto:dmarc@exemplo.com.br; pct=100"
+; depois: p=quarantine; pct=25 → pct=100 → p=reject
+```
+
+```bash
+# Conferir o que está publicado hoje
+dig +short TXT exemplo.com.br | grep spf1
+dig +short TXT _dmarc.exemplo.com.br
+dig +short TXT selecao._domainkey.exemplo.com.br
+```
+
+**2. Levantar o inventário de portas abertas na borda.** O exercício que sempre encontra surpresa. Executado a partir de fora, contra o próprio bloco e **com autorização escrita**, conforme o @sec-cap007:
+
+```bash
+# Serviços administrativos e amplificadores expostos no bloco
+nmap -sS -Pn -p 21,22,23,25,53,80,110,143,161,389,443,445,3389,8080 198.51.100.0/24 -oA borda
+nmap -sU -Pn -p 53,123,161,1900,11211 198.51.100.0/24 -oA borda-udp
+```
+
+**3. Checar os cabeçalhos de segurança das aplicações web internas.** Vale para o painel do switch tanto quanto para o sistema de chamados:
+
+```bash
+curl -sI https://app.exemplo.com.br | \
+  grep -iE 'strict-transport|content-security|x-content-type|x-frame|referrer-policy|set-cookie'
+```
+
+**4. Migrar SNMP para v3 e fechar o que sobrar.** Prioridade máxima onde houver escrita habilitada:
+
+```text
+! Substitui community por usuário com autenticação e cifragem
+snmp-server group MONITORA v3 priv
+snmp-server user coletor MONITORA v3 auth sha <senha-auth> priv aes 128 <senha-priv>
+no snmp-server community public
+no snmp-server community private
+snmp-server host 10.30.20.9 version 3 priv coletor
+```
+
+**5. Registrar as consultas DNS e vigiar os indicadores de tunelamento.** É a fonte de detecção mais barata que existe:
+
+```bash
+# No resolvedor: domínios com muitas consultas e rótulos longos
+awk '{print $NF}' /var/log/dns/queries.log \
+  | awk -F. '{print $(NF-1)"."$NF, length($1)}' \
+  | sort | uniq -c | sort -rn | head -20
+
+# Proporção de NXDOMAIN por cliente — pico indica DGA ou túnel
+grep NXDOMAIN /var/log/dns/queries.log | awk '{print $3}' | sort | uniq -c | sort -rn | head
+```
+
+**6. Oferecer DoH e DoT internos em vez de bloquear.** Preserva a privacidade do usuário contra terceiros e mantém a visibilidade e o filtro na organização. Na prática: publicar o resolvedor interno como DoH, distribuí-lo por política nos navegadores e bloquear na borda os resolvedores externos conhecidos.
+
+**7. Desativar os protocolos em claro com prazo, não com boa intenção.** Um inventário com data de desligamento por sistema, comunicado aos donos, e a porta efetivamente fechada no dia marcado. Sem prazo, Telnet sobrevive a três trocas de gerência.
+
+**8. Exigir confirmação por canal independente para mudança de dados bancários.** É o controle de processo que teria evitado os R\$ 180 mil do caso de abertura, e não custa nada: qualquer alteração de conta de fornecedor é confirmada por telefone, num número já cadastrado — nunca no número que veio no e-mail.
+
+## Resumo
+
+- Os protocolos fundamentais da internet são **textuais, não autenticam origem e não verificam integridade**. TLS resolve confidencialidade e integridade em trânsito, mas cada protocolo tem um problema estrutural próprio que o TLS não alcança.
+- No **HTTP**, os cabeçalhos de resposta (HSTS, CSP, `nosniff`, `X-Frame-Options`, atributos de cookie) são controles baratos e sistematicamente ausentes em sistemas internos. Como o protocolo não tem estado, quem obtém o identificador de sessão **é** o usuário.
+- No **DNS**, há quatro pontos de subversão — resolvedor do host, cache do recursivo, conta no registrador e servidor autoritativo — e o DNSSEC só cobre o segundo. **DNSSEC dá integridade, não confidencialidade**; DoT e DoH dão confidencialidade e, se forem externos, custam ao operador o seu melhor sensor.
+- O DNS é ao mesmo tempo a **fonte de detecção mais custo-eficiente** e o canal de **exfiltração** mais confiável. Os indicadores de tunelamento são reconhecíveis: rótulos longos, alta entropia, excesso de `NXDOMAIN`, uso intenso de `TXT`.
+- No **SMTP** existem dois remetentes, e só o exibido chega ao usuário. SPF verifica o envelope, DKIM assina o conteúdo, e apenas o **DMARC** amarra os dois ao `From:` exibido e publica a política. **`p=none` não protege nenhuma mensagem** — é ponto de partida, não de chegada. Contra domínio parecido, a defesa é processo, não protocolo.
+- **SNMP v1 e v2c entregam o mapa da infraestrutura** a quem souber a *community* — que é `public` na fábrica, trafega em claro e ainda serve de amplificador. SNMPv3 com `authPriv`, lista de acesso e nunca exposto à internet.
+- O **inventário de protocolos** é o exercício mais revelador e menos praticado. Trata-se por consequência: administração em claro, autenticação em claro, amplificadores abertos, e só então o resto.
