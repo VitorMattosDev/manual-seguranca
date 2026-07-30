@@ -45,7 +45,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 024** - Autenticação multifator e fatores de autenticação - `vol04/cap024-autenticacao-multifator-e-fatores-de.qmd`
 - [x] **cap 025** - Federação de identidade: SAML, OAuth 2.0 e OpenID Connect - `vol04/cap025-federacao-de-identidade-saml-oauth-2-0-e.qmd`
 - [x] **cap 026** - Gestão de identidades e de acessos privilegiados (IAM e PAM) - `vol04/cap026-gestao-de-identidades-e-de-acessos.qmd`
-- [ ] **cap 027** - Arquitetura Zero Trust - `vol04/cap027-arquitetura-zero-trust.qmd`
+- [x] **cap 027** - Arquitetura Zero Trust - `vol04/cap027-arquitetura-zero-trust.qmd`
 
 ## Fase 2 — Segurança Aplicada
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (26 concluidos).
+**Total:** 107 capitulos em 16 volumes (27 concluidos).
 
