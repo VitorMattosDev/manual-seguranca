@@ -2,7 +2,7 @@
 
 Livro aberto em português do Brasil cobrindo segurança da informação do básico ao avançado: **107 capítulos, 16 volumes, 5 fases**.
 
-📖 Leia em: `https://vitormattosdev.github.io/manual-seguranca-informacao/`
+📖 Leia em: `https://vitormattosdev.github.io/manual-seguranca/`
 
 ## Estrutura
 

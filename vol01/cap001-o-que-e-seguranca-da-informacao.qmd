@@ -1,3 +1,306 @@
 # O que é segurança da informação {#sec-cap001}
 
-*(em elaboracao)*
+Numa terça-feira de março, às 6h40, o técnico de plantão de um provedor regional atende o primeiro chamado do dia: um assinante não consegue emitir a segunda via da fatura. Às 7h10 são doze chamados. Às 7h30 fica claro que o problema não é o portal de faturas — é o sistema de gestão inteiro, o ERP que emite boleto, controla contrato e guarda o cadastro de quatro mil assinantes. A tela de login abre. A senha do administrador não é aceita. No servidor, os arquivos do banco de dados continuam todos lá, com uma extensão nova grudada no fim. Na raiz do disco há um arquivo de texto com um endereço de carteira de criptomoeda e um prazo.
+
+Vale olhar primeiro o que **não** falhou naquela manhã. O link de saída estava perfeito, com 6 ms de latência para o PTT. Nenhum alarme do monitoramento disparou, porque o monitoramento vigiava latência, perda de pacote, potência óptica e temperatura de rack — e os quatro estavam normais. O firewall de borda seguia bloqueando exatamente aquilo que alguém havia configurado para bloquear, sem errar um pacote. Toda a infraestrutura funcionou conforme especificada. E a empresa parou por seis dias.
+
+O caminho, reconstruído depois, foi banal. Uma conta de VPN criada dois anos antes para um consultor, com senha reaproveitada de outro serviço que havia vazado, sem segundo fator. De dentro da VPN, uma porta de área de trabalho remota alcançável e uma conta de administrador local repetindo a mesma senha em três servidores. O backup existia — em um compartilhamento de rede montado permanentemente como unidade `Z:` no próprio servidor do ERP, e por isso foi cifrado junto.
+
+No mesmo mês, essa empresa teve outros dois incidentes que ninguém chamou de incidente. Um notebook do comercial foi furtado de dentro de um carro, com uma planilha de 1.200 assinantes — nome, CPF, endereço, telefone — em disco sem cifragem. E um técnico desligado em janeiro seguiu com acesso administrativo à OLT por 40 dias, porque o desligamento passou pelo RH e pela folha, mas não por ninguém que soubesse quais credenciais aquela pessoa carregava.
+
+Os três episódios são incidentes de segurança da informação. Nenhum dos três se resolve comprando um equipamento. É desse desconforto que a disciplina nasce.
+
+## Uma definição de trabalho
+
+A norma ISO/IEC 27000 define segurança da informação como a **preservação da confidencialidade, da integridade e da disponibilidade da informação** [@iso27000]. É uma frase curta e bem mais densa do que parece.
+
+*Preservação* implica continuidade: não é estado que se alcança e se declara, é algo que se mantém contra uma tendência natural de degradação. *Informação* — não servidor, não rede, não software. E as três propriedades, que o próximo capítulo abre em detalhe:
+
+- **Confidencialidade** — a informação só é acessível a quem tem direito a ela.
+- **Integridade** — a informação está correta e completa, e alterações não autorizadas são impedidas ou, no mínimo, detectáveis.
+- **Disponibilidade** — quem tem direito à informação a alcança quando precisa.
+
+Os três pilares são necessários, mas não bastam: uma transação bancária exige também que a origem seja comprovadamente quem afirma ser (autenticidade) e que depois não possa negar tê-la feito (não repúdio) — assunto do capítulo seguinte ao próximo.
+
+A definição operacional que este manual carrega é esta:
+
+> Segurança da informação é o conjunto de decisões — técnicas, organizacionais e humanas — que mantém a informação disponível para quem tem direito a ela, íntegra para quem depende dela e inalcançável para quem não deveria chegar até ela, dentro de um custo que a organização consegue sustentar de forma contínua.
+
+A última cláusula é a que separa segurança de teatro de segurança: um controle que a empresa não consegue pagar, operar e manter por três anos não é controle, é linha de relatório.
+
+Vale notar desde já que os três pilares **entram em conflito entre si**. Cifrar o backup protege a confidencialidade e cria um risco novo de disponibilidade: chave perdida significa backup inútil. Exigir troca de senha a cada 30 dias parece reforçar o controle de acesso e, na prática, produz `Verao2026!` escrito num post-it colado no monitor da recepção. Segurança da informação é, em boa medida, escolher esses tradeoffs conscientemente em vez de tropeçar neles.
+
+## Dado, informação e ativo: o que exatamente se protege
+
+`10.20.0.42` é um dado. "Endereço de gerência da OLT do distrito de Santa Rita, acessível apenas pela VLAN 900" é informação: o dado mais o contexto que o torna útil — e, no mesmo movimento, útil para um atacante.
+
+**Ativo** é qualquer coisa que tenha valor para a organização, e separá-los em dois níveis é prático:
+
+- **Ativos primários** — a informação em si e os processos de negócio que dependem dela. O cadastro de assinantes. A base de contratos. A capacidade de faturar no dia 5.
+- **Ativos de suporte** — o que sustenta os primários: hardware, software, rede, instalações, e as pessoas. O servidor do ERP, a fibra do backbone, a torre de rádio, o técnico que sabe reconfigurar a OLT.
+
+A inversão que a disciplina propõe é esta: o objeto de proteção é o ativo primário, mas os controles quase sempre se aplicam aos de suporte. Ninguém cifra "o cadastro de assinantes" em abstrato — cifra-se o disco, restringe-se a conta, segmenta-se a VLAN.
+
+E a informação não fica parada: percorre um ciclo, e cada etapa tem controles próprios (@fig-ciclo-vida-informacao).
+
+::: {#fig-ciclo-vida-informacao}
+```{.tikz}
+%%| filename: ciclo-vida-informacao
+%%| alt: Diagrama circular com as seis etapas do ciclo de vida da informação — criação, transmissão, armazenamento, uso, arquivamento e descarte — em torno das três propriedades a preservar
+\begin{tikzpicture}[font=\footnotesize]
+  \node[align=center] (c) at (0,0)
+    {\bfseries Informação\\[2pt]\scriptsize confidencialidade\\\scriptsize integridade\\\scriptsize disponibilidade};
+  \foreach \idx/\ang/\txt in {1/90/Criação, 2/30/Transmissão, 3/-30/Armazenamento,
+                              4/-90/Uso, 5/-150/Arquivamento, 6/150/Descarte}{
+    \node[draw=manualblue, thick, fill=manualblue!8, rounded corners=3pt,
+          align=center, inner sep=4pt, minimum width=2.4cm, minimum height=0.7cm]
+          (n\idx) at (\ang:3.5) {\txt};
+  }
+  \foreach \a/\b in {1/2, 2/3, 3/4, 4/5, 5/6, 6/1}{
+    \draw[vetor, manualgray] (n\a) to[bend left=16] (n\b);
+  }
+\end{tikzpicture}
+```
+O ciclo de vida da informação. Um controle que só cobre uma etapa deixa as outras cinco expostas.
+:::
+
+O descarte é a etapa esquecida com mais frequência, e a que produz vazamentos mais silenciosos: o disco do servidor trocado por defeito que vai para o ferro-velho com o banco de dados legível; o roteador de borda vendido em marketplace com a configuração completa da rede, incluindo chaves de BGP. Nenhum desses casos tem atacante, exploração ou malware. Todos são falhas de confidencialidade.
+
+## Segurança não é um estado, é um processo
+
+A frase é de Bruce Schneier e virou clichê justamente porque resolve uma confusão persistente [@schneier2000]. Segurança absoluta é alcançável: desliga-se o equipamento, retira-se o disco, lacra-se num cofre. O sistema fica perfeitamente seguro e perfeitamente inútil. Todo sistema real opera num ponto intermediário, e o nome desse ponto é **risco residual**.
+
+O que a disciplina persegue não é risco zero, é risco residual *conhecido e aceito conscientemente* — decidido por quem tem autoridade, documentado e revisitado. A diferença entre uma empresa madura e uma imprudente raramente está no número de controles: está em saber, ou não saber, o que ficou descoberto.
+
+Existe uma razão econômica para isso, esboçada em @fig-custo-controle-risco.
+
+::: {#fig-custo-controle-risco}
+```{.tikz}
+%%| filename: custo-controle-risco
+%%| alt: Gráfico com o custo dos controles subindo linearmente, a perda esperada por incidentes caindo, e a soma das duas curvas formando um mínimo intermediário
+\begin{tikzpicture}[font=\footnotesize]
+\begin{axis}[
+  width=12cm, height=7.2cm,
+  axis lines=left,
+  xlabel={Investimento em controles},
+  ylabel={Custo anual},
+  xmin=0.7, xmax=10, ymin=0, ymax=14,
+  xtick=\empty, ytick=\empty,
+  legend style={at={(0.97,0.97)}, anchor=north east, draw=manualgray, font=\scriptsize},
+  legend cell align=left,
+]
+\addplot[manualblue, very thick, domain=0.9:10, samples=80]{x};
+\addlegendentry{custo dos controles}
+\addplot[manualred, very thick, domain=0.9:10, samples=200]{11/x};
+\addlegendentry{perda esperada por incidentes}
+\addplot[manualgreen, very thick, dashed, domain=0.9:10, samples=300]{x + 11/x};
+\addlegendentry{custo total}
+\addplot[only marks, mark=*, mark size=1.8pt, black, forget plot]
+  coordinates {(3.317, 6.633)};
+\draw[auxiliar] (axis cs:3.317,0) -- (axis cs:3.317,6.633);
+\node[anchor=west, align=left, font=\scriptsize] at (axis cs:3.7,8.4)
+  {ponto de menor custo total:\\risco residual que se aceita};
+\end{axis}
+\end{tikzpicture}
+```
+A lógica econômica do controle. Passado certo ponto, cada real gasto em segurança compra menos redução de perda esperada do que custa.
+:::
+
+O gráfico é uma idealização didática: na vida real não se conhecem os valores das curvas com precisão, e é por isso que existe gestão de risco como método — tema do sexto capítulo deste volume. O que importa é a *forma*: há um ponto além do qual gastar mais destrói valor, e um ponto abaixo do qual economizar destrói a empresa.
+
+Há uma segunda razão para tratar segurança como processo: **as configurações envelhecem**. Um servidor perfeitamente endurecido em 2023 acumula, até 2026, bibliotecas com falhas conhecidas, cifras que deixaram de ser aceitáveis e regras de firewall abertas "temporariamente" para um teste que ninguém fechou. Toda base de regras com cinco anos contém alguma liberação cuja justificativa ninguém sabe mais explicar, e que ninguém remove por medo de derrubar algo.
+
+## Pessoas, processos e tecnologia
+
+O incidente da abertura é um exemplo didático de por que a tecnologia isolada não fecha a conta. Vale reler o caso separando as camadas:
+
+| Camada | O que falhou |
+|---|---|
+| Tecnologia | VPN sem segundo fator, rede interna plana, senha de administrador local repetida, backup em unidade montada |
+| Processo | desligamento sem revogação de credencial, nenhuma revisão periódica de contas, backup nunca testado por restauração |
+| Pessoas | senha reaproveitada de outro serviço, conta de terceiro esquecida ativa por dois anos |
+
+: As três camadas do incidente de abertura. {#tbl-tres-camadas}
+
+Nenhuma das três falhas de processo custa dinheiro para corrigir; todas custam disciplina, que é mais escassa. E o investimento típico vai no sentido inverso — 90% do orçamento em tecnologia —, o que explica por que empresas bem equipadas continuam sendo comprometidas por caminhos elementares.
+
+## O adversário não é só o hacker
+
+A palavra "ameaça" evoca uma pessoa mal-intencionada, e essa associação estreita indevidamente o campo. Convencionalmente, separam-se três origens:
+
+**Deliberadas.** Ação intencional de um agente: fraude, extorsão por ransomware, sabotagem, espionagem, furto de equipamento.
+
+**Acidentais.** Erro humano sem intenção: o comando `DROP` no banco de produção em vez do de teste; a rota redistribuída por engano que anuncia prefixo de terceiro; o e-mail com anexo de dados pessoais enviado para a lista errada. Em volume de incidentes, esta categoria rivaliza com a primeira — e em algumas organizações a supera.
+
+**Ambientais e naturais.** Descarga atmosférica na torre de rádio que leva switch, conversor e fonte no mesmo estouro. Falta de energia de nove horas num site remoto cujo banco de baterias tem autonomia de duas. Roçadeira de trator que rompe o ramal de fibra do distrito na época da colheita. Furto de bateria de nobreak em site sem cerca — que, para quem opera rede rural, é ameaça deliberada *e* ambiental ao mesmo tempo.
+
+Para quem administra infraestrutura, essa terceira categoria é com frequência a maior fonte de horas de indisponibilidade do ano — e disponibilidade é um dos três pilares. Não é curiosidade taxonômica: o mesmo arcabouço (inventariar ativos, estimar risco, implantar controle, exercitar resposta) serve para o raio e para o ransomware. Plano de resposta que só sabe lidar com atacante é metade de um plano.
+
+## Quem ataca, e por que o pequeno também é alvo
+
+Entre os agentes deliberados, os perfis diferem tanto em capacidade quanto em motivação, e a diferença muda a defesa apropriada:
+
+- **Oportunista automatizado.** Não escolheu você. Varre faixas inteiras de endereços procurando serviço exposto com credencial padrão ou falha conhecida. É a esmagadora maioria do que se vê nos logs.
+- **Crime organizado.** Opera como negócio, com divisão de trabalho: quem obtém o acesso inicial vende para quem executa a extorsão, que aluga o programa de cifragem de um terceiro. É a economia que tornou ransomware viável contra empresas de qualquer porte.
+- **Pessoa interna.** Do funcionário insatisfeito com acesso privilegiado ao terceirizado negligente que reutiliza senha. Não precisa vencer perímetro nenhum: já está dentro.
+- **Ativismo.** Motivação ideológica, alvo escolhido pelo que representa e busca de visibilidade: pichação de site, vazamento seletivo, indisponibilidade em data simbólica.
+- **Estado-nação.** Recursos altos, paciência longa, alvo deliberadamente escolhido. Raro como adversário direto de uma empresa média — mas provedores de telecomunicações e cadeias de suprimento são alvos de interesse justamente por serem caminho para outros.
+
+Um servidor SSH recém-exposto coleta tentativas de acesso em minutos, sempre com esta cara:
+
+```text
+Mar 12 03:11:44 borda sshd[2291]: Failed password for invalid user admin from 203.0.113.47 port 51344 ssh2
+Mar 12 03:11:46 borda sshd[2293]: Failed password for invalid user ubnt from 203.0.113.47 port 51402 ssh2
+Mar 12 03:11:49 borda sshd[2295]: Invalid user support from 198.51.100.12 port 44120
+Mar 12 03:11:52 borda sshd[2297]: Failed password for root from 198.51.100.12 port 44188 ssh2
+Mar 12 03:12:03 borda sshd[2301]: Failed password for invalid user pi from 203.0.113.190 port 33012 ssh2
+```
+
+Os nomes de usuário entregam o jogo: `admin`, `ubnt`, `support` e `pi` são credenciais de fábrica de equipamentos de rede e placas embarcadas. Ninguém decidiu atacar aquele endereço — um programa varre a internet inteira, e o endereço apareceu na lista. O custo marginal de tentar em um alvo a mais é zero, e é por isso que "sou pequeno, ninguém vai me atacar" é premissa falsa por construção.
+
+Há um segundo motivo, mais específico. Uma empresa pequena que administra rede guarda dados pessoais em volume (CPF, endereço, meio de pagamento) e opera equipamentos de cliente que, tomados em massa, valem como capacidade de ataque: milhares de roteadores domésticos com credencial padrão são ativo de mercado para quem monta rede de ataque distribuído. Nessa configuração, a infraestrutura não é apenas alvo — é vetor contra os próprios assinantes.
+
+## Os princípios que sustentam qualquer defesa
+
+Em 1975, Saltzer e Schroeder publicaram oito princípios de projeto para proteção da informação [@saltzer1975]. Cinco décadas depois, com toda a tecnologia trocada, seguem sendo o melhor filtro para avaliar uma decisão de segurança:
+
+1. **Economia de mecanismo.** O desenho mais simples que resolve. Complexidade é onde erro se esconde.
+2. **Padrões à prova de falha.** Negar por padrão; permitir por exceção explícita. Se o mecanismo falhar, deve falhar fechado.
+3. **Mediação completa.** Toda requisição verificada, sempre. Atalhos de desempenho que reaproveitam decisões antigas de autorização são a origem de uma classe inteira de falhas.
+4. **Desenho aberto.** A segurança não deve depender do segredo do desenho, apenas do segredo da chave. Criptografia proprietária "secreta" é sinal de alerta, não de força.
+5. **Separação de privilégios.** Exigir mais de uma condição independente para a operação crítica — a lógica das duas chaves do cofre, e a razão de ser da autenticação em dois fatores.
+6. **Menor privilégio.** Cada sujeito com o mínimo de permissão necessário, pelo menor tempo necessário. É o princípio mais violado da lista: quase toda rede tem contas de serviço com privilégio administrativo porque "assim funciona".
+7. **Mecanismo menos comum.** Evitar compartilhar mecanismo e estado entre usuários diferentes; o que é compartilhado se torna caminho entre eles.
+8. **Aceitação psicológica.** O controle precisa ser utilizável. Controle que atrapalha o trabalho é controle burlado — e a criatividade do usuário para burlar é ilimitada.
+
+Desses princípios decorre a estratégia que organiza tudo o que vem nos volumes seguintes: **defesa em profundidade**. Nenhuma camada é considerada confiável o suficiente para ser a única, e o comprometimento de uma não deve implicar o comprometimento das demais (@fig-defesa-em-profundidade).
+
+::: {#fig-defesa-em-profundidade}
+```{.tikz}
+%%| filename: defesa-em-profundidade
+%%| alt: Cinco camadas concêntricas de proteção, da governança na borda externa até os dados no centro, atravessadas por uma seta representando um ataque
+\begin{tikzpicture}[font=\footnotesize]
+  \draw[manualgray, thick, fill=manualgray!6, rounded corners=6pt]
+    (-6.3,-4.2) rectangle (6.3,4.2);
+  \node[manualgray, anchor=north] at (0,4.05) {\strut Governança, política e cultura};
+
+  \draw[manualyellow, thick, fill=manualyellow!6, rounded corners=6pt]
+    (-5.2,-3.5) rectangle (5.2,3.5);
+  \node[manualyellow, anchor=north] at (0,3.35) {\strut Segurança física e ambiental};
+
+  \draw[manualblue, thick, fill=manualblue!6, rounded corners=6pt]
+    (-4.1,-2.8) rectangle (4.1,2.8);
+  \node[manualblue, anchor=north] at (0,2.65) {\strut Rede: segmentação, filtragem, cifragem};
+
+  \draw[manualgreen, thick, fill=manualgreen!7, rounded corners=6pt]
+    (-3.0,-2.1) rectangle (3.0,2.1);
+  \node[manualgreen, anchor=north] at (0,1.95) {\strut Sistemas, aplicações e identidade};
+
+  \draw[manualred, thick, fill=manualred!9, rounded corners=6pt]
+    (-1.9,-1.1) rectangle (1.9,1.1);
+  \node[align=center] at (0,0) {\bfseries Dados};
+
+  \draw[vetor, manualred] (-8.0,-3.2) -- (-2.0,-0.6)
+    node[midway, above, sloped, manualred, font=\scriptsize] {ataque};
+\end{tikzpicture}
+```
+Defesa em profundidade. Cada camada compra tempo e gera registro; nenhuma é suficiente sozinha.
+:::
+
+Duas ressalvas importam desde já. Camadas precisam ser **independentes**: cinco que aceitam a mesma senha de administrador são, na prática, uma. E camadas servem para *detectar*, não só para bloquear — o valor de uma camada intermediária costuma estar menos em barrar o atacante do que em produzir o registro que revela sua passagem enquanto há tempo de reagir. Assumir que o comprometimento vai acontecer e projetar para detectá-lo rápido atravessa toda a parte defensiva deste manual.
+
+## O vocabulário mínimo
+
+Segurança da informação tem vocabulário próprio, em que palavras do uso cotidiano ganham sentido técnico estrito. Confundi-las produz conversas em que ninguém está errado e ninguém se entende. A @tbl-vocabulario-minimo fixa o mínimo para seguir adiante; o quarto capítulo deste volume aprofunda cada termo.
+
+| Termo | Sentido técnico | No caso de abertura |
+|---|---|---|
+| Ativo | Aquilo que tem valor e que se quer proteger | O cadastro dos quatro mil assinantes |
+| Vulnerabilidade | Fraqueza que pode ser explorada | VPN sem segundo fator; senha repetida entre servidores |
+| Ameaça | Agente ou evento com potencial de causar dano | Grupo de extorsão que compra acesso inicial |
+| Risco | Combinação de probabilidade e impacto de a ameaça explorar a vulnerabilidade | Alta chance de parada de faturamento por vários dias |
+| Controle | Medida que reduz risco, por prevenção, detecção ou correção | Segundo fator na VPN; backup fora do alcance do servidor |
+| Evento | Qualquer ocorrência observável no ambiente | Uma autenticação falha às 3h11 |
+| Incidente | Evento, ou série de eventos, que compromete um dos pilares | A cifragem do banco de dados do ERP |
+| Superfície de ataque | Conjunto de pontos alcançáveis por um adversário | VPN, área de trabalho remota, portal do assinante |
+| Risco residual | O que permanece depois dos controles aplicados | O que se decide conviver, sabendo que existe |
+
+: Vocabulário mínimo de segurança da informação. {#tbl-vocabulario-minimo}
+
+Duas dessas distinções têm consequência operacional direta. Uma rede grande gera milhões de *eventos* por dia, e a função de um centro de operações é separar os poucos que são *incidentes*. E como não se elimina a *ameaça* — ninguém acaba com o crime organizado a partir do datacenter —, o trabalho recai sobre reduzir vulnerabilidade e impacto.
+
+## Como se sabe se está funcionando
+
+"Nunca fomos invadidos" não é evidência de segurança; costuma ser evidência de ausência de detecção — comprometimentos que duram meses sem serem percebidos são a regra, e a descoberta vem com frequência de fora: um cliente, um pesquisador, ou o próprio atacante ao pedir resgate. Medir é difícil justamente porque o resultado desejado é a não ocorrência de algo, mas alguns indicadores sobrevivem ao escrutínio:
+
+- **Tempo até detectar e tempo até conter.** Se a resposta é "não sabemos", esse é o primeiro problema a resolver.
+- **Cobertura de controle sobre inventário.** Percentual de ativos inventariados, de contas com segundo fator, de servidores corrigidos no prazo, de backups cuja restauração foi testada no trimestre. Todas dependem de existir inventário.
+- **Superfície exposta.** Quantidade de serviços administrativos alcançáveis da internet. A meta é zero, e o número é fácil de medir.
+- **Resultado de exercícios.** Restauração real a partir do backup, simulação controlada de phishing, exercício de mesa. Exercício produz dado; opinião produz sensação.
+
+Métrica que só sobe e nunca gera decisão é métrica de vaidade: contar ataques bloqueados pelo firewall mede o ruído de fundo da internet, não a qualidade da defesa. O Volume 12 retoma o assunto com o rigor devido.
+
+## ⚖️ Brasil em Foco
+
+No Brasil, segurança da informação deixou de ser boa prática e passou a ser obrigação jurídica com nome, prazo e sanção.
+
+A **Lei Geral de Proteção de Dados** (Lei 13.709/2018) é o eixo [@lgpd2018]. Seu art. 46 obriga os agentes de tratamento a adotar medidas de segurança técnicas e administrativas aptas a proteger dados pessoais — redação deliberadamente aberta, que remete ao estado da técnica e à natureza da informação, e não a uma lista fechada de produtos. O art. 48 estabelece o dever de comunicar à Autoridade Nacional de Proteção de Dados e aos titulares afetados a ocorrência de incidente de segurança que possa acarretar risco ou dano relevante. A Resolução CD/ANPD nº 15/2024 regulamentou essa comunicação, fixando prazo de três dias úteis a contar do conhecimento do incidente e definindo o conteúdo mínimo do relato [@anpd2024res15]. Na prática, a empresa precisa ser capaz de *saber* que foi comprometida, *avaliar* o alcance e *redigir* a comunicação em três dias — impossível sem registro adequado e plano prévio. No caso da abertura, a planilha do notebook furtado é tratamento de dados pessoais, e o furto é potencialmente um incidente comunicável.
+
+O **Marco Civil da Internet** (Lei 12.965/2014) trata da guarda de registros [@marcocivil2014]. O art. 13 obriga o provedor de conexão a manter registros de conexão por um ano; o art. 15 obriga o provedor de aplicações constituído como pessoa jurídica e com fins econômicos a guardar registros de acesso por seis meses. Os arts. 10 e 11 impõem sigilo e condicionam a disponibilização a ordem judicial. A leitura é dupla: o registro é obrigação e é ativo sensível — quem guarda log de conexão de milhares de pessoas custodia um alvo de valor.
+
+A **Lei 12.737/2012** inseriu no Código Penal o art. 154-A, que tipifica invadir dispositivo informático alheio para obter, adulterar ou destruir dados, ou instalar vulnerabilidade para obter vantagem ilícita [@lei12737]. As penas foram agravadas pela Lei 14.155/2021. Essa é a fronteira jurídica que sustenta a política editorial deste manual: testar sistema de terceiro sem autorização formal e por escrito é crime, ainda que a intenção seja "só verificar". O sétimo capítulo deste volume trata exclusivamente dessa fronteira.
+
+Para quem opera telecomunicações há camada regulatória adicional: a **Anatel** editou a Resolução nº 740/2020, com requisitos de segurança cibernética para produtos de telecomunicações, o que alcança diretamente as ONUs e roteadores entregues ao assinante [@anatel740]. O Volume 15 dedica um capítulo às obrigações regulatórias de provedores.
+
+No lado institucional, o **CERT.br**, mantido pelo NIC.br, é o ponto nacional de tratamento de incidentes em redes conectadas à internet no Brasil: recebe notificações, publica estatísticas e mantém material de boas práticas usado por operadores de rede. Manter contato de abuso atualizado no WHOIS do seu bloco e responder de fato a essas notificações é um dos controles mais baratos e menos praticados do país.
+
+Por fim, o **Banco Central** trata fraude como matéria de segurança regulada: instituições financeiras e de pagamento estão sujeitas a política obrigatória de segurança cibernética (Resolução CMN nº 4.893/2021), e o Pix conta com o Mecanismo Especial de Devolução para casos de fraude — o que faz da engenharia social contra o titular, e não do ataque à instituição, o vetor dominante no país. O Volume 10 volta ao tema.
+
+## 🛠️ No Campo
+
+Traduzindo tudo para a primeira semana de quem assume a responsabilidade por uma infraestrutura, na ordem em que compensa fazer:
+
+**1. Inventário, antes de qualquer controle.** Não se protege o que não se conhece, e a maior parte das surpresas está em ativo esquecido: o servidor de teste de 2019 ainda ligado com endereço público, a câmera com firmware de fábrica. Vale a varredura do próprio bloco — sua rede, sua autorização:
+
+```bash
+# Descoberta de hosts e serviços no PRÓPRIO bloco de endereços
+nmap -sS -Pn --top-ports 200 --open -oA inventario-borda 198.51.100.0/24
+
+# O que este servidor realmente escuta, e qual processo responde
+ss -tulnp | sort -k5
+
+# Contas locais com shell de login válido
+awk -F: '$7 !~ /(nologin|false)$/ {print $1, $3, $7}' /etc/passwd
+```
+
+**2. Reduzir a superfície de gerência.** Painel de administração acessível da internet é o achado mais comum e mais caro. Winbox, interface web de OLT, SNMP com comunidade `public`, Telnet, área de trabalho remota — nada disso deve estar alcançável do mundo. O padrão é VLAN de gerência separada do tráfego de assinante, alcançável apenas por VPN com segundo fator, com filtro por origem no equipamento além do filtro na borda.
+
+**3. Senhas individuais e nomeadas.** A senha compartilhada entre a equipe técnica destrói o menor privilégio e a responsabilização de uma vez: quando todos entram como `admin`, o log de auditoria não responde à única pergunta que importa depois de um incidente. Cofre de senhas da equipe, contas nomeadas e revogação como parte formal do desligamento — inclusive chaves SSH, VPN e acesso ao WhatsApp do suporte.
+
+**4. Backup que sobrevive ao próprio servidor.** O critério é implacável: o backup precisa estar fora do alcance de quem comprometeu o servidor — compartilhamento montado permanentemente não atende, cópia que a máquina de origem pode apagar não atende. E backup nunca restaurado é hipótese, não backup; a restauração de teste trimestral é o que transforma um em outro.
+
+**5. Relógio e registro.** Sem NTP consistente em todos os equipamentos, os logs não podem ser correlacionados e perdem valor tanto na investigação técnica quanto no atendimento a ordem judicial. É configuração de dez minutos com efeito permanente:
+
+```bash
+timedatectl set-ntp true
+timedatectl status | grep -E 'synchronized|NTP service'
+
+# Autenticações falhas por origem, últimas 24 h
+journalctl -u ssh --since "24 hours ago" \
+  | grep -oE 'from [0-9.]+' | sort | uniq -c | sort -rn | head
+```
+
+**6. Escrever o plano antes de precisar dele.** Uma folha por cenário, resposta a três perguntas: quem decide, a quem se avisa (interno, cliente, ANPD, delegacia), e qual é a primeira ação técnica. Faça para ransomware no sistema de gestão, para vazamento de base de assinantes e para rompimento de fibra do enlace principal. Às 3h da manhã, com o telefone tocando, ninguém improvisa bem.
+
+**7. Fechar o ciclo no descarte.** Disco que sai da empresa é apagado de forma verificável ou destruído fisicamente. Equipamento devolvido por assinante ou retirado de operação volta a padrão de fábrica antes de ir para o estoque, para venda ou para doação.
+
+Nenhum dos sete itens exige orçamento significativo; todos exigem que alguém seja nomeado responsável — e essa nomeação, mais do que qualquer aquisição, é o que dá início a um programa de segurança.
+
+## Resumo
+
+- Segurança da informação é a **preservação contínua** de confidencialidade, integridade e disponibilidade: processo que se mantém, não estado que se compra. As três propriedades conflitam entre si, e escolher os tradeoffs conscientemente é parte do trabalho.
+- O que se protege é a **informação**; servidores, links e equipamentos são ativos de suporte, e é neles que os controles se aplicam — em todo o ciclo de vida, inclusive no descarte, a etapa mais esquecida.
+- Ameaça não é sinônimo de atacante: falhas **acidentais** e eventos **ambientais** produzem incidentes de disponibilidade em volume, e cabem no mesmo arcabouço de gestão de risco.
+- A maior parte do que se vê nos logs é **varredura automatizada e indiscriminada** — o que invalida a premissa de que porte pequeno confere proteção. Além de alvo, uma infraestrutura mal protegida se torna vetor contra os próprios clientes.
+- Os oito princípios de Saltzer e Schroeder, com meio século de idade, seguem sendo o melhor filtro para avaliar decisões; deles decorre a **defesa em profundidade**, com camadas independentes que bloqueiam e também produzem registro.
+- No Brasil, o dever de segurança é jurídico: LGPD (arts. 46 e 48) com prazo de três dias úteis para comunicar incidente relevante, Marco Civil para guarda de registros, Lei 12.737/2012 tipificando o acesso não autorizado, mais camada setorial de Anatel e Banco Central.

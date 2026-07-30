@@ -51,7 +51,7 @@ Este manual é material educacional com orientação defensiva. Técnicas ofensi
 
 Na prática, isso significa: explicamos mecanismos, usamos ferramentas públicas e consagradas em laboratório isolado, e mostramos as contramedidas correspondentes. Não publicamos exploits armados, payloads prontos para uso, nem código de malware funcional.
 
-Testar sistemas sem autorização formal e por escrito é crime no Brasil (Lei 12.737/2012, art. 154-A do Código Penal). O Volume 9 trata escopo e autorização como pré-requisito, não como formalidade. Monte seu laboratório (Capítulo 13) e pratique apenas nele ou em plataformas que autorizam explicitamente.
+Testar sistemas sem autorização formal e por escrito é crime no Brasil (Lei 12.737/2012, art. 154-A do Código Penal). O Volume 9 trata escopo e autorização como pré-requisito, não como formalidade. Monte seu laboratório (Capítulo 14) e pratique apenas nele ou em plataformas que autorizam explicitamente.
 :::
 
 ## Licença {.unnumbered}

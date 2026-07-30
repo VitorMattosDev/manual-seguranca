@@ -12,7 +12,7 @@ book:
   date-format: "DD/MM/YYYY"
   language: pt
   search: true
-  repo-url: https://github.com/VitorMattosDev/manual-seguranca-informacao
+  repo-url: https://github.com/VitorMattosDev/manual-seguranca
   repo-actions: [edit, issue]
   downloads: [pdf]
   sidebar:

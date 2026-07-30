@@ -6,3 +6,6 @@
 *.pdf.tmp
 .DS_Store
 Thumbs.db
+__pycache__/
+
+**/*.quarto_ipynb
