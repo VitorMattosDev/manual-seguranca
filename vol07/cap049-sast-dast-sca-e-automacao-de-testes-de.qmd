@@ -1,0 +1,3 @@
+# SAST, DAST, SCA e automação de testes de segurança {#sec-cap049}
+
+*(em elaboracao)*

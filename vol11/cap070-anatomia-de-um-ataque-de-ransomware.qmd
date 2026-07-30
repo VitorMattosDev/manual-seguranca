@@ -1,0 +1,3 @@
+# Anatomia de um ataque de ransomware {#sec-cap070}
+
+*(em elaboracao)*

@@ -1,0 +1,3 @@
+# Criptografia de disco e proteção de dados em repouso {#sec-cap041}
+
+*(em elaboracao)*

@@ -1,0 +1,3 @@
+# Logging: o que registrar, por quanto tempo e por quê {#sec-cap076}
+
+*(em elaboracao)*

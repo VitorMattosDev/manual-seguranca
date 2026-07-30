@@ -1,0 +1,3 @@
+# Escrita de regras de detecção com Sigma e YARA {#sec-cap078}
+
+*(em elaboracao)*

@@ -1,0 +1,3 @@
+# Segurança de DNS: ataques, DNSSEC e DoH {#sec-cap032}
+
+*(em elaboracao)*

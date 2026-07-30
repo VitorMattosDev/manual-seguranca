@@ -1,0 +1,3 @@
+# Alta disponibilidade e resiliência de infraestrutura {#sec-cap092}
+
+*(em elaboracao)*

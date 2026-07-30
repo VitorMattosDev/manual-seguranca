@@ -1,0 +1,3 @@
+# Falhas de controle de acesso: IDOR, SSRF e escalonamento {#sec-cap047}
+
+*(em elaboracao)*

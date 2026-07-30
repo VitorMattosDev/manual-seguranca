@@ -1,0 +1,231 @@
+project:
+  type: book
+  output-dir: _book
+
+lang: pt
+
+book:
+  title: "Manual de Segurança da Informação"
+  subtitle: "Do básico ao avançado — fundamentos, ataque, defesa e governança"
+  author: "Vitor Mattos"
+  date: today
+  date-format: "DD/MM/YYYY"
+  language: pt
+  search: true
+  repo-url: https://github.com/VitorMattosDev/manual-seguranca-informacao
+  repo-actions: [edit, issue]
+  downloads: [pdf]
+  sidebar:
+    style: docked
+    collapse-level: 1
+  page-footer:
+    left: "Manual de Segurança da Informação"
+    right: "Licença CC BY-SA 4.0"
+  chapters:
+    - index.qmd
+    # ===== Fase 1 — Fundamentos =====
+    - part: |
+        Volume 1 — Fundamentos da Segurança da Informação
+      chapters:
+        - vol01/cap001-o-que-e-seguranca-da-informacao.qmd
+        - vol01/cap002-os-pilares-confidencialidade-integridade-e.qmd
+        - vol01/cap003-autenticidade-nao-repudio-e-responsabilizacao.qmd
+        - vol01/cap004-ativos-ameacas-vulnerabilidades-e-risco.qmd
+        - vol01/cap005-modelagem-de-ameacas-stride-arvores-de-ataque.qmd
+        - vol01/cap006-gestao-de-risco-analise-qualitativa-e.qmd
+        - vol01/cap007-etica-legalidade-e-a-fronteira-do-escopo.qmd
+    - part: |
+        Volume 2 — Redes e Sistemas: a Base Técnica
+      chapters:
+        - vol02/cap008-a-pilha-tcp-ip-sob-a-otica-do-atacante-e-do.qmd
+        - vol02/cap009-enderecamento-roteamento-e-nat.qmd
+        - vol02/cap010-protocolos-de-aplicacao-e-seus-riscos-http.qmd
+        - vol02/cap011-fundamentos-de-sistemas-operacionais.qmd
+        - vol02/cap012-linux-essencial-para-seguranca.qmd
+        - vol02/cap013-windows-e-active-directory-essencial.qmd
+        - vol02/cap014-virtualizacao-e-montagem-do-laboratorio-de.qmd
+    - part: |
+        Volume 3 — Criptografia Aplicada
+      chapters:
+        - vol03/cap015-historia-e-principios-da-criptografia.qmd
+        - vol03/cap016-criptografia-simetrica-aes-modos-de-operacao.qmd
+        - vol03/cap017-funcoes-hash-hmac-e-integridade.qmd
+        - vol03/cap018-criptografia-assimetrica-rsa-diffie-hellman-e.qmd
+        - vol03/cap019-pki-certificados-digitais-e-cadeias-de.qmd
+        - vol03/cap020-tls-na-pratica-handshake-versoes-e.qmd
+        - vol03/cap021-erros-classicos-criptografia-mal-empregada.qmd
+    - part: |
+        Volume 4 — Identidade, Autenticação e Controle de Acesso
+      chapters:
+        - vol04/cap022-modelos-de-controle-de-acesso-dac-mac-rbac-e.qmd
+        - vol04/cap023-senhas-armazenamento-politicas-e-ataques.qmd
+        - vol04/cap024-autenticacao-multifator-e-fatores-de.qmd
+        - vol04/cap025-federacao-de-identidade-saml-oauth-2-0-e.qmd
+        - vol04/cap026-gestao-de-identidades-e-de-acessos.qmd
+        - vol04/cap027-arquitetura-zero-trust.qmd
+    # ===== Fase 2 — Segurança Aplicada =====
+    - part: |
+        Volume 5 — Segurança de Redes
+      chapters:
+        - vol05/cap028-arquitetura-segura-e-segmentacao-de-redes.qmd
+        - vol05/cap029-firewalls-tipos-politicas-e-boas-praticas.qmd
+        - vol05/cap030-vpns-ipsec-wireguard-e-acesso-remoto-seguro.qmd
+        - vol05/cap031-ids-ips-e-deteccao-em-rede.qmd
+        - vol05/cap032-seguranca-de-dns-ataques-dnssec-e-doh.qmd
+        - vol05/cap033-seguranca-do-roteamento-e-bgp-sequestros.qmd
+        - vol05/cap034-seguranca-em-redes-sem-fio-e-enlaces-de-radio.qmd
+        - vol05/cap035-ataques-de-negacao-de-servico-e-estrategias.qmd
+    - part: |
+        Volume 6 — Endpoints e Sistemas Operacionais
+      chapters:
+        - vol06/cap036-hardening-de-servidores-linux.qmd
+        - vol06/cap037-hardening-de-windows-e-active-directory.qmd
+        - vol06/cap038-antivirus-edr-e-xdr.qmd
+        - vol06/cap039-gestao-de-vulnerabilidades-e-ciclo-de-patches.qmd
+        - vol06/cap040-seguranca-de-dispositivos-moveis-e-byod.qmd
+        - vol06/cap041-criptografia-de-disco-e-protecao-de-dados-em.qmd
+    - part: |
+        Volume 7 — Segurança de Aplicações
+      chapters:
+        - vol07/cap042-ciclo-de-desenvolvimento-seguro-e-devsecops.qmd
+        - vol07/cap043-owasp-top-10-panorama-e-como-usar.qmd
+        - vol07/cap044-injecao-sql-nosql-e-comandos-de-sistema.qmd
+        - vol07/cap045-cross-site-scripting-e-ataques-no-lado-do.qmd
+        - vol07/cap046-falhas-de-autenticacao-e-gestao-de-sessao.qmd
+        - vol07/cap047-falhas-de-controle-de-acesso-idor-ssrf-e.qmd
+        - vol07/cap048-seguranca-de-apis-rest-e-graphql.qmd
+        - vol07/cap049-sast-dast-sca-e-automacao-de-testes-de.qmd
+    - part: |
+        Volume 8 — Nuvem e Contêineres
+      chapters:
+        - vol08/cap050-modelo-de-responsabilidade-compartilhada.qmd
+        - vol08/cap051-iam-em-nuvem-e-os-erros-de-configuracao-mais.qmd
+        - vol08/cap052-seguranca-de-conteineres-e-de-imagens.qmd
+        - vol08/cap053-seguranca-em-kubernetes.qmd
+        - vol08/cap054-infraestrutura-como-codigo-e-seguranca-de.qmd
+        - vol08/cap055-segredos-cofres-e-gestao-de-chaves.qmd
+    # ===== Fase 3 — Perspectiva Ofensiva =====
+    - part: |
+        Volume 9 — Testes de Invasão
+      chapters:
+        - vol09/cap056-metodologias-e-definicao-de-escopo-ptes.qmd
+        - vol09/cap057-reconhecimento-passivo-e-osint.qmd
+        - vol09/cap058-varredura-e-enumeracao.qmd
+        - vol09/cap059-analise-de-vulnerabilidades.qmd
+        - vol09/cap060-exploracao-conceitos-e-anatomia-de-uma-falha.qmd
+        - vol09/cap061-pos-exploracao-persistencia-e-movimentacao.qmd
+        - vol09/cap062-teste-de-invasao-em-aplicacoes-web-na-pratica.qmd
+        - vol09/cap063-relatorio-tecnico-e-comunicacao-de-achados.qmd
+    - part: |
+        Volume 10 — Fator Humano
+      chapters:
+        - vol10/cap064-engenharia-social-os-principios-psicologicos.qmd
+        - vol10/cap065-phishing-spear-phishing-e-fraude-do-e-mail.qmd
+        - vol10/cap066-fraudes-digitais-no-brasil-pix-clonagem-e.qmd
+        - vol10/cap067-seguranca-fisica-e-ataques-presenciais.qmd
+        - vol10/cap068-cultura-de-seguranca-e-programas-de.qmd
+    - part: |
+        Volume 11 — Malware e Inteligência de Ameaças
+      chapters:
+        - vol11/cap069-taxonomia-de-malware.qmd
+        - vol11/cap070-anatomia-de-um-ataque-de-ransomware.qmd
+        - vol11/cap071-analise-estatica-em-laboratorio.qmd
+        - vol11/cap072-analise-dinamica-e-sandboxing.qmd
+        - vol11/cap073-mitre-att-ck-e-o-mapeamento-de-ttps.qmd
+        - vol11/cap074-inteligencia-de-ameacas-e-indicadores-de.qmd
+    # ===== Fase 4 — Perspectiva Defensiva =====
+    - part: |
+        Volume 12 — Blue Team, SOC e Detecção
+      chapters:
+        - vol12/cap075-estrutura-e-operacao-de-um-soc.qmd
+        - vol12/cap076-logging-o-que-registrar-por-quanto-tempo-e.qmd
+        - vol12/cap077-siem-arquitetura-ingestao-e-correlacao.qmd
+        - vol12/cap078-escrita-de-regras-de-deteccao-com-sigma-e-yara.qmd
+        - vol12/cap079-threat-hunting-cacando-o-que-a-regra-nao-pegou.qmd
+        - vol12/cap080-deception-honeypots-honeytokens-e-canarios.qmd
+        - vol12/cap081-metricas-e-maturidade-da-deteccao.qmd
+    - part: |
+        Volume 13 — Resposta a Incidentes e Forense Digital
+      chapters:
+        - vol13/cap082-o-ciclo-de-resposta-a-incidentes.qmd
+        - vol13/cap083-preparacao-plano-papeis-e-playbooks.qmd
+        - vol13/cap084-contencao-erradicacao-e-recuperacao.qmd
+        - vol13/cap085-fundamentos-de-forense-digital-e-cadeia-de.qmd
+        - vol13/cap086-forense-de-disco-e-sistemas-de-arquivos.qmd
+        - vol13/cap087-forense-de-memoria.qmd
+        - vol13/cap088-forense-de-rede-e-analise-de-trafego.qmd
+    - part: |
+        Volume 14 — Continuidade e Resiliência
+      chapters:
+        - vol14/cap089-backup-estrategias-e-a-regra-3-2-1-1-0.qmd
+        - vol14/cap090-recuperacao-de-desastres-e-continuidade-de.qmd
+        - vol14/cap091-testes-de-continuidade-e-exercicios-de-mesa.qmd
+        - vol14/cap092-alta-disponibilidade-e-resiliencia-de.qmd
+        - vol14/cap093-recuperacao-apos-um-ataque-de-ransomware.qmd
+    # ===== Fase 5 — Governança e Fronteira =====
+    - part: |
+        Volume 15 — Governança, Risco e Conformidade
+      chapters:
+        - vol15/cap094-governanca-de-seguranca-e-o-papel-do-ciso.qmd
+        - vol15/cap095-iso-iec-27001-e-27002.qmd
+        - vol15/cap096-nist-cybersecurity-framework-e-cis-controls.qmd
+        - vol15/cap097-lgpd-na-pratica-bases-legais-incidentes-e-a.qmd
+        - vol15/cap098-marco-civil-lei-12-737-e-o-direito-penal.qmd
+        - vol15/cap099-obrigacoes-regulatorias-de-provedores-de.qmd
+        - vol15/cap100-pci-dss-e-requisitos-setoriais.qmd
+        - vol15/cap101-auditoria-conformidade-e-gestao-de-riscos-de.qmd
+    - part: |
+        Volume 16 — Fronteira e Carreira
+      chapters:
+        - vol16/cap102-seguranca-de-sistemas-de-ia-e-modelos-de.qmd
+        - vol16/cap103-criptografia-pos-quantica.qmd
+        - vol16/cap104-seguranca-de-ot-iot-e-sistemas-embarcados.qmd
+        - vol16/cap105-seguranca-da-cadeia-de-suprimentos-de-software.qmd
+        - vol16/cap106-privacidade-anonimato-e-vigilancia.qmd
+        - vol16/cap107-carreira-certificacoes-e-aprendizado-continuo.qmd
+    - referencias.qmd
+
+bibliography: referencias.bib
+csl: associacao-brasileira-de-normas-tecnicas.csl
+
+crossref:
+  chapters: true
+
+filters:
+  - tikz
+  - quarto
+
+tikz:
+  svg-engine: dvisvgm
+  cache: true
+
+format:
+  html:
+    theme: [cosmo, styles.css]
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    code-overflow: wrap
+    highlight-style: github
+    link-external-newwindow: true
+    fig-align: center
+  pdf:
+    documentclass: scrbook
+    papersize: a4
+    geometry:
+      - top=25mm
+      - bottom=25mm
+      - left=25mm
+      - right=25mm
+    toc-depth: 2
+    number-sections: true
+    colorlinks: true
+    include-in-header:
+      text: |
+        \usepackage{fvextra}
+        \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+
+execute:
+  freeze: auto
+  echo: true
+  warning: false

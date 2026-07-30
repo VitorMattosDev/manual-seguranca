@@ -1,0 +1,3 @@
+# Threat hunting: caçando o que a regra não pegou {#sec-cap079}
+
+*(em elaboracao)*

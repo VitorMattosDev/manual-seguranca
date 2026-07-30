@@ -1,0 +1,3 @@
+# Gestão de identidades e de acessos privilegiados (IAM e PAM) {#sec-cap026}
+
+*(em elaboracao)*

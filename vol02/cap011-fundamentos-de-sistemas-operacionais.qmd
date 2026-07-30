@@ -1,0 +1,3 @@
+# Fundamentos de sistemas operacionais: processos, permissões e memória {#sec-cap011}
+
+*(em elaboracao)*

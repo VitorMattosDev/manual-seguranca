@@ -1,0 +1,3 @@
+# Erros clássicos: criptografia mal empregada {#sec-cap021}
+
+*(em elaboracao)*

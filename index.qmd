@@ -1,0 +1,59 @@
+# Apresentação {.unnumbered}
+
+Este manual cobre segurança da informação do básico ao avançado, em português, com foco em construir entendimento real em vez de decorar siglas. Ele nasce da premissa de que segurança não é uma disciplina isolada: é a consequência de entender profundamente como redes, sistemas operacionais, criptografia e pessoas realmente funcionam — e onde essas engrenagens se desencaixam.
+
+São **107 capítulos** distribuídos em **16 volumes** e **5 fases**, escritos para serem lidos em sequência por quem está começando, e consultados por assunto por quem já atua na área.
+
+## Para quem é este manual {.unnumbered}
+
+- Quem está entrando na área e quer uma trilha ordenada em vez de tutoriais soltos
+- Profissionais de infraestrutura e redes que precisam incorporar segurança ao dia a dia
+- Desenvolvedores que querem entender as falhas que produzem sem perceber
+- Estudantes preparando-se para certificações (Security+, CEH, CISSP, OSCP) que precisam da base conceitual antes do material de prova
+
+Não é preciso conhecimento prévio de segurança. É preciso, sim, disposição para acompanhar os fundamentos técnicos do Volume 2 antes de correr para as partes mais chamativas.
+
+## Como o manual está organizado {.unnumbered}
+
+```{mermaid}
+%%| fig-cap: "Dependências entre as fases do manual"
+flowchart TD
+    F1["<b>Fase 1</b><br/>Fundamentos<br/><i>Vol. 1–4</i>"] --> F2["<b>Fase 2</b><br/>Segurança Aplicada<br/><i>Vol. 5–8</i>"]
+    F2 --> F3["<b>Fase 3</b><br/>Perspectiva Ofensiva<br/><i>Vol. 9–11</i>"]
+    F2 --> F4["<b>Fase 4</b><br/>Perspectiva Defensiva<br/><i>Vol. 12–14</i>"]
+    F3 --> F4
+    F3 --> F5["<b>Fase 5</b><br/>Governança e Fronteira<br/><i>Vol. 15–16</i>"]
+    F4 --> F5
+```
+
+A **Fase 1** estabelece o vocabulário e a base técnica: o que é risco, como funcionam redes e sistemas, criptografia e controle de acesso. A **Fase 2** aplica isso aos domínios concretos — redes, endpoints, aplicações e nuvem. As fases **3** e **4** apresentam os dois lados da mesma moeda: como se ataca e como se detecta e responde. A **Fase 5** fecha com governança, conformidade brasileira e os temas de fronteira.
+
+Ataque e defesa aparecem nesta ordem por um motivo pedagógico: não se detecta o que não se compreende. Mas as duas fases são complementares, não sequenciais — quem só quer defender pode ler a Fase 4 antes da 3, aceitando algumas referências para frente.
+
+## Seções fixas de cada capítulo {.unnumbered}
+
+Todo capítulo traz duas seções obrigatórias ao final:
+
+::: {.callout-note appearance="simple"}
+**⚖️ Brasil em Foco** — como o tema se conecta à legislação e às instituições brasileiras: LGPD e ANPD, Marco Civil, Lei 12.737, Anatel, CERT.br, Gov.br, Banco Central e Pix.
+:::
+
+::: {.callout-tip appearance="simple"}
+**🛠️ No Campo** — a tradução do conceito para a operação real de infraestrutura: o que muda no dia a dia de quem administra rede, servidores e clientes.
+:::
+
+## Política editorial {.unnumbered}
+
+::: {.callout-important}
+## Escopo, ética e legalidade
+
+Este manual é material educacional com orientação defensiva. Técnicas ofensivas são apresentadas para que se possa **entender, detectar e mitigar** ataques — nunca como receita operacional.
+
+Na prática, isso significa: explicamos mecanismos, usamos ferramentas públicas e consagradas em laboratório isolado, e mostramos as contramedidas correspondentes. Não publicamos exploits armados, payloads prontos para uso, nem código de malware funcional.
+
+Testar sistemas sem autorização formal e por escrito é crime no Brasil (Lei 12.737/2012, art. 154-A do Código Penal). O Volume 9 trata escopo e autorização como pré-requisito, não como formalidade. Monte seu laboratório (Capítulo 13) e pratique apenas nele ou em plataformas que autorizam explicitamente.
+:::
+
+## Licença {.unnumbered}
+
+Conteúdo sob licença [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.pt-BR). Código e scripts sob licença MIT. Contribuições, correções e sugestões são bem-vindas via issues no repositório.

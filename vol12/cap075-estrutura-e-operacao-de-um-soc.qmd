@@ -1,0 +1,3 @@
+# Estrutura e operação de um SOC {#sec-cap075}
+
+*(em elaboracao)*
