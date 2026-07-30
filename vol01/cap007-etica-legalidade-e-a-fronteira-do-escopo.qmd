@@ -1,3 +1,267 @@
 # Ética, legalidade e a fronteira do escopo autorizado {#sec-cap007}
 
-*(em elaboracao)*
+Um técnico de suporte de um provedor está resolvendo um chamado de lentidão. No caminho, abre o portal de um provedor vizinho para comparar como eles apresentam o teste de velocidade. Nota que a URL da área do cliente termina em `?id=1042`. Por hábito profissional — o mesmo hábito que o @sec-cap005 elogia —, troca para `1041`. Abre a página de outra pessoa: nome, CPF, plano, endereço de instalação.
+
+O que ele faz nos próximos minutos define de que lado de uma linha ele está. Se fechar a aba e escrever um e-mail ao contato de abuso do provedor vizinho descrevendo o que viu, é um profissional agindo com responsabilidade. Se testar mais dez identificadores para "confirmar a extensão do problema", já acessou dados de dez pessoas sem autorização. Se baixar a listagem para "provar" o achado, exfiltrou base de dados pessoais de terceiro. Se publicar no grupo de WhatsApp do setor, divulgou vulnerabilidade não corrigida de um concorrente.
+
+A intenção é a mesma nos quatro casos. As consequências jurídicas não são.
+
+Este é o capítulo mais importante do volume para quem pretende trabalhar com segurança, e é o que fecha a Fase 1. Os seis anteriores ensinaram a pensar como quem ataca para defender melhor. Este trata da fronteira que torna esse conhecimento legítimo: **a autorização**.
+
+## A linha é jurídica, não técnica
+
+A confusão mais comum e mais cara na área é achar que a fronteira do lícito é definida pela dificuldade técnica ou pela intenção. Não é. É definida pela **autorização**, e a lei brasileira é explícita.
+
+O art. 154-A do Código Penal, inserido pela Lei 12.737/2012 e agravado pela Lei 14.155/2021, tipifica:
+
+> Invadir dispositivo informático de uso alheio, conectado ou não à rede de computadores, com o fim de obter, adulterar ou destruir dados ou informações sem autorização expressa ou tácita do titular do dispositivo ou instalar vulnerabilidades para obter vantagem ilícita.
+
+Três palavras merecem atenção. **"Invadir"** não exige violência, ferramenta sofisticada ou quebra de senha: trocar um número numa URL para acessar o que não é seu é acesso não autorizado. **"Sem autorização"** é o núcleo do tipo — a mesma ação, autorizada, é serviço profissional. E **"de uso alheio"** delimita: o dispositivo do próprio agente, ou aquele que ele foi contratado para testar, está fora.
+
+O que a lei **não** exige também importa: não exige dano, não exige lucro, não exige que os dados sejam usados. A consumação se dá com o acesso.
+
+Daí a regra prática deste manual, que vale para toda a carreira:
+
+> Se você não tem autorização por escrito de quem pode dá-la, não toque. "Só olhei" é acesso. "Não usei nada" é irrelevante. "Foi para ajudar" é atenuante, não excludente.
+
+## O mapa legal brasileiro
+
+O art. 154-A não está sozinho. A @tbl-mapa-legal reúne os dispositivos que alcançam atividade técnica em segurança da informação — e a coluna da direita é a que mais interessa, porque descreve o que transforma cada conduta em lícita.
+
+| Conduta | Enquadramento típico | O que a torna lícita |
+|---|---|---|
+| Acessar sistema de terceiro sem permissão | CP, art. 154-A (invasão de dispositivo informático) | Autorização expressa do titular, por escrito |
+| Interromper serviço de telecomunicações ou de informação de utilidade pública | CP, art. 266, §1º | Janela de manutenção acordada; teste de carga contratado |
+| Interceptar comunicação alheia | Lei 9.296/1996, art. 10 | Ordem judicial; ou ser parte da comunicação; ou rede própria com aviso prévio [@lei9296] |
+| Fraude por meio eletrônico | CP, art. 171, §2º-A (estelionato) | Nada a torna lícita |
+| Furto mediante dispositivo eletrônico | CP, art. 155, §4º-B | Nada a torna lícita |
+| Inserir dados falsos em sistema da administração pública | CP, arts. 313-A e 313-B | Nada a torna lícita |
+| Tratar dados pessoais de terceiros sem base legal | LGPD, arts. 7º e 42 (responsabilidade civil e sanção administrativa) | Base legal do art. 7º e finalidade legítima |
+| Divulgar vulnerabilidade não corrigida de terceiro | Sem tipo penal próprio; risco civil e possível concurso com 154-A | Divulgação coordenada, com prazo e consentimento |
+
+: Mapa das condutas técnicas e do que as torna lícitas no direito brasileiro. {#tbl-mapa-legal}
+
+Quatro observações completam o quadro.
+
+**As penas foram agravadas em 2021.** A Lei 14.155/2021 elevou a pena do art. 154-A para reclusão de 1 a 4 anos e multa, com aumento se houver obtenção de conteúdo de comunicações privadas, segredos comerciais ou controle remoto do dispositivo — e majorantes adicionais quando praticado contra idoso ou vulnerável [@lei14155]. O estelionato eletrônico do art. 171, §2º-A tem reclusão de 4 a 8 anos.
+
+**A ação penal.** O art. 154-B condiciona a persecução, em regra, a representação da vítima — procede-se mediante ação penal pública incondicionada apenas quando o crime é cometido contra a administração pública ou empresas concessionárias de serviços públicos. Isso significa que o provedor vizinho do caso de abertura decide se representa ou não; não significa que a conduta deixe de ser crime.
+
+**A LGPD age em paralelo.** Acessar dados pessoais de terceiro sem base legal é tratamento irregular, com responsabilidade civil (art. 42) e sanção administrativa (art. 52) independentes da esfera penal. Quem "só olhou" a fatura de outro assinante tratou dado pessoal sem base legal.
+
+**A Convenção de Budapeste está em vigor no Brasil.** O Decreto nº 11.491/2023 promulgou a Convenção sobre o Crime Cibernético [@budapeste2023], que facilita a cooperação internacional e a preservação expedita de dados. O efeito prático é direto: a fronteira nacional deixou de ser obstáculo relevante à investigação, e o argumento de que "o servidor está fora do Brasil" não protege ninguém.
+
+## Autorização: como ela é feita de verdade
+
+Autorização não é uma mensagem dizendo "pode testar". É um documento, e faltando qualquer dos elementos abaixo, a proteção que ele oferece é parcial:
+
+| Elemento | Por que é indispensável |
+|---|---|
+| **Identificação das partes** | Quem autoriza e quem executa, com CNPJ/CPF |
+| **Escopo positivo** | Lista exata de domínios, faixas de IP, aplicações, contas de teste |
+| **Escopo negativo** | O que está explicitamente fora — sistemas de terceiros, produção crítica, dados reais |
+| **Janela temporal** | Data e hora de início e fim; fora dela não há autorização |
+| **Técnicas permitidas e proibidas** | Negação de serviço, engenharia social contra funcionários, exploração destrutiva |
+| **Tratamento de dados encontrados** | Que se faz ao encontrar dado pessoal: não copiar, registrar apenas evidência mínima, apagar ao fim |
+| **Contato de emergência** | Quem atender às 3h se algo cair; e o gatilho para parar imediatamente |
+| **Sigilo e destinação do relatório** | Quem recebe, por quanto tempo se guarda, como se destrói |
+| **Assinatura de quem tem poderes** | Sócio, diretor ou procurador — não o gerente de TI que "aprovou por e-mail" |
+
+: Elementos mínimos de uma autorização de teste. {#tbl-elementos-autorizacao}
+
+Dois pontos que causam problema com frequência.
+
+**Quem assina.** A autorização precisa vir de quem pode comprometer a pessoa jurídica. O analista de TI que contrata o teste sem procuração não tem poder para autorizar acesso a dados de clientes da empresa. Verificar o contrato social ou a procuração é parte do trabalho, não formalidade.
+
+**Escopo com ativo de terceiro.** Se o alvo está hospedado em nuvem ou em datacenter de terceiro, a autorização do cliente **não alcança** a infraestrutura do provedor. Os grandes provedores de nuvem publicam políticas de teste que permitem certas atividades sem aviso prévio e proíbem outras — notadamente teste de negação de serviço. Testar fora dessas políticas viola o contrato do cliente com o provedor e pode configurar acesso não autorizado a sistema do provedor.
+
+A @fig-decisao-autorizacao condensa a decisão numa sequência que cabe na cabeça.
+
+::: {#fig-decisao-autorizacao}
+```{.tikz}
+%%| filename: decisao-autorizacao
+%%| alt: Fluxograma de decisão sobre se é permitido testar um sistema, com três perguntas encadeadas levando a autorizado ou não autorizado
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    perg/.style={draw=manualblue, thick, fill=manualblue!7, rounded corners=3pt,
+                 align=center, inner sep=5pt, minimum width=5.2cm, minimum height=1.2cm},
+    sim/.style={draw=manualgreen, very thick, fill=manualgreen!12, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=3.4cm},
+    nao/.style={draw=manualred, very thick, fill=manualred!12, rounded corners=3pt,
+                align=center, inner sep=5pt, minimum width=3.4cm},
+    seta/.style={->,>=stealth, thick, manualgray}}
+
+  \node[perg] (q1) at (0,6.0) {O sistema é seu, ou de um\\laboratório que você montou?};
+  \node[perg] (q2) at (0,3.6) {Existe autorização \textbf{por escrito}\\de quem tem poderes para dá-la?};
+  \node[perg] (q3) at (0,1.2) {O alvo está dentro do escopo,\\da janela e das técnicas permitidas?};
+  \node[perg] (q4) at (0,-1.2) {A infraestrutura de terceiros envolvida\\(nuvem, hospedagem) permite?};
+
+  \node[sim] (ok) at (0,-3.4) {\textbf{Pode testar}\\\scriptsize registrando tudo o que fizer};
+  \node[nao] (stop) at (6.8,3.6) {\textbf{Não toque}\\\scriptsize art. 154-A do CP};
+
+  \draw[seta] (q1) -- node[right, font=\scriptsize] {não} (q2);
+  \draw[seta] (q2) -- node[right, font=\scriptsize] {sim} (q3);
+  \draw[seta] (q3) -- node[right, font=\scriptsize] {sim} (q4);
+  \draw[seta] (q4) -- node[right, font=\scriptsize] {sim} (ok);
+
+  \draw[seta, manualgreen] (q1.west) -- node[above, font=\scriptsize] {sim}
+    (-4.6,6.0) |- (ok.west);
+
+  \draw[seta, manualred] (q2) -- node[above, font=\scriptsize] {não} (stop);
+  \draw[seta, manualred] (q3.east) -- node[above, font=\scriptsize] {não}
+    (4.6,1.2) -- (4.6,3.2) -- (stop.south west);
+  \draw[seta, manualred] (q4.east) -- node[above, font=\scriptsize] {não}
+    (5.4,-1.2) -- (5.4,3.0) -- (stop.south);
+\end{tikzpicture}
+```
+A decisão de testar. Qualquer "não" nas três últimas perguntas leva ao mesmo lugar.
+:::
+
+## Divulgação de vulnerabilidade
+
+Encontrada uma falha em sistema de terceiro — por acidente, como no caso de abertura, ou em pesquisa —, existe um caminho estabelecido. As normas ISO/IEC 29147 (divulgação) e 30111 (tratamento interno) descrevem o processo de ambos os lados [@iso29147; @iso30111], e a @fig-linha-divulgacao mostra a linha do tempo típica.
+
+::: {#fig-linha-divulgacao}
+```{.tikz}
+%%| filename: linha-divulgacao
+%%| alt: Linha do tempo da divulgação coordenada de vulnerabilidade, do achado à publicação, com prazos típicos e ramificações quando não há resposta
+\begin{tikzpicture}[font=\footnotesize]
+  \draw[->,>=stealth, thick] (-0.6,0) -- (14.2,0) node[right] {tempo};
+
+  \foreach \x/\dia/\lbl in {
+      0.8/{dia 0}/{achado},
+      3.4/{dia 0--2}/{contato pelo canal\\oficial, com detalhe\\mínimo para reproduzir},
+      6.4/{até dia 7}/{fornecedor confirma\\o recebimento},
+      9.4/{dia 30--60}/{correção desenvolvida\\e distribuída},
+      12.4/{dia 90}/{publicação\\coordenada}}{
+    \draw[manualgray, thick] (\x,-0.15) -- (\x,0.15);
+    \node[ponto] at (\x,0) {};
+    \node[anchor=south, manualblue, font=\scriptsize] at (\x,0.22) {\dia};
+    \node[anchor=north, align=center, font=\scriptsize] at (\x,-0.28) {\lbl};
+  }
+
+  \node[draw=manualred, thick, fill=manualred!8, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize] at (6.4,2.6)
+    {\textbf{Sem resposta em 14 dias?}\\
+     escalar para o CERT.br ou para o CSIRT do setor --- \\
+     nunca para as redes sociais};
+  \draw[destaque, manualred, ->,>=stealth] (6.4,2.0) -- (6.4,0.35);
+
+  \node[draw=manualyellow, thick, fill=manualyellow!10, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize] at (12.4,2.6)
+    {\textbf{Prazo é acordo, não ultimato}\\
+     prorrogar diante de progresso real;\\
+     antecipar se houver exploração ativa};
+  \draw[destaque, manualyellow, ->,>=stealth] (12.4,2.0) -- (12.4,0.35);
+\end{tikzpicture}
+```
+Divulgação coordenada. O prazo de 90 dias é convenção de mercado, não regra jurídica.
+:::
+
+Três posturas coexistem no mercado, e vale entender o argumento de cada uma. A **divulgação completa** publica tudo imediatamente, sob o argumento de que só a pressão pública faz fornecedores corrigirem e que defensores precisam da informação para se proteger. A **não divulgação** nunca publica, e na prática protege o fornecedor às custas dos usuários. A **divulgação coordenada** — o padrão hoje — dá ao fornecedor um prazo razoável para corrigir e então publica, com ou sem correção pronta.
+
+Cuidados que evitam transformar um ato de responsabilidade em problema:
+
+- **Não teste além do mínimo.** Um caso comprova a falha. Dez casos "para confirmar a extensão" é acesso repetido não autorizado, e o relatório não fica melhor por isso.
+- **Não copie dados.** Registre a evidência mínima — a URL, o código de resposta, uma captura com os dados tarjados. Baixar a base transforma o achado em exfiltração.
+- **Documente o que fez, quando e como.** Se houver questionamento, a diferença entre pesquisador e invasor está nesse registro.
+- **Use o canal oficial.** Procure `/.well-known/security.txt` no domínio, a página de contato de segurança, ou o contato de abuso no WHOIS do bloco. Não havendo canal, o CERT.br atua como intermediário.
+- **Não peça pagamento.** Comunicar uma falha e sugerir que o silêncio tem preço é extorsão (CP, art. 158), independentemente de como a mensagem for redigida.
+
+Uma nota importante sobre o Brasil: **não existe salvaguarda legal explícita para pesquisa de segurança**. Diferentemente da política do Departamento de Justiça norte-americano de 2022, que orienta não processar pesquisa de boa-fé, aqui a proteção do pesquisador depende de programas privados de recompensa com termos de porto seguro, ou da decisão da vítima de não representar. Reportar de boa-fé é o comportamento correto e ainda assim carrega risco jurídico residual. Quem pesquisa deve conhecer esse risco, minimizá-lo (não ir além do mínimo, documentar, usar canal oficial) e, em achados sensíveis, considerar orientação jurídica antes de fazer contato.
+
+## Bug bounty e programas de recompensa
+
+Programas de recompensa resolvem juridicamente o problema: os termos publicados **são** a autorização, com escopo, técnicas permitidas e, nos bons programas, cláusula de porto seguro comprometendo a empresa a não acionar judicialmente quem cumprir as regras.
+
+Três cuidados práticos: os termos são o limite exato — subdomínio fora da lista está fora, e "achei que estava incluído" não é defesa; testar um alvo do programa hospedado em nuvem ainda exige respeitar as políticas do provedor; e recompensa não é vínculo de trabalho, o que tem implicações fiscais para quem recebe com regularidade.
+
+## Ética profissional além da lei
+
+A lei define o mínimo. A profissão exige mais, e três situações concentram os dilemas reais.
+
+**O poder do administrador.** Quem administra sistemas pode ler o e-mail de qualquer pessoa da empresa, ver o histórico de navegação, acessar arquivos pessoais em pasta de rede. O acesso é tecnicamente possível e frequentemente autorizado *para fins específicos*. O uso além desses fins — a curiosidade sobre a conversa da colega, o interesse pelo salário do outro setor — é abuso, ainda que nenhum controle o impeça. A régua é simples: *este acesso é necessário para a tarefa que estou executando agora, e eu o registraria sem constrangimento?*
+
+**Monitoramento de funcionários.** É lícito no Brasil quando há finalidade legítima, comunicação prévia e clara aos empregados, proporcionalidade e limite ao ambiente de trabalho. Não é lícito monitorar comunicação pessoal sem ciência, instalar captura de teclas de forma oculta ou vasculhar o dispositivo pessoal de alguém. A LGPD se aplica integralmente à relação de emprego, e a base legal costuma ser o legítimo interesse — que exige teste de proporcionalidade documentado, e não sobrevive a monitoramento excessivo.
+
+**O achado incidental.** Durante um trabalho autorizado, encontra-se algo fora do escopo: indício de fraude interna, dados de outro cliente misturados, material manifestamente ilegal. A conduta correta é parar, não explorar, registrar o mínimo e comunicar imediatamente o contato definido no contrato. Diante de material de abuso infantil, a comunicação às autoridades é dever, e a preservação da evidência deve seguir orientação jurídica — não se copia, não se apaga, não se investiga por conta própria.
+
+Os códigos de ética profissional da área — o da ISC2 é o mais citado — convergem em quatro deveres: proteger a sociedade e a infraestrutura; agir com honestidade e legalidade; prestar serviço diligente e competente; e promover a profissão [@isc2ethics]. O primeiro dever, quando conflita com os interesses de um cliente específico, prevalece: é ele que sustenta a recusa em ocultar um incidente que afeta terceiros.
+
+## Onde praticar sem risco
+
+Aprender segurança ofensiva exige praticar. O caminho legítimo é abundante e gratuito:
+
+- **Laboratório próprio.** Máquinas virtuais na sua máquina, rede isolada, alvos deliberadamente vulneráveis (DVWA, Metasploitable, Juice Shop, VulnHub). É o Volume 2 que monta esse ambiente.
+- **Plataformas de treino.** Hack The Box, TryHackMe, PortSwigger Web Security Academy, PicoCTF. A autorização está nos termos de uso.
+- **Competições CTF.** Autorização explícita, alvos preparados, comunidade ativa no Brasil.
+- **Programas de recompensa**, respeitando o escopo.
+
+E, para não errar em documentação, exemplos e testes, use os identificadores reservados: `example.com`, `example.org`, e as faixas de endereços de documentação `192.0.2.0/24`, `198.51.100.0/24` e `203.0.113.0/24` (RFC 5737). Todo endereço IP que aparece neste manual vem dessas faixas, por isso mesmo.
+
+## ⚖️ Brasil em Foco
+
+O capítulo inteiro é direito brasileiro; esta seção fixa o que muda no dia a dia de quem opera infraestrutura no país.
+
+**Provedor tem obrigações que se cruzam com a ética.** O Marco Civil impõe guarda de registros (arts. 13 e 15) e, simultaneamente, sigilo (arts. 10 e 11): os dados só podem ser disponibilizados mediante ordem judicial, que precisa conter indícios do ilícito, identificação clara do usuário e período determinado [@marcocivil2014]. Entregar registro a quem pede sem ordem — inclusive a delegado, a advogado ou ao "outro provedor que também foi atacado" — é violação de sigilo, com responsabilização civil e administrativa. A conduta correta é exigir a ordem, verificar sua abrangência e responder exatamente o que foi requisitado, nem mais.
+
+**Interceptação é linha vermelha.** Capturar tráfego de assinante além do necessário para operação técnica esbarra na Lei 9.296/1996, cujo art. 10 tipifica a interceptação sem autorização judicial [@lei9296]. Coleta de metadados de fluxo para engenharia de tráfego é operação legítima; inspeção de conteúdo é outra coisa, e exige base jurídica sólida.
+
+**A LGPD alcança o profissional, não só a empresa.** O art. 42 estabelece a responsabilidade do controlador e do operador pelos danos causados; o art. 52 lista as sanções administrativas. Um prestador de serviço que trata dados do cliente é operador e responde nessa qualidade — o que torna o contrato de prestação, com cláusulas de finalidade, sigilo e devolução ou eliminação dos dados ao fim, instrumento de proteção do próprio prestador.
+
+**Sem porto seguro legal para o pesquisador.** Vale repetir por ser a diferença mais relevante em relação a outros ordenamentos: no Brasil, quem reporta de boa-fé depende da representação da vítima e dos termos de programas privados. Não existe, hoje, dispositivo que exclua a tipicidade da conduta do pesquisador. O **CERT.br** é o intermediário estabelecido para notificar quem não tem canal — o que reduz o risco de o contato direto ser lido como ameaça.
+
+**A Convenção de Budapeste mudou a cooperação.** Com o Decreto nº 11.491/2023, pedidos de preservação expedita e de cooperação internacional passaram a ter rito próprio [@budapeste2023]. Para provedores, isso significa maior volume de requisições e a necessidade de um procedimento interno definido para atendê-las corretamente — o Volume 15 detalha as obrigações regulatórias.
+
+## 🛠️ No Campo
+
+**1. Publicar um `security.txt`.** Cinco minutos de trabalho que dão a quem encontrar uma falha no seu sistema um caminho responsável para avisar — e evitam que o achado vire postagem pública. Fica em `/.well-known/security.txt`:
+
+```text
+Contact: mailto:seguranca@provedor.exemplo.br
+Contact: https://provedor.exemplo.br/seguranca
+Expires: 2027-12-31T23:59:00.000Z
+Preferred-Languages: pt-BR, en
+Policy: https://provedor.exemplo.br/politica-de-divulgacao
+Acknowledgments: https://provedor.exemplo.br/agradecimentos
+```
+
+**2. Manter o contato de abuso do bloco atualizado.** É por ali que o CERT.br e outros operadores avisam sobre máquinas comprometidas na sua rede. Contato desatualizado significa não saber que seus clientes estão participando de um ataque:
+
+```bash
+# Contato de abuso registrado para o seu ASN e para o seu bloco
+whois -h whois.registro.br AS64500 | grep -iE 'abuse|owner|responsible'
+whois -h whois.registro.br 198.51.100.0/24 | grep -iE 'abuse|nserver'
+```
+
+**3. Escrever a política de divulgação antes de precisar dela.** Uma página: como reportar, o que a empresa se compromete a fazer (confirmar em X dias úteis, corrigir em Y), o que espera de quem reporta (não acessar dados além do mínimo, não divulgar antes do prazo), e a declaração de que não acionará judicialmente quem seguir as regras. Custa uma tarde e muda inteiramente o desfecho do dia em que alguém encontrar algo.
+
+**4. Formalizar a autorização, sempre — inclusive internamente.** Vale para o teste contratado de terceiro e para a varredura da própria rede. Um documento de uma página com os elementos da @tbl-elementos-autorizacao, assinado por quem tem poderes, arquivado. A varredura do próprio bloco autorizada por escrito protege o técnico se o tráfego for questionado.
+
+**5. Registrar o uso do acesso privilegiado.** Quem administra pode tudo; o registro é o que separa poder de abuso. Sessão gravada ou ao menos registrada, revisão periódica por alguém que não seja o próprio administrador:
+
+```bash
+# Comandos executados com privilégio, por pessoa, nos últimos 7 dias
+journalctl _COMM=sudo --since "7 days ago" -o cat \
+  | grep -oP 'USER=\S+.*COMMAND=.*' | sort | uniq -c | sort -rn | head -20
+
+# Acessos a arquivos sensíveis via auditd (regra prévia necessária)
+auditctl -w /var/lib/erp/dados -p rwa -k dados-assinantes
+ausearch -k dados-assinantes --start recent | head -40
+```
+
+**6. Colocar as cláusulas certas no contrato de terceirizado.** Quem presta suporte, quem administra a rede sob contrato, quem desenvolve o portal: finalidade do acesso, dever de sigilo que sobrevive ao fim do contrato, proibição de subcontratar sem anuência, obrigação de comunicar incidente em prazo curto, devolução ou eliminação dos dados ao término, e direito de auditoria. É o mesmo conjunto que a LGPD espera na relação controlador–operador.
+
+**7. Comunicar o monitoramento aos empregados.** Política de uso aceitável assinada, com o que é monitorado, por quê e por quanto tempo se guarda. Monitoramento comunicado é lícito e eficaz; monitoramento oculto é risco trabalhista, risco sob a LGPD e destruição de confiança de uma vez só.
+
+**8. Treinar a resposta ao "encontrei uma falha em vocês".** Quem recebe a mensagem no suporte precisa saber que não deve responder com ameaça, não deve ignorar, e deve encaminhar imediatamente para o responsável definido. A reação hostil ao primeiro contato é o que transforma um aviso gratuito numa divulgação pública.
+
+## Resumo
+
+- A fronteira do lícito é a **autorização**, não a dificuldade técnica nem a intenção. O art. 154-A do Código Penal não exige dano, lucro ou uso dos dados: consuma-se com o acesso não autorizado. Trocar um número numa URL é acesso.
+- As penas foram **agravadas pela Lei 14.155/2021**, e o estelionato eletrônico (CP, art. 171, §2º-A) tem reclusão de 4 a 8 anos. Além da esfera penal, a LGPD gera responsabilidade civil e sanção administrativa autônomas.
+- Autorização é **documento**, com escopo positivo e negativo, janela temporal, técnicas permitidas, tratamento de dados encontrados, contato de emergência e assinatura de quem tem poderes. Autorização do cliente não alcança a infraestrutura de terceiros que hospeda o alvo.
+- Na **divulgação coordenada**, o essencial é não testar além do mínimo, não copiar dados, documentar tudo, usar o canal oficial e jamais condicionar o silêncio a pagamento — o que seria extorsão.
+- **O Brasil não tem salvaguarda legal para pesquisa de boa-fé.** A proteção vem de programas privados com porto seguro ou da decisão da vítima de não representar. O CERT.br é o intermediário estabelecido quando não há canal de contato.
+- A ética profissional vai além da lei em três frentes recorrentes: o **poder do administrador** (acesso possível não é acesso legítimo), o **monitoramento de empregados** (lícito com finalidade, comunicação prévia e proporcionalidade) e o **achado incidental** (parar, não explorar, comunicar).
+- Praticar é obrigatório e há caminho legítimo abundante: laboratório próprio, plataformas de treino, competições e programas de recompensa — mais as faixas de documentação da RFC 5737 para exemplos.

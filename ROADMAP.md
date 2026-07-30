@@ -16,7 +16,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 004** - Ativos, ameaças, vulnerabilidades e risco - `vol01/cap004-ativos-ameacas-vulnerabilidades-e-risco.qmd`
 - [x] **cap 005** - Modelagem de ameaças: STRIDE, árvores de ataque e abuse cases - `vol01/cap005-modelagem-de-ameacas-stride-arvores-de-ataque.qmd`
 - [x] **cap 006** - Gestão de risco: análise qualitativa e quantitativa - `vol01/cap006-gestao-de-risco-analise-qualitativa-e.qmd`
-- [ ] **cap 007** - Ética, legalidade e a fronteira do escopo autorizado - `vol01/cap007-etica-legalidade-e-a-fronteira-do-escopo.qmd`
+- [x] **cap 007** - Ética, legalidade e a fronteira do escopo autorizado - `vol01/cap007-etica-legalidade-e-a-fronteira-do-escopo.qmd`
 
 ### Volume 2 — Redes e Sistemas: a Base Técnica
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (6 concluidos).
+**Total:** 107 capitulos em 16 volumes (7 concluidos).
 
