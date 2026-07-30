@@ -36,7 +36,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 018** - Criptografia assimétrica: RSA, Diffie-Hellman e curvas elípticas - `vol03/cap018-criptografia-assimetrica-rsa-diffie-hellman-e.qmd`
 - [x] **cap 019** - PKI, certificados digitais e cadeias de confiança - `vol03/cap019-pki-certificados-digitais-e-cadeias-de.qmd`
 - [x] **cap 020** - TLS na prática: handshake, versões e configuração segura - `vol03/cap020-tls-na-pratica-handshake-versoes-e.qmd`
-- [ ] **cap 021** - Erros clássicos: criptografia mal empregada - `vol03/cap021-erros-classicos-criptografia-mal-empregada.qmd`
+- [x] **cap 021** - Erros clássicos: criptografia mal empregada - `vol03/cap021-erros-classicos-criptografia-mal-empregada.qmd`
 
 ### Volume 4 — Identidade, Autenticação e Controle de Acesso
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (20 concluidos).
+**Total:** 107 capitulos em 16 volumes (21 concluidos).
 

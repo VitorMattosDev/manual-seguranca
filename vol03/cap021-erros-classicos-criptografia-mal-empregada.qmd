@@ -1,3 +1,292 @@
 # Erros clássicos: criptografia mal empregada {#sec-cap021}
 
-*(em elaboracao)*
+Em abril de 2020, com o mundo inteiro em reuniões remotas, pesquisadores do Citizen Lab publicaram uma análise do Zoom. A empresa anunciava "criptografia de ponta a ponta" no material de marketing e na interface do produto. A análise encontrou outra coisa.
+
+O conteúdo das reuniões era protegido com AES-128 — em **modo ECB**. O mesmo modo do @sec-cap016, o mesmo que expôs 153 milhões de senhas da Adobe, o modo que preserva no texto cifrado toda a estrutura repetida do texto claro. Pior: as chaves eram geradas e distribuídas pelos **próprios servidores do Zoom**, alguns deles em Pequim, atendendo reuniões inteiramente norte-americanas. Ou seja, o operador tinha as chaves — o que, por definição, torna impossível chamar aquilo de ponta a ponta.
+
+Três erros distintos e independentes, empilhados num produto usado por centenas de milhões de pessoas: **modo de operação errado**, **custódia de chave incompatível com a promessa** e **afirmação de segurança que a arquitetura não sustentava**. Nenhum deles é um problema de matemática. Todos os três aparecem, com nomes diferentes, em auditorias de sistemas brasileiros toda semana.
+
+Este capítulo fecha o volume catalogando os erros que efetivamente acontecem. Ele é deliberadamente uma lista de verificação: cada item traz o que é, por que acontece, como detectar e como corrigir.
+
+## Onde a criptografia realmente falha
+
+Antes do catálogo, vale olhar a distribuição. A @fig-camadas-falha organiza as camadas de um sistema criptográfico pela frequência com que cada uma é a causa raiz de um incidente.
+
+::: {#fig-camadas-falha}
+```{.tikz}
+%%| filename: camadas-falha-cripto
+%%| alt: Pirâmide invertida das camadas de um sistema criptográfico, da primitiva matemática na base até a expectativa organizacional no topo, mostrando que a frequência de falha cresce nas camadas superiores
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    camada/.style={draw, very thick, rounded corners=3pt, align=center,
+                   inner sep=5pt, minimum height=1.05cm, font=\scriptsize},
+    nota/.style={align=left, font=\scriptsize, manualgray}}
+
+  \node[camada, draw=manualgreen, fill=manualgreen!12, minimum width=4.0cm] (l1) at (0,0)
+    {\textbf{Primitiva matemática}\\\scriptsize AES, SHA-256, curva P-256};
+  \node[camada, draw=manualgreen, fill=manualgreen!10, minimum width=5.6cm] (l2) at (0,1.4)
+    {\textbf{Implementação da primitiva}\\\scriptsize OpenSSL, libsodium, canal lateral};
+  \node[camada, draw=manualyellow, fill=manualyellow!12, minimum width=7.2cm] (l3) at (0,2.8)
+    {\textbf{Escolha de modo e parâmetros}\\\scriptsize ECB, IV, nonce, preenchimento, tamanho de chave};
+  \node[camada, draw=manualred, fill=manualred!10, minimum width=8.8cm] (l4) at (0,4.2)
+    {\textbf{Gestão de chaves}\\\scriptsize onde nasce, onde vive, quem acessa, quando roda};
+  \node[camada, draw=manualred, fill=manualred!13, minimum width=10.4cm] (l5) at (0,5.6)
+    {\textbf{Validação e uso no protocolo}\\\scriptsize certificado não verificado, MAC ausente, oráculo de erro};
+  \node[camada, draw=manualred, fill=manualred!16, minimum width=12.0cm] (l6) at (0,7.0)
+    {\textbf{Expectativa e escopo}\\\scriptsize ``é criptografado'' sem dizer contra o quê, promessa que a arquitetura não sustenta};
+
+  \draw[destaque, manualred, ->, >=stealth] (6.9,-0.3) -- node[nota, right, xshift=3pt]
+    {\textbf{frequência}\\\textbf{de falha}\\cresce para\\cima} (6.9,7.3);
+
+  \node[draw=manualgray, thick, fill=white, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=12.0cm] at (0,-1.9)
+    {\textbf{As duas camadas de baixo quase nunca são a causa raiz} — e são as únicas em que a maioria
+     das discussões sobre criptografia se concentra. Auditoria que só pergunta ``qual algoritmo?''
+     está examinando 5\% do problema.};
+\end{tikzpicture}
+```
+Camadas de um sistema criptográfico. Quanto mais alto, mais perto do incidente real.
+:::
+
+A leitura é desconfortável e verdadeira: **a discussão sobre qual algoritmo usar é a menos importante das que precisam ser feitas**. AES-256 numa arquitetura em que a chave está no repositório do Git é pior do que AES-128 com a chave num cofre, e a primeira configuração passa em qualquer questionário de fornecedor que pergunte apenas o nome do algoritmo.
+
+## Categoria 1 — Escolha errada de primitiva
+
+**1.1 ECB.** Já tratado no @sec-cap016 e ainda o achado mais comum. Aparece por omissão de configuração — `Cipher.getInstance("AES")` em Java seleciona ECB —, por exemplo copiado de fórum e por tutorial desatualizado. Detecta-se com `grep`; corrige-se migrando para AEAD, com uma janela de recifragem.
+
+**1.2 Hash rápido para senha.** `SHA256(senha + sal)` é rápido, e essa é exatamente a propriedade errada. Uma GPU faz dezenas de bilhões por segundo. A correção é Argon2id, scrypt ou bcrypt, com o detalhe operacional que o @sec-cap017 registrou: **não é preciso conhecer a senha para migrar**. Aplica-se a nova função sobre o resumo antigo (`argon2(sha256(senha))`), registra-se o esquema, e na próxima autenticação bem-sucedida recalcula-se do zero.
+
+**1.3 Codificação confundida com criptografia.** Base64, hexadecimal, ROT13 e "ofuscação" não são criptografia: não há chave, e a reversão é pública. O campo `encrypted_token` que decodifica com uma linha é pior que o mesmo campo em claro, porque encerra a discussão de segurança. Detectável de forma quase automática:
+
+```bash
+# Campos que parecem cifrados e decodificam em texto legivel
+echo "$VALOR" | base64 -d 2>/dev/null | strings | head
+```
+
+**1.4 Criptografia própria.** "Nosso algoritmo proprietário" é o oposto do princípio de Kerckhoffs (@sec-cap015). Inclui variantes mais sutis: XOR com chave fixa, embaralhamento de bytes, "AES modificado para nosso caso". A correção é sempre a mesma — substituir por primitiva padrão, com a nota de que a migração exige recifrar tudo o que foi protegido pelo esquema anterior, e que os dados devem ser tratados como se nunca tivessem sido protegidos.
+
+## Categoria 2 — Aleatoriedade e nonce
+
+**2.1 Gerador não criptográfico.** `Math.random()`, `rand()`, `random.random()` gerando token, senha temporária, identificador de sessão ou chave. O estado interno é reconstruível a partir de saídas observadas. Corrige-se com o CSPRNG da plataforma, e a varredura está no @sec-cap015.
+
+**2.2 Reúso de IV ou nonce.** Catastrófico em CTR e em GCM, onde permite recuperar a chave de autenticação. Causas típicas: IV fixo no código, IV derivado de dado previsível (identificador do registro, carimbo de tempo em segundos), contador reiniciado ao restaurar um instantâneo, ou o mesmo contador em duas instâncias de um serviço escalado horizontalmente. Detecção:
+
+```bash
+# IV ou nonce constante no codigo
+grep -rnE 'iv\s*=\s*["\x27][0-9a-fA-F]{16,}|nonce\s*=\s*["\x27]|IvParameterSpec\(new byte\[' \
+     --include='*.java' --include='*.py' --include='*.go' --include='*.js' .
+```
+
+A correção estrutural é usar AES-GCM-SIV onde a unicidade não puder ser garantida, ou nonce aleatório de 96 bits com contador de volume por chave.
+
+**2.3 Nonce de ECDSA.** O caso do PlayStation 3, do @sec-cap018. Corrige-se com ECDSA determinístico (RFC 6979) ou, melhor, migrando para Ed25519.
+
+**2.4 Semente previsível.** Semear um gerador com o tempo atual, com o PID ou com um valor derivado do dado. Torna a saída enumerável mesmo que o gerador seja criptográfico. CSPRNG do sistema não precisa de semente — essa é uma das razões para usá-lo.
+
+## Categoria 3 — Integridade ausente ou mal feita
+
+**3.1 Cifrar sem autenticar.** O erro conceitual mais caro, tratado no @sec-cap016. Sintoma na base de código: uso de `AES/CBC` ou `AES/CTR` sem nenhum MAC associado. Consequência: o atacante altera o texto cifrado de forma controlada e a aplicação decifra o resultado adulterado sem perceber. Correção: AEAD.
+
+**3.2 Ordem errada de MAC.** `MAC-then-Encrypt` e `Encrypt-and-MAC` são frágeis; só `Encrypt-then-MAC` com chaves separadas é seguro. Se a construção é manual, é candidata a substituição por AEAD.
+
+**3.3 Comparação de MAC com `==`.** Vaza o MAC byte a byte por temporização. A varredura e a correção estão no @sec-cap017 — e vale notar que o mesmo erro aparece em comparação de token de API, de código de recuperação e de assinatura de webhook, não só de MAC.
+
+**3.4 MAC construído por concatenação.** `H(segredo || mensagem)` sofre extensão de comprimento. Use HMAC.
+
+## Categoria 4 — Gestão de chaves
+
+Esta categoria isolada responde por mais incidentes do que todas as outras somadas.
+
+**4.1 Chave no código-fonte.** O clássico. Uma vez versionada, a chave permanece no histórico do Git para sempre, e a resposta correta é **rotacionar, não apagar o arquivo**. Serviços de varredura automatizada percorrem repositórios públicos continuamente: uma chave de nuvem exposta é explorada em minutos, não em dias.
+
+```bash
+# Chaves e segredos no historico completo, nao so na arvore atual
+git log --all -p | grep -nE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|AKIA[0-9A-Z]{16}|-----BEGIN'
+git log --all --diff-filter=A --name-only --pretty=format: \
+  | grep -E '\.(key|pem|pfx|p12|jks|env)$' | sort -u
+```
+
+**4.2 Chave guardada junto do dado cifrado.** Chave na mesma tabela, no mesmo bucket, no mesmo backup. Quem obtém o dado obtém a chave, e a cifragem vira decoração. É o padrão mais comum em "cifragem de campo" implementada às pressas para atender a uma exigência de auditoria.
+
+**4.3 Chave derivada de senha sem KDF.** `chave = SHA256("senha-da-empresa")` produz uma chave de 256 bits com a entropia de uma senha — algo entre 20 e 40 bits. Se a derivação a partir de senha for inevitável, use Argon2id ou PBKDF2 com parâmetros altos, e com sal por instalação.
+
+**4.4 Ausência de rotação e de identificador de chave.** Sistema que não previu o campo de identificador de chave no formato do texto cifrado (@sec-cap016) não consegue rotacionar sem indisponibilidade, e por isso nunca rotaciona. O erro se manifesta anos depois, no dia em que a rotação vira obrigatória.
+
+**4.5 Chave privada gerada fora do destino.** Par gerado numa estação e enviado por e-mail ou por sistema de chamados. Destrói o não repúdio (@sec-cap018), porque o controle nunca foi exclusivo, e deixa cópia em todo lugar por onde passou.
+
+**4.6 Chave sem procedimento de comprometimento.** Não é erro de código, é ausência de plano: quando a chave vaza, qual dado precisa ser recifrado, em que ordem, em quanto tempo, e quem decide. A hora de escrever isso não é durante o incidente.
+
+## Categoria 5 — Validação que não valida
+
+Este é o erro que anula tudo o que os capítulos anteriores construíram: criptografia impecável, com a pessoa errada.
+
+**5.1 Verificação de certificado desabilitada.** Aparece durante o desenvolvimento — para contornar um certificado autoassinado no ambiente de teste — e vai para produção. A varredura é a de maior retorno deste capítulo:
+
+```bash
+grep -rnE 'verify\s*=\s*False|InsecureSkipVerify\s*:\s*true|rejectUnauthorized\s*:\s*false|\
+CURLOPT_SSL_VERIFYPEER\s*,\s*(0|false)|ALLOW_ALL_HOSTNAME_VERIFIER|NSAllowsArbitraryLoads|\
+TrustAllCerts|X509TrustManager' \
+  --include='*.py' --include='*.go' --include='*.js' --include='*.ts' --include='*.java' \
+  --include='*.php' --include='*.cs' --include='*.swift' .
+
+# curl -k e wget --no-check-certificate em scripts e pipelines
+grep -rnE 'curl .*(-k|--insecure)|wget .*--no-check-certificate' \
+     --include='*.sh' --include='*.yml' --include='*.yaml' --include='Dockerfile*' .
+```
+
+Toda ocorrência é achado. A correção correta **não** é desabilitar em menos lugares: é instalar a AC interna no armazém de confiança do cliente, ou usar certificado válido no ambiente de teste — hoje trivial com ACME e validação por DNS.
+
+**5.2 Cadeia validada, nome não verificado.** Erro mais sutil: a biblioteca valida a assinatura da cadeia mas não confere se o nome pedido consta do `SubjectAltName`. Qualquer certificado válido de qualquer domínio passa. Ocorre em código que usa APIs de baixo nível de TLS e monta a verificação à mão.
+
+**5.3 Aceitar certificado autoassinado em produção.** Frequentemente justificado como "é rede interna". Rede interna é exatamente onde a movimentação lateral acontece, e o Volume 9 mostra o que se faz a partir dela. A resposta é PKI interna (@sec-cap019), não exceção.
+
+**5.4 Confiar em identidade não verificada dentro do canal.** Cabeçalho `X-User-Id` vindo de um serviço interno, ou `Subject` de certificado de cliente usado como autorização sem checagem de qual cliente pode fazer o quê. O canal está autenticado; a requisição, não.
+
+## Categoria 6 — Vazamento por canal lateral
+
+**6.1 Mensagem de erro que distingue.** A base do padding oracle (@sec-cap015). Vale para toda a família: "usuário não existe" versus "senha incorreta", "assinatura inválida" versus "carimbo expirado", "preenchimento inválido" versus "conteúdo inválido". Regra: **erro genérico para o cliente, detalhe completo no registro interno**.
+
+**6.2 Diferença de tempo.** Comparação byte a byte, decifragem que só ocorre quando o formato é válido, consulta a banco que só acontece se o usuário existir. Corrige-se com comparação em tempo constante e, onde couber, com custo uniformizado — executar a verificação de senha mesmo quando o usuário não existe.
+
+**6.3 Dado sensível em registro.** Chave, token, senha ou payload decifrado indo para o log em nível de depuração. Sobrevive por anos em sistema de agregação de logs, frequentemente com controle de acesso mais frouxo que o do banco original. É achado de auditoria recorrente e de correção barata.
+
+## Categoria 7 — Escopo e expectativa
+
+**7.1 "O banco é criptografado."** Cifragem em repouso protege contra roubo do disco e descarte de hardware. Com o sistema ligado, o dado está claro para todo processo autorizado, incluindo o invasor que obteve execução. A afirmação só tem significado acompanhada do cenário de ameaça.
+
+**7.2 Ponta a ponta que não é ponta a ponta.** Se o operador do serviço pode ler o conteúdo — porque gera, distribui ou custodia as chaves —, não é ponta a ponta, qualquer que seja o material de marketing. Foi o caso do Zoom em 2020. A pergunta que decide: **quem detém as chaves?**
+
+**7.3 Criptografia usada como substituto de autorização.** Cifrar não impede que a aplicação, com credencial legítima, devolva o registro de outro usuário. É controle de acesso, tema do Volume 4.
+
+**7.4 Conformidade confundida com segurança.** "Somos criptografados, atendemos à LGPD." Nenhuma norma exige um algoritmo específico; todas exigem adequação ao risco e ao estado da técnica. A conformidade é consequência de uma arquitetura defensável, não substituto dela.
+
+## O guia rápido de decisão
+
+A @fig-decisao-cripto condensa em uma imagem a resposta correta para as perguntas que aparecem no dia a dia.
+
+::: {#fig-decisao-cripto}
+```{.tikz}
+%%| filename: decisao-criptografia
+%%| alt: Árvore de decisão indicando qual primitiva criptográfica usar conforme o objetivo, com as escolhas corretas e os erros comuns correspondentes
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    perg/.style={draw=manualblue, very thick, fill=manualblue!10, rounded corners=4pt,
+                 align=left, inner sep=5pt, minimum width=5.4cm, minimum height=1.0cm,
+                 font=\scriptsize},
+    certo/.style={draw=manualgreen, very thick, fill=manualgreen!12, rounded corners=4pt,
+                  align=left, inner sep=5pt, minimum width=5.0cm, minimum height=1.0cm,
+                  font=\scriptsize},
+    errado/.style={draw=manualred, thick, fill=manualred!8, rounded corners=4pt,
+                   align=left, inner sep=5pt, minimum width=4.6cm, minimum height=1.0cm,
+                   font=\scriptsize}}
+
+  \node[perg]   (q1) at (0,0)    {\textbf{Preciso recuperar o dado depois?}};
+  \node[certo]  (r1) at (6.6,0)  {\textbf{Sim} $\rightarrow$ AEAD\\AES-256-GCM ou ChaCha20-Poly1305};
+  \node[errado] (e1) at (12.6,0) {Erro: ECB, CBC sem MAC};
+
+  \node[perg]   (q2) at (0,-1.9)    {\textbf{É senha de usuário?}};
+  \node[certo]  (r2) at (6.6,-1.9)  {Argon2id, scrypt ou bcrypt\\com custo medido no seu hardware};
+  \node[errado] (e2) at (12.6,-1.9) {Erro: SHA-256, MD5,\\hash sem sal};
+
+  \node[perg]   (q3) at (0,-3.8)    {\textbf{Só preciso detectar alteração?}};
+  \node[certo]  (r3) at (6.6,-3.8)  {SHA-256 (acidental)\\HMAC-SHA256 (maliciosa)};
+  \node[errado] (e3) at (12.6,-3.8) {Erro: $H(\text{segredo} \| \text{msg})$};
+
+  \node[perg]   (q4) at (0,-5.7)    {\textbf{Preciso provar autoria a terceiro?}};
+  \node[certo]  (r4) at (6.6,-5.7)  {Assinatura: Ed25519, ECDSA\\ou RSA-PSS};
+  \node[errado] (e4) at (12.6,-5.7) {Erro: MAC (chave compartilhada\\não prova a terceiro)};
+
+  \node[perg]   (q5) at (0,-7.6)    {\textbf{Preciso acordar chave em rede?}};
+  \node[certo]  (r5) at (6.6,-7.6)  {ECDHE (X25519) \textbf{mais}\\autenticação por certificado};
+  \node[errado] (e5) at (12.6,-7.6) {Erro: DH sem autenticar\\= canal seguro com o atacante};
+
+  \node[perg]   (q6) at (0,-9.5)    {\textbf{Preciso derivar várias chaves?}};
+  \node[certo]  (r6) at (6.6,-9.5)  {HKDF-SHA256, com rótulo\\de contexto por finalidade};
+  \node[errado] (e6) at (12.6,-9.5) {Erro: usar a mesma chave\\para cifrar e autenticar};
+
+  \foreach \i in {1,2,3,4,5,6} {
+    \draw[destaque, manualgreen, ->, >=stealth] (q\i) -- (r\i);
+    \draw[auxiliar, manualred, ->, >=stealth] (r\i) -- (e\i);}
+\end{tikzpicture}
+```
+Guia de decisão. A coluna da direita é o erro que corresponde a cada escolha correta.
+:::
+
+E a regra que resume o volume inteiro em uma linha: **na dúvida, use `libsodium` ou a API de alto nível da sua plataforma, e não tome nenhuma dessas decisões**.
+
+## ⚖️ Brasil em Foco
+
+**A ANPD examina adequação, e adequação se demonstra com documento datado.** Na apuração de um incidente, a autoridade avalia se as medidas eram apropriadas ao risco e ao estado da técnica (art. 46 da LGPD). Encontrar ECB, MD5 em senha ou verificação de certificado desabilitada torna a defesa insustentável — não porque a lei os proíba pelo nome, mas porque o padrão de mercado está documentado publicamente há mais de uma década. O que ajuda na defesa é o oposto do que costuma existir: registro de decisão de arquitetura com data, relatório de varredura periódica, plano de correção com prazos e evidência de execução [@lgpd2018; @anpd2024res15].
+
+**Chave vazada em repositório público é incidente de segurança, com dever de avaliação.** Encontrar credencial ou chave privada no histórico do Git não é dívida técnica: é comprometimento presumido. A conduta correta é rotacionar imediatamente, investigar o uso indevido no período de exposição e avaliar, sob os arts. 48 e 50, se houve acesso a dado pessoal — o que dispara o dever de comunicação. Apagar o arquivo e seguir em frente é a resposta errada em três dimensões: técnica, jurídica e probatória.
+
+**"Criptografado" não afasta automaticamente a comunicação de incidente.** A Resolução CD/ANPD 15/2024 orienta a avaliação de risco relevante ao titular, e cifragem adequada com chave comprovadamente não comprometida pesa a favor. Mas ECB, hash rápido de senha ou chave armazenada junto do dado não sustentam essa tese — nesses casos o dado deve ser tratado como exposto. A diferença entre comunicar e não comunicar um incidente pode se resumir a onde a chave estava [@anpd2024res15].
+
+**PCI-DSS v4 e o Pix transformam vários itens deste capítulo em reprovação objetiva.** O requisito 3 do PCI-DSS trata de proteção de dado de conta e do ciclo de vida das chaves; o requisito 4, de transmissão. No arranjo do Pix, a homologação verifica versões de TLS, suítes e autenticação mútua. São contextos em que os erros aqui catalogados não geram debate sobre razoabilidade: geram não conformidade documentada [@pcidss4; @bcb4893].
+
+**Assinatura eletrônica no Brasil depende de premissas que os erros deste capítulo destroem.** A presunção de autoria da MP 2.200-2 pressupõe controle exclusivo da chave privada pelo titular. Chave A1 copiada para três servidores, compartilhada entre a equipe do fiscal ou guardada em rede compartilhada esvazia essa premissa — e a consequência não é técnica, é a fragilidade da assinatura quando ela for contestada. Quem opera assinatura em escala precisa tratar custódia como controle jurídico, não apenas operacional [@mp2200].
+
+## 🛠️ No Campo
+
+**1. Rode a varredura completa hoje, e guarde o resultado com data.** Os sete comandos deste capítulo, num único roteiro, produzem uma linha de base útil em qualquer conversa posterior:
+
+```bash
+#!/usr/bin/env bash
+# auditoria-cripto.sh — varredura de base, para rodar no CI e trimestralmente
+set -u
+echo "== 1. ECB e modo implicito =="
+grep -rniE 'MODE_ECB|AES/ECB|aes-[0-9]+-ecb|Cipher\.getInstance\("AES"\)' --include='*.*' . || echo "  nenhum"
+echo "== 2. Verificacao de certificado desabilitada =="
+grep -rnE 'verify\s*=\s*False|InsecureSkipVerify|rejectUnauthorized\s*:\s*false|VERIFYPEER\s*,\s*0|TrustAllCerts' --include='*.*' . || echo "  nenhum"
+echo "== 3. Gerador nao criptografico =="
+grep -rnE 'Math\.random|new Random\(|random\.random\(' --include='*.*' . | grep -viE 'test|spec|mock' || echo "  nenhum"
+echo "== 4. Hash rapido em senha =="
+grep -rniE '(sha1|sha256|md5).{0,30}(senha|password|passwd|pwd)' --include='*.*' . || echo "  nenhum"
+echo "== 5. Comparacao de MAC insegura =="
+grep -rniE '(hmac|mac|signature|token|digest)\s*==' --include='*.*' . || echo "  nenhum"
+echo "== 6. IV ou nonce constante =="
+grep -rnE 'iv\s*=\s*["\x27][0-9a-fA-F]{16,}|IvParameterSpec\(new byte\[' --include='*.*' . || echo "  nenhum"
+echo "== 7. Segredo versionado (historico completo) =="
+git log --all --diff-filter=A --name-only --pretty=format: 2>/dev/null \
+  | grep -E '\.(key|pem|pfx|p12|jks|env)$' | sort -u || echo "  nenhum"
+```
+
+**2. Coloque as varreduras no pipeline, não só na auditoria anual.** Achado que aparece no *pull request* custa minutos; o mesmo achado em produção custa uma janela de manutenção e uma recifragem. Ferramentas dedicadas — `gitleaks` e `trufflehog` para segredos, `semgrep` com as regras de criptografia, `bandit` no Python — cobrem mais que o `grep` e integram bem.
+
+**3. Classifique os achados por exploração, não por quantidade.** Nem todo `md5` é o mesmo achado. A ordem de prioridade que funciona:
+
+| Prioridade | Achado | Por quê |
+|---|---|---|
+| Crítica | Chave ou credencial versionada | Comprometimento presumido, exploração em minutos |
+| Crítica | Verificação de certificado desabilitada em produção | Anula todo o resto |
+| Alta | ECB, ou cifragem sem autenticação | Vazamento estrutural |
+| Alta | Hash rápido em senha | Base vazada equivale a senhas expostas |
+| Alta | Nonce ou IV reutilizado em CTR/GCM | Perda de confidencialidade e de autenticidade |
+| Média | Comparação de MAC não constante | Explorável, exige acesso e volume |
+| Média | TLS 1.0/1.1 ainda aceito | Exige adversário posicionado |
+| Baixa | MD5 em verificação de download | Depende de propriedade não quebrada |
+
+: Priorização de achados criptográficos. {#tbl-prioridade-achados}
+
+**4. Escreva a política de criptografia em uma página.** Algoritmos aprovados por finalidade, tamanhos mínimos, onde as chaves vivem, período de rotação, o que fazer em caso de comprometimento, e a data da próxima revisão. Uma página que existe vale mais que trinta que ninguém lê — e é o documento que a ANPD, o auditor de PCI e o cliente corporativo pedem, nessa ordem.
+
+**5. Faça o exercício de comprometimento de chave antes de precisar dele.** Escolher uma chave de produção não crítica, simular o vazamento e executar o procedimento inteiro: rotação, recifragem, invalidação de sessões, comunicação. Cronometrar. O número que sair é o seu tempo real de resposta, e ele costuma ser várias vezes maior que o estimado.
+
+**6. Padronize por biblioteca, não por documento.** Em vez de um guia dizendo como usar AES corretamente, exponha uma biblioteca interna com duas funções — `cifrar(dado, contexto)` e `decifrar(pacote, contexto)` — que já embutem AEAD, nonce, identificador de chave e versão de formato. É a aplicação do princípio do @sec-cap016 em escala organizacional: **remover a decisão é mais eficaz que documentá-la**.
+
+**7. Reavalie anualmente, com data marcada.** O inventário de algoritmos do @sec-cap015, a validade dos certificados do @sec-cap019 e os parâmetros de custo do Argon2 do @sec-cap017 envelhecem. Uma revisão anual agendada é o que impede a descoberta acidental de SHA-1 em produção durante uma auditoria — e é o insumo do inventário que a migração pós-quântica vai exigir.
+
+**8. Ao avaliar qualquer produto ou fornecedor, pergunte pelas camadas de cima.** Não "qual algoritmo vocês usam", mas: onde a chave é gerada, quem tem acesso a ela, com que frequência roda, o que acontece se vazar, e — quando houver promessa de ponta a ponta — quem detém as chaves. As respostas a essas cinco perguntas discriminam fornecedores muito melhor que o nome do algoritmo, que todos acertam.
+
+## Resumo
+
+- **A criptografia falha nas camadas de cima.** Primitiva e implementação quase nunca são a causa raiz; gestão de chaves, validação e expectativa são. Auditoria que só pergunta "qual algoritmo?" examina uma fração mínima do problema.
+- **Escolha de primitiva:** ECB não tem uso legítimo, hash rápido não guarda senha, codificação não é criptografia, e algoritmo próprio é o oposto do princípio de Kerckhoffs.
+- **Aleatoriedade e nonce:** gerador de propósito geral fora de caminho criptográfico, nonce único sem exceção, e ECDSA determinístico ou Ed25519 onde houver assinatura.
+- **Integridade:** cifrar sem autenticar é erro de projeto; MAC comparado com `==` vaza byte a byte; `H(segredo || mensagem)` não é MAC.
+- **Gestão de chaves responde por mais incidentes que todas as outras categorias somadas.** Chave versionada é comprometimento presumido — rotacionar, não apagar. Chave junto do dado cifrado torna a cifragem decorativa. Sem identificador de chave no formato, não há rotação possível.
+- **Validação desabilitada anula tudo.** `verify=False`, `InsecureSkipVerify`, `curl -k` em pipeline: cada ocorrência é achado, e a correção é AC interna no armazém de confiança, não exceção no código.
+- **Canal lateral:** erro genérico para o cliente e detalhe no registro interno; comparação em tempo constante; nada de dado sensível em log de depuração.
+- **Escopo:** "é criptografado" só significa algo com o cenário de ameaça junto; ponta a ponta se define por quem detém as chaves; e criptografia não substitui autorização.
+- O **guia de decisão** resolve a maioria dos casos, e a regra que o resume é não decidir: usar `libsodium` ou a API de alto nível da plataforma.
+- No Brasil, os erros deste capítulo têm efeito jurídico direto: comprometem a defesa de adequação perante a ANPD, geram não conformidade objetiva em PCI-DSS e na homologação do Pix, e esvaziam a presunção de autoria da assinatura ICP-Brasil quando destroem o controle exclusivo da chave privada.
