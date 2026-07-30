@@ -1,0 +1,1381 @@
+[
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Manual de Segurança da Informação",
+    "section": "",
+    "text": "Apresentação\nEste manual cobre segurança da informação do básico ao avançado, em português, com foco em construir entendimento real em vez de decorar siglas. Ele nasce da premissa de que segurança não é uma disciplina isolada: é a consequência de entender profundamente como redes, sistemas operacionais, criptografia e pessoas realmente funcionam — e onde essas engrenagens se desencaixam.\nSão 107 capítulos distribuídos em 16 volumes e 5 fases, escritos para serem lidos em sequência por quem está começando, e consultados por assunto por quem já atua na área.",
+    "crumbs": [
+      "Apresentação"
+    ]
+  },
+  {
+    "objectID": "index.html#para-quem-é-este-manual",
+    "href": "index.html#para-quem-é-este-manual",
+    "title": "Manual de Segurança da Informação",
+    "section": "Para quem é este manual",
+    "text": "Para quem é este manual\n\nQuem está entrando na área e quer uma trilha ordenada em vez de tutoriais soltos\nProfissionais de infraestrutura e redes que precisam incorporar segurança ao dia a dia\nDesenvolvedores que querem entender as falhas que produzem sem perceber\nEstudantes preparando-se para certificações (Security+, CEH, CISSP, OSCP) que precisam da base conceitual antes do material de prova\n\nNão é preciso conhecimento prévio de segurança. É preciso, sim, disposição para acompanhar os fundamentos técnicos do Volume 2 antes de correr para as partes mais chamativas.",
+    "crumbs": [
+      "Apresentação"
+    ]
+  },
+  {
+    "objectID": "index.html#como-o-manual-está-organizado",
+    "href": "index.html#como-o-manual-está-organizado",
+    "title": "Manual de Segurança da Informação",
+    "section": "Como o manual está organizado",
+    "text": "Como o manual está organizado\n\nflowchart TD\n    F1[\"&lt;b&gt;Fase 1&lt;/b&gt;&lt;br/&gt;Fundamentos&lt;br/&gt;&lt;i&gt;Vol. 1–4&lt;/i&gt;\"] --&gt; F2[\"&lt;b&gt;Fase 2&lt;/b&gt;&lt;br/&gt;Segurança Aplicada&lt;br/&gt;&lt;i&gt;Vol. 5–8&lt;/i&gt;\"]\n    F2 --&gt; F3[\"&lt;b&gt;Fase 3&lt;/b&gt;&lt;br/&gt;Perspectiva Ofensiva&lt;br/&gt;&lt;i&gt;Vol. 9–11&lt;/i&gt;\"]\n    F2 --&gt; F4[\"&lt;b&gt;Fase 4&lt;/b&gt;&lt;br/&gt;Perspectiva Defensiva&lt;br/&gt;&lt;i&gt;Vol. 12–14&lt;/i&gt;\"]\n    F3 --&gt; F4\n    F3 --&gt; F5[\"&lt;b&gt;Fase 5&lt;/b&gt;&lt;br/&gt;Governança e Fronteira&lt;br/&gt;&lt;i&gt;Vol. 15–16&lt;/i&gt;\"]\n    F4 --&gt; F5\n\n\n\n\nflowchart TD\n    F1[\"&lt;b&gt;Fase 1&lt;/b&gt;&lt;br/&gt;Fundamentos&lt;br/&gt;&lt;i&gt;Vol. 1–4&lt;/i&gt;\"] --&gt; F2[\"&lt;b&gt;Fase 2&lt;/b&gt;&lt;br/&gt;Segurança Aplicada&lt;br/&gt;&lt;i&gt;Vol. 5–8&lt;/i&gt;\"]\n    F2 --&gt; F3[\"&lt;b&gt;Fase 3&lt;/b&gt;&lt;br/&gt;Perspectiva Ofensiva&lt;br/&gt;&lt;i&gt;Vol. 9–11&lt;/i&gt;\"]\n    F2 --&gt; F4[\"&lt;b&gt;Fase 4&lt;/b&gt;&lt;br/&gt;Perspectiva Defensiva&lt;br/&gt;&lt;i&gt;Vol. 12–14&lt;/i&gt;\"]\n    F3 --&gt; F4\n    F3 --&gt; F5[\"&lt;b&gt;Fase 5&lt;/b&gt;&lt;br/&gt;Governança e Fronteira&lt;br/&gt;&lt;i&gt;Vol. 15–16&lt;/i&gt;\"]\n    F4 --&gt; F5\n\n\n Dependências entre as fases do manual \n\n\n\nA Fase 1 estabelece o vocabulário e a base técnica: o que é risco, como funcionam redes e sistemas, criptografia e controle de acesso. A Fase 2 aplica isso aos domínios concretos — redes, endpoints, aplicações e nuvem. As fases 3 e 4 apresentam os dois lados da mesma moeda: como se ataca e como se detecta e responde. A Fase 5 fecha com governança, conformidade brasileira e os temas de fronteira.\nAtaque e defesa aparecem nesta ordem por um motivo pedagógico: não se detecta o que não se compreende. Mas as duas fases são complementares, não sequenciais — quem só quer defender pode ler a Fase 4 antes da 3, aceitando algumas referências para frente.",
+    "crumbs": [
+      "Apresentação"
+    ]
+  },
+  {
+    "objectID": "index.html#seções-fixas-de-cada-capítulo",
+    "href": "index.html#seções-fixas-de-cada-capítulo",
+    "title": "Manual de Segurança da Informação",
+    "section": "Seções fixas de cada capítulo",
+    "text": "Seções fixas de cada capítulo\nTodo capítulo traz duas seções obrigatórias ao final:\n\n\n\n\n\n\n⚖️ Brasil em Foco — como o tema se conecta à legislação e às instituições brasileiras: LGPD e ANPD, Marco Civil, Lei 12.737, Anatel, CERT.br, Gov.br, Banco Central e Pix.\n\n\n\n\n\n\n\n\n\n🛠️ No Campo — a tradução do conceito para a operação real de infraestrutura: o que muda no dia a dia de quem administra rede, servidores e clientes.",
+    "crumbs": [
+      "Apresentação"
+    ]
+  },
+  {
+    "objectID": "index.html#política-editorial",
+    "href": "index.html#política-editorial",
+    "title": "Manual de Segurança da Informação",
+    "section": "Política editorial",
+    "text": "Política editorial\n\n\n\n\n\n\nImportanteEscopo, ética e legalidade\n\n\n\nEste manual é material educacional com orientação defensiva. Técnicas ofensivas são apresentadas para que se possa entender, detectar e mitigar ataques — nunca como receita operacional.\nNa prática, isso significa: explicamos mecanismos, usamos ferramentas públicas e consagradas em laboratório isolado, e mostramos as contramedidas correspondentes. Não publicamos exploits armados, payloads prontos para uso, nem código de malware funcional.\nTestar sistemas sem autorização formal e por escrito é crime no Brasil (Lei 12.737/2012, art. 154-A do Código Penal). O Volume 9 trata escopo e autorização como pré-requisito, não como formalidade. Monte seu laboratório (Capítulo 14) e pratique apenas nele ou em plataformas que autorizam explicitamente.",
+    "crumbs": [
+      "Apresentação"
+    ]
+  },
+  {
+    "objectID": "index.html#licença",
+    "href": "index.html#licença",
+    "title": "Manual de Segurança da Informação",
+    "section": "Licença",
+    "text": "Licença\nConteúdo sob licença CC BY-SA 4.0. Código e scripts sob licença MIT. Contribuições, correções e sugestões são bem-vindas via issues no repositório.",
+    "crumbs": [
+      "Apresentação"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html",
+    "title": "1  O que é segurança da informação",
+    "section": "",
+    "text": "1.1 Uma definição de trabalho\nNuma terça-feira de março, às 6h40, o técnico de plantão de um provedor regional atende o primeiro chamado do dia: um assinante não consegue emitir a segunda via da fatura. Às 7h10 são doze chamados. Às 7h30 fica claro que o problema não é o portal de faturas — é o sistema de gestão inteiro, o ERP que emite boleto, controla contrato e guarda o cadastro de quatro mil assinantes. A tela de login abre. A senha do administrador não é aceita. No servidor, os arquivos do banco de dados continuam todos lá, com uma extensão nova grudada no fim. Na raiz do disco há um arquivo de texto com um endereço de carteira de criptomoeda e um prazo.\nVale olhar primeiro o que não falhou naquela manhã. O link de saída estava perfeito, com 6 ms de latência para o PTT. Nenhum alarme do monitoramento disparou, porque o monitoramento vigiava latência, perda de pacote, potência óptica e temperatura de rack — e os quatro estavam normais. O firewall de borda seguia bloqueando exatamente aquilo que alguém havia configurado para bloquear, sem errar um pacote. Toda a infraestrutura funcionou conforme especificada. E a empresa parou por seis dias.\nO caminho, reconstruído depois, foi banal. Uma conta de VPN criada dois anos antes para um consultor, com senha reaproveitada de outro serviço que havia vazado, sem segundo fator. De dentro da VPN, uma porta de área de trabalho remota alcançável e uma conta de administrador local repetindo a mesma senha em três servidores. O backup existia — em um compartilhamento de rede montado permanentemente como unidade Z: no próprio servidor do ERP, e por isso foi cifrado junto.\nNo mesmo mês, essa empresa teve outros dois incidentes que ninguém chamou de incidente. Um notebook do comercial foi furtado de dentro de um carro, com uma planilha de 1.200 assinantes — nome, CPF, endereço, telefone — em disco sem cifragem. E um técnico desligado em janeiro seguiu com acesso administrativo à OLT por 40 dias, porque o desligamento passou pelo RH e pela folha, mas não por ninguém que soubesse quais credenciais aquela pessoa carregava.\nOs três episódios são incidentes de segurança da informação. Nenhum dos três se resolve comprando um equipamento. É desse desconforto que a disciplina nasce.\nA norma ISO/IEC 27000 define segurança da informação como a preservação da confidencialidade, da integridade e da disponibilidade da informação (International Organization for Standardization, 2018). É uma frase curta e bem mais densa do que parece.\nPreservação implica continuidade: não é estado que se alcança e se declara, é algo que se mantém contra uma tendência natural de degradação. Informação — não servidor, não rede, não software. E as três propriedades, que o próximo capítulo abre em detalhe:\nOs três pilares são necessários, mas não bastam: uma transação bancária exige também que a origem seja comprovadamente quem afirma ser (autenticidade) e que depois não possa negar tê-la feito (não repúdio) — assunto do capítulo seguinte ao próximo.\nA definição operacional que este manual carrega é esta:\nA última cláusula é a que separa segurança de teatro de segurança: um controle que a empresa não consegue pagar, operar e manter por três anos não é controle, é linha de relatório.\nVale notar desde já que os três pilares entram em conflito entre si. Cifrar o backup protege a confidencialidade e cria um risco novo de disponibilidade: chave perdida significa backup inútil. Exigir troca de senha a cada 30 dias parece reforçar o controle de acesso e, na prática, produz Verao2026! escrito num post-it colado no monitor da recepção. Segurança da informação é, em boa medida, escolher esses tradeoffs conscientemente em vez de tropeçar neles.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#uma-definição-de-trabalho",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#uma-definição-de-trabalho",
+    "title": "1  O que é segurança da informação",
+    "section": "",
+    "text": "Confidencialidade — a informação só é acessível a quem tem direito a ela.\nIntegridade — a informação está correta e completa, e alterações não autorizadas são impedidas ou, no mínimo, detectáveis.\nDisponibilidade — quem tem direito à informação a alcança quando precisa.\n\n\n\n\nSegurança da informação é o conjunto de decisões — técnicas, organizacionais e humanas — que mantém a informação disponível para quem tem direito a ela, íntegra para quem depende dela e inalcançável para quem não deveria chegar até ela, dentro de um custo que a organização consegue sustentar de forma contínua.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#dado-informação-e-ativo-o-que-exatamente-se-protege",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#dado-informação-e-ativo-o-que-exatamente-se-protege",
+    "title": "1  O que é segurança da informação",
+    "section": "1.2 Dado, informação e ativo: o que exatamente se protege",
+    "text": "1.2 Dado, informação e ativo: o que exatamente se protege\n10.20.0.42 é um dado. “Endereço de gerência da OLT do distrito de Santa Rita, acessível apenas pela VLAN 900” é informação: o dado mais o contexto que o torna útil — e, no mesmo movimento, útil para um atacante.\nAtivo é qualquer coisa que tenha valor para a organização, e separá-los em dois níveis é prático:\n\nAtivos primários — a informação em si e os processos de negócio que dependem dela. O cadastro de assinantes. A base de contratos. A capacidade de faturar no dia 5.\nAtivos de suporte — o que sustenta os primários: hardware, software, rede, instalações, e as pessoas. O servidor do ERP, a fibra do backbone, a torre de rádio, o técnico que sabe reconfigurar a OLT.\n\nA inversão que a disciplina propõe é esta: o objeto de proteção é o ativo primário, mas os controles quase sempre se aplicam aos de suporte. Ninguém cifra “o cadastro de assinantes” em abstrato — cifra-se o disco, restringe-se a conta, segmenta-se a VLAN.\nE a informação não fica parada: percorre um ciclo, e cada etapa tem controles próprios (Figura 1.1).\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigura 1.1: O ciclo de vida da informação. Um controle que só cobre uma etapa deixa as outras cinco expostas.\n\n\n\nO descarte é a etapa esquecida com mais frequência, e a que produz vazamentos mais silenciosos: o disco do servidor trocado por defeito que vai para o ferro-velho com o banco de dados legível; o roteador de borda vendido em marketplace com a configuração completa da rede, incluindo chaves de BGP. Nenhum desses casos tem atacante, exploração ou malware. Todos são falhas de confidencialidade.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#segurança-não-é-um-estado-é-um-processo",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#segurança-não-é-um-estado-é-um-processo",
+    "title": "1  O que é segurança da informação",
+    "section": "1.3 Segurança não é um estado, é um processo",
+    "text": "1.3 Segurança não é um estado, é um processo\nA frase é de Bruce Schneier e virou clichê justamente porque resolve uma confusão persistente (Schneier, 2000). Segurança absoluta é alcançável: desliga-se o equipamento, retira-se o disco, lacra-se num cofre. O sistema fica perfeitamente seguro e perfeitamente inútil. Todo sistema real opera num ponto intermediário, e o nome desse ponto é risco residual.\nO que a disciplina persegue não é risco zero, é risco residual conhecido e aceito conscientemente — decidido por quem tem autoridade, documentado e revisitado. A diferença entre uma empresa madura e uma imprudente raramente está no número de controles: está em saber, ou não saber, o que ficou descoberto.\nExiste uma razão econômica para isso, esboçada em Figura 1.2.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n \n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigura 1.2: A lógica econômica do controle. Passado certo ponto, cada real gasto em segurança compra menos redução de perda esperada do que custa.\n\n\n\nO gráfico é uma idealização didática: na vida real não se conhecem os valores das curvas com precisão, e é por isso que existe gestão de risco como método — tema do sexto capítulo deste volume. O que importa é a forma: há um ponto além do qual gastar mais destrói valor, e um ponto abaixo do qual economizar destrói a empresa.\nHá uma segunda razão para tratar segurança como processo: as configurações envelhecem. Um servidor perfeitamente endurecido em 2023 acumula, até 2026, bibliotecas com falhas conhecidas, cifras que deixaram de ser aceitáveis e regras de firewall abertas “temporariamente” para um teste que ninguém fechou. Toda base de regras com cinco anos contém alguma liberação cuja justificativa ninguém sabe mais explicar, e que ninguém remove por medo de derrubar algo.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#pessoas-processos-e-tecnologia",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#pessoas-processos-e-tecnologia",
+    "title": "1  O que é segurança da informação",
+    "section": "1.4 Pessoas, processos e tecnologia",
+    "text": "1.4 Pessoas, processos e tecnologia\nO incidente da abertura é um exemplo didático de por que a tecnologia isolada não fecha a conta. Vale reler o caso separando as camadas:\n\n\n\nTabela 1.1: As três camadas do incidente de abertura.\n\n\n\n\n\n\n\n\n\nCamada\nO que falhou\n\n\n\n\nTecnologia\nVPN sem segundo fator, rede interna plana, senha de administrador local repetida, backup em unidade montada\n\n\nProcesso\ndesligamento sem revogação de credencial, nenhuma revisão periódica de contas, backup nunca testado por restauração\n\n\nPessoas\nsenha reaproveitada de outro serviço, conta de terceiro esquecida ativa por dois anos\n\n\n\n\n\n\nNenhuma das três falhas de processo custa dinheiro para corrigir; todas custam disciplina, que é mais escassa. E o investimento típico vai no sentido inverso — 90% do orçamento em tecnologia —, o que explica por que empresas bem equipadas continuam sendo comprometidas por caminhos elementares.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#o-adversário-não-é-só-o-hacker",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#o-adversário-não-é-só-o-hacker",
+    "title": "1  O que é segurança da informação",
+    "section": "1.5 O adversário não é só o hacker",
+    "text": "1.5 O adversário não é só o hacker\nA palavra “ameaça” evoca uma pessoa mal-intencionada, e essa associação estreita indevidamente o campo. Convencionalmente, separam-se três origens:\nDeliberadas. Ação intencional de um agente: fraude, extorsão por ransomware, sabotagem, espionagem, furto de equipamento.\nAcidentais. Erro humano sem intenção: o comando DROP no banco de produção em vez do de teste; a rota redistribuída por engano que anuncia prefixo de terceiro; o e-mail com anexo de dados pessoais enviado para a lista errada. Em volume de incidentes, esta categoria rivaliza com a primeira — e em algumas organizações a supera.\nAmbientais e naturais. Descarga atmosférica na torre de rádio que leva switch, conversor e fonte no mesmo estouro. Falta de energia de nove horas num site remoto cujo banco de baterias tem autonomia de duas. Roçadeira de trator que rompe o ramal de fibra do distrito na época da colheita. Furto de bateria de nobreak em site sem cerca — que, para quem opera rede rural, é ameaça deliberada e ambiental ao mesmo tempo.\nPara quem administra infraestrutura, essa terceira categoria é com frequência a maior fonte de horas de indisponibilidade do ano — e disponibilidade é um dos três pilares. Não é curiosidade taxonômica: o mesmo arcabouço (inventariar ativos, estimar risco, implantar controle, exercitar resposta) serve para o raio e para o ransomware. Plano de resposta que só sabe lidar com atacante é metade de um plano.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#quem-ataca-e-por-que-o-pequeno-também-é-alvo",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#quem-ataca-e-por-que-o-pequeno-também-é-alvo",
+    "title": "1  O que é segurança da informação",
+    "section": "1.6 Quem ataca, e por que o pequeno também é alvo",
+    "text": "1.6 Quem ataca, e por que o pequeno também é alvo\nEntre os agentes deliberados, os perfis diferem tanto em capacidade quanto em motivação, e a diferença muda a defesa apropriada:\n\nOportunista automatizado. Não escolheu você. Varre faixas inteiras de endereços procurando serviço exposto com credencial padrão ou falha conhecida. É a esmagadora maioria do que se vê nos logs.\nCrime organizado. Opera como negócio, com divisão de trabalho: quem obtém o acesso inicial vende para quem executa a extorsão, que aluga o programa de cifragem de um terceiro. É a economia que tornou ransomware viável contra empresas de qualquer porte.\nPessoa interna. Do funcionário insatisfeito com acesso privilegiado ao terceirizado negligente que reutiliza senha. Não precisa vencer perímetro nenhum: já está dentro.\nAtivismo. Motivação ideológica, alvo escolhido pelo que representa e busca de visibilidade: pichação de site, vazamento seletivo, indisponibilidade em data simbólica.\nEstado-nação. Recursos altos, paciência longa, alvo deliberadamente escolhido. Raro como adversário direto de uma empresa média — mas provedores de telecomunicações e cadeias de suprimento são alvos de interesse justamente por serem caminho para outros.\n\nUm servidor SSH recém-exposto coleta tentativas de acesso em minutos, sempre com esta cara:\nMar 12 03:11:44 borda sshd[2291]: Failed password for invalid user admin from 203.0.113.47 port 51344 ssh2\nMar 12 03:11:46 borda sshd[2293]: Failed password for invalid user ubnt from 203.0.113.47 port 51402 ssh2\nMar 12 03:11:49 borda sshd[2295]: Invalid user support from 198.51.100.12 port 44120\nMar 12 03:11:52 borda sshd[2297]: Failed password for root from 198.51.100.12 port 44188 ssh2\nMar 12 03:12:03 borda sshd[2301]: Failed password for invalid user pi from 203.0.113.190 port 33012 ssh2\nOs nomes de usuário entregam o jogo: admin, ubnt, support e pi são credenciais de fábrica de equipamentos de rede e placas embarcadas. Ninguém decidiu atacar aquele endereço — um programa varre a internet inteira, e o endereço apareceu na lista. O custo marginal de tentar em um alvo a mais é zero, e é por isso que “sou pequeno, ninguém vai me atacar” é premissa falsa por construção.\nHá um segundo motivo, mais específico. Uma empresa pequena que administra rede guarda dados pessoais em volume (CPF, endereço, meio de pagamento) e opera equipamentos de cliente que, tomados em massa, valem como capacidade de ataque: milhares de roteadores domésticos com credencial padrão são ativo de mercado para quem monta rede de ataque distribuído. Nessa configuração, a infraestrutura não é apenas alvo — é vetor contra os próprios assinantes.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#os-princípios-que-sustentam-qualquer-defesa",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#os-princípios-que-sustentam-qualquer-defesa",
+    "title": "1  O que é segurança da informação",
+    "section": "1.7 Os princípios que sustentam qualquer defesa",
+    "text": "1.7 Os princípios que sustentam qualquer defesa\nEm 1975, Saltzer e Schroeder publicaram oito princípios de projeto para proteção da informação (Saltzer; Schroeder, 1975). Cinco décadas depois, com toda a tecnologia trocada, seguem sendo o melhor filtro para avaliar uma decisão de segurança:\n\nEconomia de mecanismo. O desenho mais simples que resolve. Complexidade é onde erro se esconde.\nPadrões à prova de falha. Negar por padrão; permitir por exceção explícita. Se o mecanismo falhar, deve falhar fechado.\nMediação completa. Toda requisição verificada, sempre. Atalhos de desempenho que reaproveitam decisões antigas de autorização são a origem de uma classe inteira de falhas.\nDesenho aberto. A segurança não deve depender do segredo do desenho, apenas do segredo da chave. Criptografia proprietária “secreta” é sinal de alerta, não de força.\nSeparação de privilégios. Exigir mais de uma condição independente para a operação crítica — a lógica das duas chaves do cofre, e a razão de ser da autenticação em dois fatores.\nMenor privilégio. Cada sujeito com o mínimo de permissão necessário, pelo menor tempo necessário. É o princípio mais violado da lista: quase toda rede tem contas de serviço com privilégio administrativo porque “assim funciona”.\nMecanismo menos comum. Evitar compartilhar mecanismo e estado entre usuários diferentes; o que é compartilhado se torna caminho entre eles.\nAceitação psicológica. O controle precisa ser utilizável. Controle que atrapalha o trabalho é controle burlado — e a criatividade do usuário para burlar é ilimitada.\n\nDesses princípios decorre a estratégia que organiza tudo o que vem nos volumes seguintes: defesa em profundidade. Nenhuma camada é considerada confiável o suficiente para ser a única, e o comprometimento de uma não deve implicar o comprometimento das demais (Figura 1.3).\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nFigura 1.3: Defesa em profundidade. Cada camada compra tempo e gera registro; nenhuma é suficiente sozinha.\n\n\n\nDuas ressalvas importam desde já. Camadas precisam ser independentes: cinco que aceitam a mesma senha de administrador são, na prática, uma. E camadas servem para detectar, não só para bloquear — o valor de uma camada intermediária costuma estar menos em barrar o atacante do que em produzir o registro que revela sua passagem enquanto há tempo de reagir. Assumir que o comprometimento vai acontecer e projetar para detectá-lo rápido atravessa toda a parte defensiva deste manual.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#o-vocabulário-mínimo",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#o-vocabulário-mínimo",
+    "title": "1  O que é segurança da informação",
+    "section": "1.8 O vocabulário mínimo",
+    "text": "1.8 O vocabulário mínimo\nSegurança da informação tem vocabulário próprio, em que palavras do uso cotidiano ganham sentido técnico estrito. Confundi-las produz conversas em que ninguém está errado e ninguém se entende. A Tabela 1.2 fixa o mínimo para seguir adiante; o quarto capítulo deste volume aprofunda cada termo.\n\n\n\nTabela 1.2: Vocabulário mínimo de segurança da informação.\n\n\n\n\n\n\n\n\n\n\nTermo\nSentido técnico\nNo caso de abertura\n\n\n\n\nAtivo\nAquilo que tem valor e que se quer proteger\nO cadastro dos quatro mil assinantes\n\n\nVulnerabilidade\nFraqueza que pode ser explorada\nVPN sem segundo fator; senha repetida entre servidores\n\n\nAmeaça\nAgente ou evento com potencial de causar dano\nGrupo de extorsão que compra acesso inicial\n\n\nRisco\nCombinação de probabilidade e impacto de a ameaça explorar a vulnerabilidade\nAlta chance de parada de faturamento por vários dias\n\n\nControle\nMedida que reduz risco, por prevenção, detecção ou correção\nSegundo fator na VPN; backup fora do alcance do servidor\n\n\nEvento\nQualquer ocorrência observável no ambiente\nUma autenticação falha às 3h11\n\n\nIncidente\nEvento, ou série de eventos, que compromete um dos pilares\nA cifragem do banco de dados do ERP\n\n\nSuperfície de ataque\nConjunto de pontos alcançáveis por um adversário\nVPN, área de trabalho remota, portal do assinante\n\n\nRisco residual\nO que permanece depois dos controles aplicados\nO que se decide conviver, sabendo que existe\n\n\n\n\n\n\nDuas dessas distinções têm consequência operacional direta. Uma rede grande gera milhões de eventos por dia, e a função de um centro de operações é separar os poucos que são incidentes. E como não se elimina a ameaça — ninguém acaba com o crime organizado a partir do datacenter —, o trabalho recai sobre reduzir vulnerabilidade e impacto.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#como-se-sabe-se-está-funcionando",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#como-se-sabe-se-está-funcionando",
+    "title": "1  O que é segurança da informação",
+    "section": "1.9 Como se sabe se está funcionando",
+    "text": "1.9 Como se sabe se está funcionando\n“Nunca fomos invadidos” não é evidência de segurança; costuma ser evidência de ausência de detecção — comprometimentos que duram meses sem serem percebidos são a regra, e a descoberta vem com frequência de fora: um cliente, um pesquisador, ou o próprio atacante ao pedir resgate. Medir é difícil justamente porque o resultado desejado é a não ocorrência de algo, mas alguns indicadores sobrevivem ao escrutínio:\n\nTempo até detectar e tempo até conter. Se a resposta é “não sabemos”, esse é o primeiro problema a resolver.\nCobertura de controle sobre inventário. Percentual de ativos inventariados, de contas com segundo fator, de servidores corrigidos no prazo, de backups cuja restauração foi testada no trimestre. Todas dependem de existir inventário.\nSuperfície exposta. Quantidade de serviços administrativos alcançáveis da internet. A meta é zero, e o número é fácil de medir.\nResultado de exercícios. Restauração real a partir do backup, simulação controlada de phishing, exercício de mesa. Exercício produz dado; opinião produz sensação.\n\nMétrica que só sobe e nunca gera decisão é métrica de vaidade: contar ataques bloqueados pelo firewall mede o ruído de fundo da internet, não a qualidade da defesa. O Volume 12 retoma o assunto com o rigor devido.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#brasil-em-foco",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#brasil-em-foco",
+    "title": "1  O que é segurança da informação",
+    "section": "1.10 ⚖️ Brasil em Foco",
+    "text": "1.10 ⚖️ Brasil em Foco\nNo Brasil, segurança da informação deixou de ser boa prática e passou a ser obrigação jurídica com nome, prazo e sanção.\nA Lei Geral de Proteção de Dados (Lei 13.709/2018) é o eixo (Brasil, 2018). Seu art. 46 obriga os agentes de tratamento a adotar medidas de segurança técnicas e administrativas aptas a proteger dados pessoais — redação deliberadamente aberta, que remete ao estado da técnica e à natureza da informação, e não a uma lista fechada de produtos. O art. 48 estabelece o dever de comunicar à Autoridade Nacional de Proteção de Dados e aos titulares afetados a ocorrência de incidente de segurança que possa acarretar risco ou dano relevante. A Resolução CD/ANPD nº 15/2024 regulamentou essa comunicação, fixando prazo de três dias úteis a contar do conhecimento do incidente e definindo o conteúdo mínimo do relato (Autoridade Nacional de Proteção de Dados, 2024). Na prática, a empresa precisa ser capaz de saber que foi comprometida, avaliar o alcance e redigir a comunicação em três dias — impossível sem registro adequado e plano prévio. No caso da abertura, a planilha do notebook furtado é tratamento de dados pessoais, e o furto é potencialmente um incidente comunicável.\nO Marco Civil da Internet (Lei 12.965/2014) trata da guarda de registros (Brasil, 2014). O art. 13 obriga o provedor de conexão a manter registros de conexão por um ano; o art. 15 obriga o provedor de aplicações constituído como pessoa jurídica e com fins econômicos a guardar registros de acesso por seis meses. Os arts. 10 e 11 impõem sigilo e condicionam a disponibilização a ordem judicial. A leitura é dupla: o registro é obrigação e é ativo sensível — quem guarda log de conexão de milhares de pessoas custodia um alvo de valor.\nA Lei 12.737/2012 inseriu no Código Penal o art. 154-A, que tipifica invadir dispositivo informático alheio para obter, adulterar ou destruir dados, ou instalar vulnerabilidade para obter vantagem ilícita (Brasil, 2012). As penas foram agravadas pela Lei 14.155/2021. Essa é a fronteira jurídica que sustenta a política editorial deste manual: testar sistema de terceiro sem autorização formal e por escrito é crime, ainda que a intenção seja “só verificar”. O sétimo capítulo deste volume trata exclusivamente dessa fronteira.\nPara quem opera telecomunicações há camada regulatória adicional: a Anatel editou a Resolução nº 740/2020, com requisitos de segurança cibernética para produtos de telecomunicações, o que alcança diretamente as ONUs e roteadores entregues ao assinante (Agência Nacional de Telecomunicações, 2020). O Volume 15 dedica um capítulo às obrigações regulatórias de provedores.\nNo lado institucional, o CERT.br, mantido pelo NIC.br, é o ponto nacional de tratamento de incidentes em redes conectadas à internet no Brasil: recebe notificações, publica estatísticas e mantém material de boas práticas usado por operadores de rede. Manter contato de abuso atualizado no WHOIS do seu bloco e responder de fato a essas notificações é um dos controles mais baratos e menos praticados do país.\nPor fim, o Banco Central trata fraude como matéria de segurança regulada: instituições financeiras e de pagamento estão sujeitas a política obrigatória de segurança cibernética (Resolução CMN nº 4.893/2021), e o Pix conta com o Mecanismo Especial de Devolução para casos de fraude — o que faz da engenharia social contra o titular, e não do ataque à instituição, o vetor dominante no país. O Volume 10 volta ao tema.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#no-campo",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#no-campo",
+    "title": "1  O que é segurança da informação",
+    "section": "1.11 🛠️ No Campo",
+    "text": "1.11 🛠️ No Campo\nTraduzindo tudo para a primeira semana de quem assume a responsabilidade por uma infraestrutura, na ordem em que compensa fazer:\n1. Inventário, antes de qualquer controle. Não se protege o que não se conhece, e a maior parte das surpresas está em ativo esquecido: o servidor de teste de 2019 ainda ligado com endereço público, a câmera com firmware de fábrica. Vale a varredura do próprio bloco — sua rede, sua autorização:\n# Descoberta de hosts e serviços no PRÓPRIO bloco de endereços\nnmap -sS -Pn --top-ports 200 --open -oA inventario-borda 198.51.100.0/24\n\n# O que este servidor realmente escuta, e qual processo responde\nss -tulnp | sort -k5\n\n# Contas locais com shell de login válido\nawk -F: '$7 !~ /(nologin|false)$/ {print $1, $3, $7}' /etc/passwd\n2. Reduzir a superfície de gerência. Painel de administração acessível da internet é o achado mais comum e mais caro. Winbox, interface web de OLT, SNMP com comunidade public, Telnet, área de trabalho remota — nada disso deve estar alcançável do mundo. O padrão é VLAN de gerência separada do tráfego de assinante, alcançável apenas por VPN com segundo fator, com filtro por origem no equipamento além do filtro na borda.\n3. Senhas individuais e nomeadas. A senha compartilhada entre a equipe técnica destrói o menor privilégio e a responsabilização de uma vez: quando todos entram como admin, o log de auditoria não responde à única pergunta que importa depois de um incidente. Cofre de senhas da equipe, contas nomeadas e revogação como parte formal do desligamento — inclusive chaves SSH, VPN e acesso ao WhatsApp do suporte.\n4. Backup que sobrevive ao próprio servidor. O critério é implacável: o backup precisa estar fora do alcance de quem comprometeu o servidor — compartilhamento montado permanentemente não atende, cópia que a máquina de origem pode apagar não atende. E backup nunca restaurado é hipótese, não backup; a restauração de teste trimestral é o que transforma um em outro.\n5. Relógio e registro. Sem NTP consistente em todos os equipamentos, os logs não podem ser correlacionados e perdem valor tanto na investigação técnica quanto no atendimento a ordem judicial. É configuração de dez minutos com efeito permanente:\ntimedatectl set-ntp true\ntimedatectl status | grep -E 'synchronized|NTP service'\n\n# Autenticações falhas por origem, últimas 24 h\njournalctl -u ssh --since \"24 hours ago\" \\\n  | grep -oE 'from [0-9.]+' | sort | uniq -c | sort -rn | head\n6. Escrever o plano antes de precisar dele. Uma folha por cenário, resposta a três perguntas: quem decide, a quem se avisa (interno, cliente, ANPD, delegacia), e qual é a primeira ação técnica. Faça para ransomware no sistema de gestão, para vazamento de base de assinantes e para rompimento de fibra do enlace principal. Às 3h da manhã, com o telefone tocando, ninguém improvisa bem.\n7. Fechar o ciclo no descarte. Disco que sai da empresa é apagado de forma verificável ou destruído fisicamente. Equipamento devolvido por assinante ou retirado de operação volta a padrão de fábrica antes de ir para o estoque, para venda ou para doação.\nNenhum dos sete itens exige orçamento significativo; todos exigem que alguém seja nomeado responsável — e essa nomeação, mais do que qualquer aquisição, é o que dá início a um programa de segurança.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap001-o-que-e-seguranca-da-informacao.html#resumo",
+    "href": "vol01/cap001-o-que-e-seguranca-da-informacao.html#resumo",
+    "title": "1  O que é segurança da informação",
+    "section": "1.12 Resumo",
+    "text": "1.12 Resumo\n\nSegurança da informação é a preservação contínua de confidencialidade, integridade e disponibilidade: processo que se mantém, não estado que se compra. As três propriedades conflitam entre si, e escolher os tradeoffs conscientemente é parte do trabalho.\nO que se protege é a informação; servidores, links e equipamentos são ativos de suporte, e é neles que os controles se aplicam — em todo o ciclo de vida, inclusive no descarte, a etapa mais esquecida.\nAmeaça não é sinônimo de atacante: falhas acidentais e eventos ambientais produzem incidentes de disponibilidade em volume, e cabem no mesmo arcabouço de gestão de risco.\nA maior parte do que se vê nos logs é varredura automatizada e indiscriminada — o que invalida a premissa de que porte pequeno confere proteção. Além de alvo, uma infraestrutura mal protegida se torna vetor contra os próprios clientes.\nOs oito princípios de Saltzer e Schroeder, com meio século de idade, seguem sendo o melhor filtro para avaliar decisões; deles decorre a defesa em profundidade, com camadas independentes que bloqueiam e também produzem registro.\nNo Brasil, o dever de segurança é jurídico: LGPD (arts. 46 e 48) com prazo de três dias úteis para comunicar incidente relevante, Marco Civil para guarda de registros, Lei 12.737/2012 tipificando o acesso não autorizado, mais camada setorial de Anatel e Banco Central.\n\n\n\n\n\nAGÊNCIA NACIONAL DE TELECOMUNICAÇÕES. Resolução n. 740, de 21 de dezembro de 2020. Regulamento de Segurança Cibernética Aplicada aos Produtos de Telecomunicações., 2020.\n\n\nAUTORIDADE NACIONAL DE PROTEÇÃO DE DADOS. Resolução CD/ANPD n. 15, de 24 de abril de 2024. Aprova o Regulamento de Comunicação de Incidente de Segurança., 2024.\n\n\nBRASIL. Lei n. 12.737, de 30 de novembro de 2012. Tipificação criminal de delitos informáticos., 2012.\n\n\nBRASIL. Lei n. 12.965, de 23 de abril de 2014. Marco Civil da Internet., 2014.\n\n\nBRASIL. Lei n. 13.709, de 14 de agosto de 2018. Lei Geral de Proteção de Dados Pessoais., 2018.\n\n\nINTERNATIONAL ORGANIZATION FOR STANDARDIZATION. ISO/IEC 27000: information technology — security techniques — information security management systems — overview and vocabulary. GenebraISO, 2018.\n\n\nSALTZER, Jerome H.; SCHROEDER, Michael D. The Protection of Information in Computer Systems. Proceedings of the IEEE, v. 63, n. 9, p. 1278–1308, 1975.\n\n\nSCHNEIER, Bruce. Secrets and Lies: Digital Security in a Networked World. [S.l.]: Wiley, 2000.",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>1</span>  <span class='chapter-title'>O que é segurança da informação</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap002-os-pilares-confidencialidade-integridade-e.html",
+    "href": "vol01/cap002-os-pilares-confidencialidade-integridade-e.html",
+    "title": "2  Os pilares: confidencialidade, integridade e disponibilidade",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>2</span>  <span class='chapter-title'>Os pilares: confidencialidade, integridade e disponibilidade</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap003-autenticidade-nao-repudio-e-responsabilizacao.html",
+    "href": "vol01/cap003-autenticidade-nao-repudio-e-responsabilizacao.html",
+    "title": "3  Autenticidade, não repúdio e responsabilização",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>3</span>  <span class='chapter-title'>Autenticidade, não repúdio e responsabilização</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap004-ativos-ameacas-vulnerabilidades-e-risco.html",
+    "href": "vol01/cap004-ativos-ameacas-vulnerabilidades-e-risco.html",
+    "title": "4  Ativos, ameaças, vulnerabilidades e risco",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>4</span>  <span class='chapter-title'>Ativos, ameaças, vulnerabilidades e risco</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap005-modelagem-de-ameacas-stride-arvores-de-ataque.html",
+    "href": "vol01/cap005-modelagem-de-ameacas-stride-arvores-de-ataque.html",
+    "title": "5  Modelagem de ameaças: STRIDE, árvores de ataque e abuse cases",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>5</span>  <span class='chapter-title'>Modelagem de ameaças: STRIDE, árvores de ataque e abuse cases</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap006-gestao-de-risco-analise-qualitativa-e.html",
+    "href": "vol01/cap006-gestao-de-risco-analise-qualitativa-e.html",
+    "title": "6  Gestão de risco: análise qualitativa e quantitativa",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>6</span>  <span class='chapter-title'>Gestão de risco: análise qualitativa e quantitativa</span>"
+    ]
+  },
+  {
+    "objectID": "vol01/cap007-etica-legalidade-e-a-fronteira-do-escopo.html",
+    "href": "vol01/cap007-etica-legalidade-e-a-fronteira-do-escopo.html",
+    "title": "7  Ética, legalidade e a fronteira do escopo autorizado",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 1 — Fundamentos da Segurança da Informação\n",
+      "<span class='chapter-number'>7</span>  <span class='chapter-title'>Ética, legalidade e a fronteira do escopo autorizado</span>"
+    ]
+  },
+  {
+    "objectID": "vol02/cap008-a-pilha-tcp-ip-sob-a-otica-do-atacante-e-do.html",
+    "href": "vol02/cap008-a-pilha-tcp-ip-sob-a-otica-do-atacante-e-do.html",
+    "title": "8  A pilha TCP/IP sob a ótica do atacante e do defensor",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 2 — Redes e Sistemas: a Base Técnica\n",
+      "<span class='chapter-number'>8</span>  <span class='chapter-title'>A pilha TCP/IP sob a ótica do atacante e do defensor</span>"
+    ]
+  },
+  {
+    "objectID": "vol02/cap009-enderecamento-roteamento-e-nat.html",
+    "href": "vol02/cap009-enderecamento-roteamento-e-nat.html",
+    "title": "9  Endereçamento, roteamento e NAT",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 2 — Redes e Sistemas: a Base Técnica\n",
+      "<span class='chapter-number'>9</span>  <span class='chapter-title'>Endereçamento, roteamento e NAT</span>"
+    ]
+  },
+  {
+    "objectID": "vol02/cap010-protocolos-de-aplicacao-e-seus-riscos-http.html",
+    "href": "vol02/cap010-protocolos-de-aplicacao-e-seus-riscos-http.html",
+    "title": "10  Protocolos de aplicação e seus riscos: HTTP, DNS, SMTP e SNMP",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 2 — Redes e Sistemas: a Base Técnica\n",
+      "<span class='chapter-number'>10</span>  <span class='chapter-title'>Protocolos de aplicação e seus riscos: HTTP, DNS, SMTP e SNMP</span>"
+    ]
+  },
+  {
+    "objectID": "vol02/cap011-fundamentos-de-sistemas-operacionais.html",
+    "href": "vol02/cap011-fundamentos-de-sistemas-operacionais.html",
+    "title": "11  Fundamentos de sistemas operacionais: processos, permissões e memória",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 2 — Redes e Sistemas: a Base Técnica\n",
+      "<span class='chapter-number'>11</span>  <span class='chapter-title'>Fundamentos de sistemas operacionais: processos, permissões e memória</span>"
+    ]
+  },
+  {
+    "objectID": "vol02/cap012-linux-essencial-para-seguranca.html",
+    "href": "vol02/cap012-linux-essencial-para-seguranca.html",
+    "title": "12  Linux essencial para segurança",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 2 — Redes e Sistemas: a Base Técnica\n",
+      "<span class='chapter-number'>12</span>  <span class='chapter-title'>Linux essencial para segurança</span>"
+    ]
+  },
+  {
+    "objectID": "vol02/cap013-windows-e-active-directory-essencial.html",
+    "href": "vol02/cap013-windows-e-active-directory-essencial.html",
+    "title": "13  Windows e Active Directory essencial",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 2 — Redes e Sistemas: a Base Técnica\n",
+      "<span class='chapter-number'>13</span>  <span class='chapter-title'>Windows e Active Directory essencial</span>"
+    ]
+  },
+  {
+    "objectID": "vol02/cap014-virtualizacao-e-montagem-do-laboratorio-de.html",
+    "href": "vol02/cap014-virtualizacao-e-montagem-do-laboratorio-de.html",
+    "title": "14  Virtualização e montagem do laboratório de estudos",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 2 — Redes e Sistemas: a Base Técnica\n",
+      "<span class='chapter-number'>14</span>  <span class='chapter-title'>Virtualização e montagem do laboratório de estudos</span>"
+    ]
+  },
+  {
+    "objectID": "vol03/cap015-historia-e-principios-da-criptografia.html",
+    "href": "vol03/cap015-historia-e-principios-da-criptografia.html",
+    "title": "15  História e princípios da criptografia",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 3 — Criptografia Aplicada\n",
+      "<span class='chapter-number'>15</span>  <span class='chapter-title'>História e princípios da criptografia</span>"
+    ]
+  },
+  {
+    "objectID": "vol03/cap016-criptografia-simetrica-aes-modos-de-operacao.html",
+    "href": "vol03/cap016-criptografia-simetrica-aes-modos-de-operacao.html",
+    "title": "16  Criptografia simétrica: AES, modos de operação e AEAD",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 3 — Criptografia Aplicada\n",
+      "<span class='chapter-number'>16</span>  <span class='chapter-title'>Criptografia simétrica: AES, modos de operação e AEAD</span>"
+    ]
+  },
+  {
+    "objectID": "vol03/cap017-funcoes-hash-hmac-e-integridade.html",
+    "href": "vol03/cap017-funcoes-hash-hmac-e-integridade.html",
+    "title": "17  Funções hash, HMAC e integridade",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 3 — Criptografia Aplicada\n",
+      "<span class='chapter-number'>17</span>  <span class='chapter-title'>Funções hash, HMAC e integridade</span>"
+    ]
+  },
+  {
+    "objectID": "vol03/cap018-criptografia-assimetrica-rsa-diffie-hellman-e.html",
+    "href": "vol03/cap018-criptografia-assimetrica-rsa-diffie-hellman-e.html",
+    "title": "18  Criptografia assimétrica: RSA, Diffie-Hellman e curvas elípticas",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 3 — Criptografia Aplicada\n",
+      "<span class='chapter-number'>18</span>  <span class='chapter-title'>Criptografia assimétrica: RSA, Diffie-Hellman e curvas elípticas</span>"
+    ]
+  },
+  {
+    "objectID": "vol03/cap019-pki-certificados-digitais-e-cadeias-de.html",
+    "href": "vol03/cap019-pki-certificados-digitais-e-cadeias-de.html",
+    "title": "19  PKI, certificados digitais e cadeias de confiança",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 3 — Criptografia Aplicada\n",
+      "<span class='chapter-number'>19</span>  <span class='chapter-title'>PKI, certificados digitais e cadeias de confiança</span>"
+    ]
+  },
+  {
+    "objectID": "vol03/cap020-tls-na-pratica-handshake-versoes-e.html",
+    "href": "vol03/cap020-tls-na-pratica-handshake-versoes-e.html",
+    "title": "20  TLS na prática: handshake, versões e configuração segura",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 3 — Criptografia Aplicada\n",
+      "<span class='chapter-number'>20</span>  <span class='chapter-title'>TLS na prática: handshake, versões e configuração segura</span>"
+    ]
+  },
+  {
+    "objectID": "vol03/cap021-erros-classicos-criptografia-mal-empregada.html",
+    "href": "vol03/cap021-erros-classicos-criptografia-mal-empregada.html",
+    "title": "21  Erros clássicos: criptografia mal empregada",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 3 — Criptografia Aplicada\n",
+      "<span class='chapter-number'>21</span>  <span class='chapter-title'>Erros clássicos: criptografia mal empregada</span>"
+    ]
+  },
+  {
+    "objectID": "vol04/cap022-modelos-de-controle-de-acesso-dac-mac-rbac-e.html",
+    "href": "vol04/cap022-modelos-de-controle-de-acesso-dac-mac-rbac-e.html",
+    "title": "22  Modelos de controle de acesso: DAC, MAC, RBAC e ABAC",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 4 — Identidade, Autenticação e Controle de Acesso\n",
+      "<span class='chapter-number'>22</span>  <span class='chapter-title'>Modelos de controle de acesso: DAC, MAC, RBAC e ABAC</span>"
+    ]
+  },
+  {
+    "objectID": "vol04/cap023-senhas-armazenamento-politicas-e-ataques.html",
+    "href": "vol04/cap023-senhas-armazenamento-politicas-e-ataques.html",
+    "title": "23  Senhas: armazenamento, políticas e ataques",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 4 — Identidade, Autenticação e Controle de Acesso\n",
+      "<span class='chapter-number'>23</span>  <span class='chapter-title'>Senhas: armazenamento, políticas e ataques</span>"
+    ]
+  },
+  {
+    "objectID": "vol04/cap024-autenticacao-multifator-e-fatores-de.html",
+    "href": "vol04/cap024-autenticacao-multifator-e-fatores-de.html",
+    "title": "24  Autenticação multifator e fatores de autenticação",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 4 — Identidade, Autenticação e Controle de Acesso\n",
+      "<span class='chapter-number'>24</span>  <span class='chapter-title'>Autenticação multifator e fatores de autenticação</span>"
+    ]
+  },
+  {
+    "objectID": "vol04/cap025-federacao-de-identidade-saml-oauth-2-0-e.html",
+    "href": "vol04/cap025-federacao-de-identidade-saml-oauth-2-0-e.html",
+    "title": "25  Federação de identidade: SAML, OAuth 2.0 e OpenID Connect",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 4 — Identidade, Autenticação e Controle de Acesso\n",
+      "<span class='chapter-number'>25</span>  <span class='chapter-title'>Federação de identidade: SAML, OAuth 2.0 e OpenID Connect</span>"
+    ]
+  },
+  {
+    "objectID": "vol04/cap026-gestao-de-identidades-e-de-acessos.html",
+    "href": "vol04/cap026-gestao-de-identidades-e-de-acessos.html",
+    "title": "26  Gestão de identidades e de acessos privilegiados (IAM e PAM)",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 4 — Identidade, Autenticação e Controle de Acesso\n",
+      "<span class='chapter-number'>26</span>  <span class='chapter-title'>Gestão de identidades e de acessos privilegiados (IAM e PAM)</span>"
+    ]
+  },
+  {
+    "objectID": "vol04/cap027-arquitetura-zero-trust.html",
+    "href": "vol04/cap027-arquitetura-zero-trust.html",
+    "title": "27  Arquitetura Zero Trust",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 4 — Identidade, Autenticação e Controle de Acesso\n",
+      "<span class='chapter-number'>27</span>  <span class='chapter-title'>Arquitetura Zero Trust</span>"
+    ]
+  },
+  {
+    "objectID": "vol05/cap028-arquitetura-segura-e-segmentacao-de-redes.html",
+    "href": "vol05/cap028-arquitetura-segura-e-segmentacao-de-redes.html",
+    "title": "28  Arquitetura segura e segmentação de redes",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 5 — Segurança de Redes\n",
+      "<span class='chapter-number'>28</span>  <span class='chapter-title'>Arquitetura segura e segmentação de redes</span>"
+    ]
+  },
+  {
+    "objectID": "vol05/cap029-firewalls-tipos-politicas-e-boas-praticas.html",
+    "href": "vol05/cap029-firewalls-tipos-politicas-e-boas-praticas.html",
+    "title": "29  Firewalls: tipos, políticas e boas práticas",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 5 — Segurança de Redes\n",
+      "<span class='chapter-number'>29</span>  <span class='chapter-title'>Firewalls: tipos, políticas e boas práticas</span>"
+    ]
+  },
+  {
+    "objectID": "vol05/cap030-vpns-ipsec-wireguard-e-acesso-remoto-seguro.html",
+    "href": "vol05/cap030-vpns-ipsec-wireguard-e-acesso-remoto-seguro.html",
+    "title": "30  VPNs: IPsec, WireGuard e acesso remoto seguro",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 5 — Segurança de Redes\n",
+      "<span class='chapter-number'>30</span>  <span class='chapter-title'>VPNs: IPsec, WireGuard e acesso remoto seguro</span>"
+    ]
+  },
+  {
+    "objectID": "vol05/cap031-ids-ips-e-deteccao-em-rede.html",
+    "href": "vol05/cap031-ids-ips-e-deteccao-em-rede.html",
+    "title": "31  IDS, IPS e detecção em rede",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 5 — Segurança de Redes\n",
+      "<span class='chapter-number'>31</span>  <span class='chapter-title'>IDS, IPS e detecção em rede</span>"
+    ]
+  },
+  {
+    "objectID": "vol05/cap032-seguranca-de-dns-ataques-dnssec-e-doh.html",
+    "href": "vol05/cap032-seguranca-de-dns-ataques-dnssec-e-doh.html",
+    "title": "32  Segurança de DNS: ataques, DNSSEC e DoH",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 5 — Segurança de Redes\n",
+      "<span class='chapter-number'>32</span>  <span class='chapter-title'>Segurança de DNS: ataques, DNSSEC e DoH</span>"
+    ]
+  },
+  {
+    "objectID": "vol05/cap033-seguranca-do-roteamento-e-bgp-sequestros.html",
+    "href": "vol05/cap033-seguranca-do-roteamento-e-bgp-sequestros.html",
+    "title": "33  Segurança do roteamento e BGP: sequestros, vazamentos e RPKI",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 5 — Segurança de Redes\n",
+      "<span class='chapter-number'>33</span>  <span class='chapter-title'>Segurança do roteamento e BGP: sequestros, vazamentos e RPKI</span>"
+    ]
+  },
+  {
+    "objectID": "vol05/cap034-seguranca-em-redes-sem-fio-e-enlaces-de-radio.html",
+    "href": "vol05/cap034-seguranca-em-redes-sem-fio-e-enlaces-de-radio.html",
+    "title": "34  Segurança em redes sem fio e enlaces de rádio",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 5 — Segurança de Redes\n",
+      "<span class='chapter-number'>34</span>  <span class='chapter-title'>Segurança em redes sem fio e enlaces de rádio</span>"
+    ]
+  },
+  {
+    "objectID": "vol05/cap035-ataques-de-negacao-de-servico-e-estrategias.html",
+    "href": "vol05/cap035-ataques-de-negacao-de-servico-e-estrategias.html",
+    "title": "35  Ataques de negação de serviço e estratégias de mitigação",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 5 — Segurança de Redes\n",
+      "<span class='chapter-number'>35</span>  <span class='chapter-title'>Ataques de negação de serviço e estratégias de mitigação</span>"
+    ]
+  },
+  {
+    "objectID": "vol06/cap036-hardening-de-servidores-linux.html",
+    "href": "vol06/cap036-hardening-de-servidores-linux.html",
+    "title": "36  Hardening de servidores Linux",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 6 — Endpoints e Sistemas Operacionais\n",
+      "<span class='chapter-number'>36</span>  <span class='chapter-title'>Hardening de servidores Linux</span>"
+    ]
+  },
+  {
+    "objectID": "vol06/cap037-hardening-de-windows-e-active-directory.html",
+    "href": "vol06/cap037-hardening-de-windows-e-active-directory.html",
+    "title": "37  Hardening de Windows e Active Directory",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 6 — Endpoints e Sistemas Operacionais\n",
+      "<span class='chapter-number'>37</span>  <span class='chapter-title'>Hardening de Windows e Active Directory</span>"
+    ]
+  },
+  {
+    "objectID": "vol06/cap038-antivirus-edr-e-xdr.html",
+    "href": "vol06/cap038-antivirus-edr-e-xdr.html",
+    "title": "38  Antivírus, EDR e XDR",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 6 — Endpoints e Sistemas Operacionais\n",
+      "<span class='chapter-number'>38</span>  <span class='chapter-title'>Antivírus, EDR e XDR</span>"
+    ]
+  },
+  {
+    "objectID": "vol06/cap039-gestao-de-vulnerabilidades-e-ciclo-de-patches.html",
+    "href": "vol06/cap039-gestao-de-vulnerabilidades-e-ciclo-de-patches.html",
+    "title": "39  Gestão de vulnerabilidades e ciclo de patches",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 6 — Endpoints e Sistemas Operacionais\n",
+      "<span class='chapter-number'>39</span>  <span class='chapter-title'>Gestão de vulnerabilidades e ciclo de patches</span>"
+    ]
+  },
+  {
+    "objectID": "vol06/cap040-seguranca-de-dispositivos-moveis-e-byod.html",
+    "href": "vol06/cap040-seguranca-de-dispositivos-moveis-e-byod.html",
+    "title": "40  Segurança de dispositivos móveis e BYOD",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 6 — Endpoints e Sistemas Operacionais\n",
+      "<span class='chapter-number'>40</span>  <span class='chapter-title'>Segurança de dispositivos móveis e BYOD</span>"
+    ]
+  },
+  {
+    "objectID": "vol06/cap041-criptografia-de-disco-e-protecao-de-dados-em.html",
+    "href": "vol06/cap041-criptografia-de-disco-e-protecao-de-dados-em.html",
+    "title": "41  Criptografia de disco e proteção de dados em repouso",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 6 — Endpoints e Sistemas Operacionais\n",
+      "<span class='chapter-number'>41</span>  <span class='chapter-title'>Criptografia de disco e proteção de dados em repouso</span>"
+    ]
+  },
+  {
+    "objectID": "vol07/cap042-ciclo-de-desenvolvimento-seguro-e-devsecops.html",
+    "href": "vol07/cap042-ciclo-de-desenvolvimento-seguro-e-devsecops.html",
+    "title": "42  Ciclo de desenvolvimento seguro e DevSecOps",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 7 — Segurança de Aplicações\n",
+      "<span class='chapter-number'>42</span>  <span class='chapter-title'>Ciclo de desenvolvimento seguro e DevSecOps</span>"
+    ]
+  },
+  {
+    "objectID": "vol07/cap043-owasp-top-10-panorama-e-como-usar.html",
+    "href": "vol07/cap043-owasp-top-10-panorama-e-como-usar.html",
+    "title": "43  OWASP Top 10: panorama e como usar",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 7 — Segurança de Aplicações\n",
+      "<span class='chapter-number'>43</span>  <span class='chapter-title'>OWASP Top 10: panorama e como usar</span>"
+    ]
+  },
+  {
+    "objectID": "vol07/cap044-injecao-sql-nosql-e-comandos-de-sistema.html",
+    "href": "vol07/cap044-injecao-sql-nosql-e-comandos-de-sistema.html",
+    "title": "44  Injeção: SQL, NoSQL e comandos de sistema",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 7 — Segurança de Aplicações\n",
+      "<span class='chapter-number'>44</span>  <span class='chapter-title'>Injeção: SQL, NoSQL e comandos de sistema</span>"
+    ]
+  },
+  {
+    "objectID": "vol07/cap045-cross-site-scripting-e-ataques-no-lado-do.html",
+    "href": "vol07/cap045-cross-site-scripting-e-ataques-no-lado-do.html",
+    "title": "45  Cross-site scripting e ataques no lado do cliente",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 7 — Segurança de Aplicações\n",
+      "<span class='chapter-number'>45</span>  <span class='chapter-title'>Cross-site scripting e ataques no lado do cliente</span>"
+    ]
+  },
+  {
+    "objectID": "vol07/cap046-falhas-de-autenticacao-e-gestao-de-sessao.html",
+    "href": "vol07/cap046-falhas-de-autenticacao-e-gestao-de-sessao.html",
+    "title": "46  Falhas de autenticação e gestão de sessão",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 7 — Segurança de Aplicações\n",
+      "<span class='chapter-number'>46</span>  <span class='chapter-title'>Falhas de autenticação e gestão de sessão</span>"
+    ]
+  },
+  {
+    "objectID": "vol07/cap047-falhas-de-controle-de-acesso-idor-ssrf-e.html",
+    "href": "vol07/cap047-falhas-de-controle-de-acesso-idor-ssrf-e.html",
+    "title": "47  Falhas de controle de acesso: IDOR, SSRF e escalonamento",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 7 — Segurança de Aplicações\n",
+      "<span class='chapter-number'>47</span>  <span class='chapter-title'>Falhas de controle de acesso: IDOR, SSRF e escalonamento</span>"
+    ]
+  },
+  {
+    "objectID": "vol07/cap048-seguranca-de-apis-rest-e-graphql.html",
+    "href": "vol07/cap048-seguranca-de-apis-rest-e-graphql.html",
+    "title": "48  Segurança de APIs REST e GraphQL",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 7 — Segurança de Aplicações\n",
+      "<span class='chapter-number'>48</span>  <span class='chapter-title'>Segurança de APIs REST e GraphQL</span>"
+    ]
+  },
+  {
+    "objectID": "vol07/cap049-sast-dast-sca-e-automacao-de-testes-de.html",
+    "href": "vol07/cap049-sast-dast-sca-e-automacao-de-testes-de.html",
+    "title": "49  SAST, DAST, SCA e automação de testes de segurança",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 7 — Segurança de Aplicações\n",
+      "<span class='chapter-number'>49</span>  <span class='chapter-title'>SAST, DAST, SCA e automação de testes de segurança</span>"
+    ]
+  },
+  {
+    "objectID": "vol08/cap050-modelo-de-responsabilidade-compartilhada.html",
+    "href": "vol08/cap050-modelo-de-responsabilidade-compartilhada.html",
+    "title": "50  Modelo de responsabilidade compartilhada",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 8 — Nuvem e Contêineres\n",
+      "<span class='chapter-number'>50</span>  <span class='chapter-title'>Modelo de responsabilidade compartilhada</span>"
+    ]
+  },
+  {
+    "objectID": "vol08/cap051-iam-em-nuvem-e-os-erros-de-configuracao-mais.html",
+    "href": "vol08/cap051-iam-em-nuvem-e-os-erros-de-configuracao-mais.html",
+    "title": "51  IAM em nuvem e os erros de configuração mais caros",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 8 — Nuvem e Contêineres\n",
+      "<span class='chapter-number'>51</span>  <span class='chapter-title'>IAM em nuvem e os erros de configuração mais caros</span>"
+    ]
+  },
+  {
+    "objectID": "vol08/cap052-seguranca-de-conteineres-e-de-imagens.html",
+    "href": "vol08/cap052-seguranca-de-conteineres-e-de-imagens.html",
+    "title": "52  Segurança de contêineres e de imagens",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 8 — Nuvem e Contêineres\n",
+      "<span class='chapter-number'>52</span>  <span class='chapter-title'>Segurança de contêineres e de imagens</span>"
+    ]
+  },
+  {
+    "objectID": "vol08/cap053-seguranca-em-kubernetes.html",
+    "href": "vol08/cap053-seguranca-em-kubernetes.html",
+    "title": "53  Segurança em Kubernetes",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 8 — Nuvem e Contêineres\n",
+      "<span class='chapter-number'>53</span>  <span class='chapter-title'>Segurança em Kubernetes</span>"
+    ]
+  },
+  {
+    "objectID": "vol08/cap054-infraestrutura-como-codigo-e-seguranca-de.html",
+    "href": "vol08/cap054-infraestrutura-como-codigo-e-seguranca-de.html",
+    "title": "54  Infraestrutura como código e segurança de pipeline",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 8 — Nuvem e Contêineres\n",
+      "<span class='chapter-number'>54</span>  <span class='chapter-title'>Infraestrutura como código e segurança de pipeline</span>"
+    ]
+  },
+  {
+    "objectID": "vol08/cap055-segredos-cofres-e-gestao-de-chaves.html",
+    "href": "vol08/cap055-segredos-cofres-e-gestao-de-chaves.html",
+    "title": "55  Segredos, cofres e gestão de chaves",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 8 — Nuvem e Contêineres\n",
+      "<span class='chapter-number'>55</span>  <span class='chapter-title'>Segredos, cofres e gestão de chaves</span>"
+    ]
+  },
+  {
+    "objectID": "vol09/cap056-metodologias-e-definicao-de-escopo-ptes.html",
+    "href": "vol09/cap056-metodologias-e-definicao-de-escopo-ptes.html",
+    "title": "56  Metodologias e definição de escopo: PTES, OSSTMM e NIST SP 800-115",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 9 — Testes de Invasão\n",
+      "<span class='chapter-number'>56</span>  <span class='chapter-title'>Metodologias e definição de escopo: PTES, OSSTMM e NIST SP 800-115</span>"
+    ]
+  },
+  {
+    "objectID": "vol09/cap057-reconhecimento-passivo-e-osint.html",
+    "href": "vol09/cap057-reconhecimento-passivo-e-osint.html",
+    "title": "57  Reconhecimento passivo e OSINT",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 9 — Testes de Invasão\n",
+      "<span class='chapter-number'>57</span>  <span class='chapter-title'>Reconhecimento passivo e OSINT</span>"
+    ]
+  },
+  {
+    "objectID": "vol09/cap058-varredura-e-enumeracao.html",
+    "href": "vol09/cap058-varredura-e-enumeracao.html",
+    "title": "58  Varredura e enumeração",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 9 — Testes de Invasão\n",
+      "<span class='chapter-number'>58</span>  <span class='chapter-title'>Varredura e enumeração</span>"
+    ]
+  },
+  {
+    "objectID": "vol09/cap059-analise-de-vulnerabilidades.html",
+    "href": "vol09/cap059-analise-de-vulnerabilidades.html",
+    "title": "59  Análise de vulnerabilidades",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 9 — Testes de Invasão\n",
+      "<span class='chapter-number'>59</span>  <span class='chapter-title'>Análise de vulnerabilidades</span>"
+    ]
+  },
+  {
+    "objectID": "vol09/cap060-exploracao-conceitos-e-anatomia-de-uma-falha.html",
+    "href": "vol09/cap060-exploracao-conceitos-e-anatomia-de-uma-falha.html",
+    "title": "60  Exploração: conceitos e anatomia de uma falha",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 9 — Testes de Invasão\n",
+      "<span class='chapter-number'>60</span>  <span class='chapter-title'>Exploração: conceitos e anatomia de uma falha</span>"
+    ]
+  },
+  {
+    "objectID": "vol09/cap061-pos-exploracao-persistencia-e-movimentacao.html",
+    "href": "vol09/cap061-pos-exploracao-persistencia-e-movimentacao.html",
+    "title": "61  Pós-exploração, persistência e movimentação lateral",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 9 — Testes de Invasão\n",
+      "<span class='chapter-number'>61</span>  <span class='chapter-title'>Pós-exploração, persistência e movimentação lateral</span>"
+    ]
+  },
+  {
+    "objectID": "vol09/cap062-teste-de-invasao-em-aplicacoes-web-na-pratica.html",
+    "href": "vol09/cap062-teste-de-invasao-em-aplicacoes-web-na-pratica.html",
+    "title": "62  Teste de invasão em aplicações web na prática",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 9 — Testes de Invasão\n",
+      "<span class='chapter-number'>62</span>  <span class='chapter-title'>Teste de invasão em aplicações web na prática</span>"
+    ]
+  },
+  {
+    "objectID": "vol09/cap063-relatorio-tecnico-e-comunicacao-de-achados.html",
+    "href": "vol09/cap063-relatorio-tecnico-e-comunicacao-de-achados.html",
+    "title": "63  Relatório técnico e comunicação de achados",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 9 — Testes de Invasão\n",
+      "<span class='chapter-number'>63</span>  <span class='chapter-title'>Relatório técnico e comunicação de achados</span>"
+    ]
+  },
+  {
+    "objectID": "vol10/cap064-engenharia-social-os-principios-psicologicos.html",
+    "href": "vol10/cap064-engenharia-social-os-principios-psicologicos.html",
+    "title": "64  Engenharia social: os princípios psicológicos da persuasão",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 10 — Fator Humano\n",
+      "<span class='chapter-number'>64</span>  <span class='chapter-title'>Engenharia social: os princípios psicológicos da persuasão</span>"
+    ]
+  },
+  {
+    "objectID": "vol10/cap065-phishing-spear-phishing-e-fraude-do-e-mail.html",
+    "href": "vol10/cap065-phishing-spear-phishing-e-fraude-do-e-mail.html",
+    "title": "65  Phishing, spear phishing e fraude do e-mail corporativo",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 10 — Fator Humano\n",
+      "<span class='chapter-number'>65</span>  <span class='chapter-title'>Phishing, spear phishing e fraude do e-mail corporativo</span>"
+    ]
+  },
+  {
+    "objectID": "vol10/cap066-fraudes-digitais-no-brasil-pix-clonagem-e.html",
+    "href": "vol10/cap066-fraudes-digitais-no-brasil-pix-clonagem-e.html",
+    "title": "66  Fraudes digitais no Brasil: Pix, clonagem e golpes por mensageria",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 10 — Fator Humano\n",
+      "<span class='chapter-number'>66</span>  <span class='chapter-title'>Fraudes digitais no Brasil: Pix, clonagem e golpes por mensageria</span>"
+    ]
+  },
+  {
+    "objectID": "vol10/cap067-seguranca-fisica-e-ataques-presenciais.html",
+    "href": "vol10/cap067-seguranca-fisica-e-ataques-presenciais.html",
+    "title": "67  Segurança física e ataques presenciais",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 10 — Fator Humano\n",
+      "<span class='chapter-number'>67</span>  <span class='chapter-title'>Segurança física e ataques presenciais</span>"
+    ]
+  },
+  {
+    "objectID": "vol10/cap068-cultura-de-seguranca-e-programas-de.html",
+    "href": "vol10/cap068-cultura-de-seguranca-e-programas-de.html",
+    "title": "68  Cultura de segurança e programas de conscientização",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 10 — Fator Humano\n",
+      "<span class='chapter-number'>68</span>  <span class='chapter-title'>Cultura de segurança e programas de conscientização</span>"
+    ]
+  },
+  {
+    "objectID": "vol11/cap069-taxonomia-de-malware.html",
+    "href": "vol11/cap069-taxonomia-de-malware.html",
+    "title": "69  Taxonomia de malware",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 11 — Malware e Inteligência de Ameaças\n",
+      "<span class='chapter-number'>69</span>  <span class='chapter-title'>Taxonomia de malware</span>"
+    ]
+  },
+  {
+    "objectID": "vol11/cap070-anatomia-de-um-ataque-de-ransomware.html",
+    "href": "vol11/cap070-anatomia-de-um-ataque-de-ransomware.html",
+    "title": "70  Anatomia de um ataque de ransomware",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 11 — Malware e Inteligência de Ameaças\n",
+      "<span class='chapter-number'>70</span>  <span class='chapter-title'>Anatomia de um ataque de ransomware</span>"
+    ]
+  },
+  {
+    "objectID": "vol11/cap071-analise-estatica-em-laboratorio.html",
+    "href": "vol11/cap071-analise-estatica-em-laboratorio.html",
+    "title": "71  Análise estática em laboratório",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 11 — Malware e Inteligência de Ameaças\n",
+      "<span class='chapter-number'>71</span>  <span class='chapter-title'>Análise estática em laboratório</span>"
+    ]
+  },
+  {
+    "objectID": "vol11/cap072-analise-dinamica-e-sandboxing.html",
+    "href": "vol11/cap072-analise-dinamica-e-sandboxing.html",
+    "title": "72  Análise dinâmica e sandboxing",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 11 — Malware e Inteligência de Ameaças\n",
+      "<span class='chapter-number'>72</span>  <span class='chapter-title'>Análise dinâmica e sandboxing</span>"
+    ]
+  },
+  {
+    "objectID": "vol11/cap073-mitre-att-ck-e-o-mapeamento-de-ttps.html",
+    "href": "vol11/cap073-mitre-att-ck-e-o-mapeamento-de-ttps.html",
+    "title": "73  MITRE ATT&CK e o mapeamento de TTPs",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 11 — Malware e Inteligência de Ameaças\n",
+      "<span class='chapter-number'>73</span>  <span class='chapter-title'>MITRE ATT&CK e o mapeamento de TTPs</span>"
+    ]
+  },
+  {
+    "objectID": "vol11/cap074-inteligencia-de-ameacas-e-indicadores-de.html",
+    "href": "vol11/cap074-inteligencia-de-ameacas-e-indicadores-de.html",
+    "title": "74  Inteligência de ameaças e indicadores de comprometimento",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 11 — Malware e Inteligência de Ameaças\n",
+      "<span class='chapter-number'>74</span>  <span class='chapter-title'>Inteligência de ameaças e indicadores de comprometimento</span>"
+    ]
+  },
+  {
+    "objectID": "vol12/cap075-estrutura-e-operacao-de-um-soc.html",
+    "href": "vol12/cap075-estrutura-e-operacao-de-um-soc.html",
+    "title": "75  Estrutura e operação de um SOC",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 12 — Blue Team, SOC e Detecção\n",
+      "<span class='chapter-number'>75</span>  <span class='chapter-title'>Estrutura e operação de um SOC</span>"
+    ]
+  },
+  {
+    "objectID": "vol12/cap076-logging-o-que-registrar-por-quanto-tempo-e.html",
+    "href": "vol12/cap076-logging-o-que-registrar-por-quanto-tempo-e.html",
+    "title": "76  Logging: o que registrar, por quanto tempo e por quê",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 12 — Blue Team, SOC e Detecção\n",
+      "<span class='chapter-number'>76</span>  <span class='chapter-title'>Logging: o que registrar, por quanto tempo e por quê</span>"
+    ]
+  },
+  {
+    "objectID": "vol12/cap077-siem-arquitetura-ingestao-e-correlacao.html",
+    "href": "vol12/cap077-siem-arquitetura-ingestao-e-correlacao.html",
+    "title": "77  SIEM: arquitetura, ingestão e correlação",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 12 — Blue Team, SOC e Detecção\n",
+      "<span class='chapter-number'>77</span>  <span class='chapter-title'>SIEM: arquitetura, ingestão e correlação</span>"
+    ]
+  },
+  {
+    "objectID": "vol12/cap078-escrita-de-regras-de-deteccao-com-sigma-e-yara.html",
+    "href": "vol12/cap078-escrita-de-regras-de-deteccao-com-sigma-e-yara.html",
+    "title": "78  Escrita de regras de detecção com Sigma e YARA",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 12 — Blue Team, SOC e Detecção\n",
+      "<span class='chapter-number'>78</span>  <span class='chapter-title'>Escrita de regras de detecção com Sigma e YARA</span>"
+    ]
+  },
+  {
+    "objectID": "vol12/cap079-threat-hunting-cacando-o-que-a-regra-nao-pegou.html",
+    "href": "vol12/cap079-threat-hunting-cacando-o-que-a-regra-nao-pegou.html",
+    "title": "79  Threat hunting: caçando o que a regra não pegou",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 12 — Blue Team, SOC e Detecção\n",
+      "<span class='chapter-number'>79</span>  <span class='chapter-title'>Threat hunting: caçando o que a regra não pegou</span>"
+    ]
+  },
+  {
+    "objectID": "vol12/cap080-deception-honeypots-honeytokens-e-canarios.html",
+    "href": "vol12/cap080-deception-honeypots-honeytokens-e-canarios.html",
+    "title": "80  Deception: honeypots, honeytokens e canários",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 12 — Blue Team, SOC e Detecção\n",
+      "<span class='chapter-number'>80</span>  <span class='chapter-title'>Deception: honeypots, honeytokens e canários</span>"
+    ]
+  },
+  {
+    "objectID": "vol12/cap081-metricas-e-maturidade-da-deteccao.html",
+    "href": "vol12/cap081-metricas-e-maturidade-da-deteccao.html",
+    "title": "81  Métricas e maturidade da detecção",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 12 — Blue Team, SOC e Detecção\n",
+      "<span class='chapter-number'>81</span>  <span class='chapter-title'>Métricas e maturidade da detecção</span>"
+    ]
+  },
+  {
+    "objectID": "vol13/cap082-o-ciclo-de-resposta-a-incidentes.html",
+    "href": "vol13/cap082-o-ciclo-de-resposta-a-incidentes.html",
+    "title": "82  O ciclo de resposta a incidentes",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 13 — Resposta a Incidentes e Forense Digital\n",
+      "<span class='chapter-number'>82</span>  <span class='chapter-title'>O ciclo de resposta a incidentes</span>"
+    ]
+  },
+  {
+    "objectID": "vol13/cap083-preparacao-plano-papeis-e-playbooks.html",
+    "href": "vol13/cap083-preparacao-plano-papeis-e-playbooks.html",
+    "title": "83  Preparação: plano, papéis e playbooks",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 13 — Resposta a Incidentes e Forense Digital\n",
+      "<span class='chapter-number'>83</span>  <span class='chapter-title'>Preparação: plano, papéis e playbooks</span>"
+    ]
+  },
+  {
+    "objectID": "vol13/cap084-contencao-erradicacao-e-recuperacao.html",
+    "href": "vol13/cap084-contencao-erradicacao-e-recuperacao.html",
+    "title": "84  Contenção, erradicação e recuperação",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 13 — Resposta a Incidentes e Forense Digital\n",
+      "<span class='chapter-number'>84</span>  <span class='chapter-title'>Contenção, erradicação e recuperação</span>"
+    ]
+  },
+  {
+    "objectID": "vol13/cap085-fundamentos-de-forense-digital-e-cadeia-de.html",
+    "href": "vol13/cap085-fundamentos-de-forense-digital-e-cadeia-de.html",
+    "title": "85  Fundamentos de forense digital e cadeia de custódia",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 13 — Resposta a Incidentes e Forense Digital\n",
+      "<span class='chapter-number'>85</span>  <span class='chapter-title'>Fundamentos de forense digital e cadeia de custódia</span>"
+    ]
+  },
+  {
+    "objectID": "vol13/cap086-forense-de-disco-e-sistemas-de-arquivos.html",
+    "href": "vol13/cap086-forense-de-disco-e-sistemas-de-arquivos.html",
+    "title": "86  Forense de disco e sistemas de arquivos",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 13 — Resposta a Incidentes e Forense Digital\n",
+      "<span class='chapter-number'>86</span>  <span class='chapter-title'>Forense de disco e sistemas de arquivos</span>"
+    ]
+  },
+  {
+    "objectID": "vol13/cap087-forense-de-memoria.html",
+    "href": "vol13/cap087-forense-de-memoria.html",
+    "title": "87  Forense de memória",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 13 — Resposta a Incidentes e Forense Digital\n",
+      "<span class='chapter-number'>87</span>  <span class='chapter-title'>Forense de memória</span>"
+    ]
+  },
+  {
+    "objectID": "vol13/cap088-forense-de-rede-e-analise-de-trafego.html",
+    "href": "vol13/cap088-forense-de-rede-e-analise-de-trafego.html",
+    "title": "88  Forense de rede e análise de tráfego",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 13 — Resposta a Incidentes e Forense Digital\n",
+      "<span class='chapter-number'>88</span>  <span class='chapter-title'>Forense de rede e análise de tráfego</span>"
+    ]
+  },
+  {
+    "objectID": "vol14/cap089-backup-estrategias-e-a-regra-3-2-1-1-0.html",
+    "href": "vol14/cap089-backup-estrategias-e-a-regra-3-2-1-1-0.html",
+    "title": "89  Backup: estratégias e a regra 3-2-1-1-0",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 14 — Continuidade e Resiliência\n",
+      "<span class='chapter-number'>89</span>  <span class='chapter-title'>Backup: estratégias e a regra 3-2-1-1-0</span>"
+    ]
+  },
+  {
+    "objectID": "vol14/cap090-recuperacao-de-desastres-e-continuidade-de.html",
+    "href": "vol14/cap090-recuperacao-de-desastres-e-continuidade-de.html",
+    "title": "90  Recuperação de desastres e continuidade de negócio",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 14 — Continuidade e Resiliência\n",
+      "<span class='chapter-number'>90</span>  <span class='chapter-title'>Recuperação de desastres e continuidade de negócio</span>"
+    ]
+  },
+  {
+    "objectID": "vol14/cap091-testes-de-continuidade-e-exercicios-de-mesa.html",
+    "href": "vol14/cap091-testes-de-continuidade-e-exercicios-de-mesa.html",
+    "title": "91  Testes de continuidade e exercícios de mesa",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 14 — Continuidade e Resiliência\n",
+      "<span class='chapter-number'>91</span>  <span class='chapter-title'>Testes de continuidade e exercícios de mesa</span>"
+    ]
+  },
+  {
+    "objectID": "vol14/cap092-alta-disponibilidade-e-resiliencia-de.html",
+    "href": "vol14/cap092-alta-disponibilidade-e-resiliencia-de.html",
+    "title": "92  Alta disponibilidade e resiliência de infraestrutura",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 14 — Continuidade e Resiliência\n",
+      "<span class='chapter-number'>92</span>  <span class='chapter-title'>Alta disponibilidade e resiliência de infraestrutura</span>"
+    ]
+  },
+  {
+    "objectID": "vol14/cap093-recuperacao-apos-um-ataque-de-ransomware.html",
+    "href": "vol14/cap093-recuperacao-apos-um-ataque-de-ransomware.html",
+    "title": "93  Recuperação após um ataque de ransomware",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 14 — Continuidade e Resiliência\n",
+      "<span class='chapter-number'>93</span>  <span class='chapter-title'>Recuperação após um ataque de ransomware</span>"
+    ]
+  },
+  {
+    "objectID": "vol15/cap094-governanca-de-seguranca-e-o-papel-do-ciso.html",
+    "href": "vol15/cap094-governanca-de-seguranca-e-o-papel-do-ciso.html",
+    "title": "94  Governança de segurança e o papel do CISO",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 15 — Governança, Risco e Conformidade\n",
+      "<span class='chapter-number'>94</span>  <span class='chapter-title'>Governança de segurança e o papel do CISO</span>"
+    ]
+  },
+  {
+    "objectID": "vol15/cap095-iso-iec-27001-e-27002.html",
+    "href": "vol15/cap095-iso-iec-27001-e-27002.html",
+    "title": "95  ISO/IEC 27001 e 27002",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 15 — Governança, Risco e Conformidade\n",
+      "<span class='chapter-number'>95</span>  <span class='chapter-title'>ISO/IEC 27001 e 27002</span>"
+    ]
+  },
+  {
+    "objectID": "vol15/cap096-nist-cybersecurity-framework-e-cis-controls.html",
+    "href": "vol15/cap096-nist-cybersecurity-framework-e-cis-controls.html",
+    "title": "96  NIST Cybersecurity Framework e CIS Controls",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 15 — Governança, Risco e Conformidade\n",
+      "<span class='chapter-number'>96</span>  <span class='chapter-title'>NIST Cybersecurity Framework e CIS Controls</span>"
+    ]
+  },
+  {
+    "objectID": "vol15/cap097-lgpd-na-pratica-bases-legais-incidentes-e-a.html",
+    "href": "vol15/cap097-lgpd-na-pratica-bases-legais-incidentes-e-a.html",
+    "title": "97  LGPD na prática: bases legais, incidentes e a ANPD",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 15 — Governança, Risco e Conformidade\n",
+      "<span class='chapter-number'>97</span>  <span class='chapter-title'>LGPD na prática: bases legais, incidentes e a ANPD</span>"
+    ]
+  },
+  {
+    "objectID": "vol15/cap098-marco-civil-lei-12-737-e-o-direito-penal.html",
+    "href": "vol15/cap098-marco-civil-lei-12-737-e-o-direito-penal.html",
+    "title": "98  Marco Civil, Lei 12.737 e o direito penal digital brasileiro",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 15 — Governança, Risco e Conformidade\n",
+      "<span class='chapter-number'>98</span>  <span class='chapter-title'>Marco Civil, Lei 12.737 e o direito penal digital brasileiro</span>"
+    ]
+  },
+  {
+    "objectID": "vol15/cap099-obrigacoes-regulatorias-de-provedores-de.html",
+    "href": "vol15/cap099-obrigacoes-regulatorias-de-provedores-de.html",
+    "title": "99  Obrigações regulatórias de provedores de internet",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 15 — Governança, Risco e Conformidade\n",
+      "<span class='chapter-number'>99</span>  <span class='chapter-title'>Obrigações regulatórias de provedores de internet</span>"
+    ]
+  },
+  {
+    "objectID": "vol15/cap100-pci-dss-e-requisitos-setoriais.html",
+    "href": "vol15/cap100-pci-dss-e-requisitos-setoriais.html",
+    "title": "100  PCI-DSS e requisitos setoriais",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 15 — Governança, Risco e Conformidade\n",
+      "<span class='chapter-number'>100</span>  <span class='chapter-title'>PCI-DSS e requisitos setoriais</span>"
+    ]
+  },
+  {
+    "objectID": "vol15/cap101-auditoria-conformidade-e-gestao-de-riscos-de.html",
+    "href": "vol15/cap101-auditoria-conformidade-e-gestao-de-riscos-de.html",
+    "title": "101  Auditoria, conformidade e gestão de riscos de terceiros",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 15 — Governança, Risco e Conformidade\n",
+      "<span class='chapter-number'>101</span>  <span class='chapter-title'>Auditoria, conformidade e gestão de riscos de terceiros</span>"
+    ]
+  },
+  {
+    "objectID": "vol16/cap102-seguranca-de-sistemas-de-ia-e-modelos-de.html",
+    "href": "vol16/cap102-seguranca-de-sistemas-de-ia-e-modelos-de.html",
+    "title": "102  Segurança de sistemas de IA e modelos de linguagem",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 16 — Fronteira e Carreira\n",
+      "<span class='chapter-number'>102</span>  <span class='chapter-title'>Segurança de sistemas de IA e modelos de linguagem</span>"
+    ]
+  },
+  {
+    "objectID": "vol16/cap103-criptografia-pos-quantica.html",
+    "href": "vol16/cap103-criptografia-pos-quantica.html",
+    "title": "103  Criptografia pós-quântica",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 16 — Fronteira e Carreira\n",
+      "<span class='chapter-number'>103</span>  <span class='chapter-title'>Criptografia pós-quântica</span>"
+    ]
+  },
+  {
+    "objectID": "vol16/cap104-seguranca-de-ot-iot-e-sistemas-embarcados.html",
+    "href": "vol16/cap104-seguranca-de-ot-iot-e-sistemas-embarcados.html",
+    "title": "104  Segurança de OT, IoT e sistemas embarcados",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 16 — Fronteira e Carreira\n",
+      "<span class='chapter-number'>104</span>  <span class='chapter-title'>Segurança de OT, IoT e sistemas embarcados</span>"
+    ]
+  },
+  {
+    "objectID": "vol16/cap105-seguranca-da-cadeia-de-suprimentos-de-software.html",
+    "href": "vol16/cap105-seguranca-da-cadeia-de-suprimentos-de-software.html",
+    "title": "105  Segurança da cadeia de suprimentos de software",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 16 — Fronteira e Carreira\n",
+      "<span class='chapter-number'>105</span>  <span class='chapter-title'>Segurança da cadeia de suprimentos de software</span>"
+    ]
+  },
+  {
+    "objectID": "vol16/cap106-privacidade-anonimato-e-vigilancia.html",
+    "href": "vol16/cap106-privacidade-anonimato-e-vigilancia.html",
+    "title": "106  Privacidade, anonimato e vigilância",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 16 — Fronteira e Carreira\n",
+      "<span class='chapter-number'>106</span>  <span class='chapter-title'>Privacidade, anonimato e vigilância</span>"
+    ]
+  },
+  {
+    "objectID": "vol16/cap107-carreira-certificacoes-e-aprendizado-continuo.html",
+    "href": "vol16/cap107-carreira-certificacoes-e-aprendizado-continuo.html",
+    "title": "107  Carreira, certificações e aprendizado contínuo",
+    "section": "",
+    "text": "(em elaboracao)",
+    "crumbs": [
+      "Volume 16 — Fronteira e Carreira\n",
+      "<span class='chapter-number'>107</span>  <span class='chapter-title'>Carreira, certificações e aprendizado contínuo</span>"
+    ]
+  },
+  {
+    "objectID": "referencias.html",
+    "href": "referencias.html",
+    "title": "Referências",
+    "section": "",
+    "text": "AGÊNCIA NACIONAL DE TELECOMUNICAÇÕES.\nResolução n. 740, de 21 de dezembro de\n2020. Regulamento de Segurança Cibernética\nAplicada aos Produtos de\nTelecomunicações., 2020.\n\n\nAUTORIDADE NACIONAL DE PROTEÇÃO DE DADOS.\nResolução CD/ANPD n. 15, de 24 de\nabril de 2024. Aprova o Regulamento de\nComunicação de Incidente de\nSegurança., 2024.\n\n\nBRASIL. Lei n. 12.737, de 30 de novembro de 2012.\nTipificação criminal de delitos\ninformáticos., 2012.\n\n\nBRASIL. Lei n. 12.965, de 23 de abril de 2014. Marco Civil da\nInternet., 2014.\n\n\nBRASIL. Lei n. 13.709, de 14 de agosto de 2018. Lei Geral de\nProteção de Dados Pessoais., 2018.\n\n\nINTERNATIONAL ORGANIZATION FOR STANDARDIZATION. ISO/IEC 27000:\ninformation technology — security techniques — information security\nmanagement systems — overview and vocabulary. GenebraISO, 2018.\n\n\nSALTZER, Jerome H.; SCHROEDER, Michael D. The Protection of Information\nin Computer Systems. Proceedings of the IEEE, v. 63, n.\n9, p. 1278–1308, 1975.\n\n\nSCHNEIER, Bruce. Secrets and Lies: Digital Security in a\nNetworked World. [S.l.]: Wiley, 2000.",
+    "crumbs": [
+      "Referências"
+    ]
+  }
+]
