@@ -1,3 +1,304 @@
 # Fundamentos de sistemas operacionais: processos, permissões e memória {#sec-cap011}
 
-*(em elaboracao)*
+Um analista abre um chamado de rotina: o servidor de arquivos está com uso de CPU acima do normal desde a madrugada. O `top` mostra um processo chamado `httpd-worker` consumindo 90% de um núcleo. Parece o servidor web. Não é: o servidor web da casa é o nginx, e ninguém instalou Apache naquela máquina.
+
+O processo roda como o usuário `www-data`, o mesmo do nginx. Foi iniciado às 3h14, tem como pai um processo que já morreu, e seu executável foi apagado do disco — o arquivo continua acessível apenas através de `/proc/<pid>/exe`, marcado como `(deleted)`. O diretório de trabalho é `/tmp`. Ele mantém uma conexão TCP estabelecida com um endereço na Holanda, na porta 443.
+
+Cada um desses detalhes é uma propriedade do sistema operacional: identidade de processo, herança de pai, descritor de arquivo que sobrevive ao arquivo, contexto de usuário, espaço de memória. Quem não conhece esses conceitos vê um processo estranho. Quem conhece lê, em dois minutos, a história inteira de um comprometimento — inclusive como ele começou e o que ele consegue alcançar a seguir.
+
+Os três capítulos anteriores trataram da rede. Os quatro seguintes tratam da máquina. Este é o alicerce conceitual comum a Linux e Windows; o @sec-cap012 e o @sec-cap013 descem ao específico de cada um.
+
+## O anel de proteção: a fronteira que sustenta tudo
+
+Processadores modernos executam código em pelo menos dois níveis de privilégio. Em **modo núcleo** (anel 0), o código acessa qualquer endereço de memória, fala diretamente com o hardware e altera as tabelas que controlam tudo. Em **modo usuário** (anel 3), cada programa vê apenas a memória que o núcleo lhe concedeu e não toca em hardware.
+
+Essa separação é a fundação de toda a segurança de um sistema operacional. Dela decorrem três consequências:
+
+**A única passagem entre os modos é a chamada de sistema.** Para ler um arquivo, abrir um socket ou criar um processo, o programa precisa pedir ao núcleo. Esse pedido é o ponto onde toda decisão de autorização é tomada — e, não por acaso, é onde antivírus, EDR e ferramentas de auditoria se instalam para observar. O Volume 6 trata de como isso é feito na prática.
+
+**Um defeito no núcleo derruba toda a proteção.** Uma falha em código de anel 0 — driver, módulo, subsistema de arquivos — dá controle total. É por isso que uma vulnerabilidade de escalonamento local no núcleo é tratada com a mesma gravidade de uma remota: ela transforma qualquer acesso mínimo em domínio da máquina.
+
+**O núcleo é a superfície de ataque menos visível.** Um *rootkit* que consiga executar em anel 0 mente para todas as ferramentas que rodam em anel 3, inclusive para o antivírus. Daí a importância de mecanismos que verificam a integridade do próprio núcleo — inicialização verificada, assinatura obrigatória de módulos, integridade protegida por virtualização.
+
+## Processos: identidade, herança e contexto
+
+Um **processo** é um programa em execução com seu próprio espaço de endereçamento. Do ponto de vista de segurança, o que importa não é o código que ele executa, e sim o **contexto** em que executa: quem ele é, o que herdou e o que pode alcançar.
+
+### A árvore genealógica
+
+Todo processo (exceto o primeiro) é criado por outro, e a relação pai–filho é a estrutura mais reveladora numa investigação. A pergunta que resolve a maioria dos casos é sempre a mesma: *quem chamou isso?*
+
+Um interpretador de comandos cujo pai é um editor de planilhas é anomalia grave — significa que uma macro executou. Um processo de rede cujo pai é um serviço de impressão idem. Regras de detecção comerciais e abertas são, em boa medida, catálogos de pares pai–filho que não deveriam existir; o Volume 12 trata de escrevê-las.
+
+Quando o pai termina antes do filho, o filho é adotado pelo processo inicial do sistema. Isso apaga o rastro da origem — exatamente o que aconteceu no caso de abertura — e é técnica comum tanto de daemons legítimos quanto de código malicioso.
+
+### Identidade e o bit que muda tudo
+
+Cada processo carrega identificadores de usuário e de grupo que determinam o que ele pode acessar. O modelo Unix distingue o identificador **real** (quem iniciou) do **efetivo** (o usado nas verificações de permissão). A diferença entre os dois é a base do mecanismo de elevação — e da sua exploração.
+
+O **bit SUID** faz um executável rodar com a identidade do seu dono, não de quem o executou. Existe por necessidade legítima: `passwd` precisa escrever em `/etc/shadow`, que só o root pode alterar. E é, simultaneamente, uma das superfícies de escalonamento local mais exploradas que existem. Um binário SUID de root com qualquer falha — estouro de buffer, injeção de argumento, confiança numa variável de ambiente, chamada a um programa externo por caminho relativo — entrega o sistema.
+
+A regra operacional é direta: **o inventário de binários SUID de uma máquina deve ser conhecido, pequeno e estável**. Um SUID novo que aparece sem explicação é indicador de comprometimento de alta confiança, e é o primeiro lugar onde se olha depois de um acesso suspeito.
+
+O Windows resolve o mesmo problema de forma diferente, com *tokens* de acesso que carregam a identidade, os grupos e uma lista de **privilégios** nomeados. Alguns desses privilégios equivalem, na prática, a ser administrador: `SeDebugPrivilege` permite abrir qualquer processo e ler sua memória; `SeImpersonatePrivilege` permite assumir a identidade de outro usuário; `SeBackupPrivilege` permite ler qualquer arquivo ignorando as permissões. Conceder esses privilégios a uma conta de serviço é conceder administração por caminho indireto — e é assim que boa parte das escaladas em ambiente Windows acontece, como o @sec-cap013 detalha.
+
+## Permissões: dois modelos para o mesmo problema
+
+O controle de acesso a arquivos resolve a mesma questão em Unix e Windows com filosofias distintas. A @fig-permissoes compara as duas.
+
+::: {#fig-permissoes}
+```{.tikz}
+%%| filename: modelos-permissao
+%%| alt: Comparação entre o modelo de permissões Unix por dono, grupo e outros e o modelo de listas de controle de acesso do Windows
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw=manualblue, thick, fill=manualblue!8, rounded corners=3pt,
+               align=center, inner sep=5pt, minimum width=3.0cm},
+    ace/.style={draw=manualgray, thick, fill=manualgray!6, rounded corners=2pt,
+                align=left, inner sep=4pt, font=\scriptsize, minimum width=5.4cm},
+    tit/.style={font=\bfseries\small, align=center}}
+
+  \node[tit, manualblue] at (2.8,6.2) {Unix --- dono, grupo, outros};
+  \node[tit, manualgreen] at (10.6,6.2) {Windows --- lista de controle de acesso};
+
+  \node[cx] (arq1) at (2.8,5.2) {\texttt{/dados/folha.csv}};
+  \node[ace] (u1) at (2.8,4.1) {\texttt{rw-}\quad dono \quad\texttt{financeiro}};
+  \node[ace] (u2) at (2.8,3.35) {\texttt{r{-}{-}}\quad grupo \quad\texttt{rh}};
+  \node[ace] (u3) at (2.8,2.6) {\texttt{{-}{-}{-}}\quad outros};
+  \node[align=center, font=\scriptsize, manualblue] at (2.8,1.5)
+    {\texttt{chmod 640} --- três faixas apenas.\\Precisa de uma quarta regra?\\Só com ACL POSIX estendida.};
+
+  \node[cx, draw=manualgreen, fill=manualgreen!8] (arq2) at (10.6,5.2) {\texttt{D:\textbackslash dados\textbackslash folha.csv}};
+  \node[ace] (a1) at (10.6,4.1) {\textbf{Permitir} \quad\texttt{RH}\quad ler + escrever};
+  \node[ace] (a2) at (10.6,3.35) {\textbf{Permitir} \quad\texttt{Auditoria}\quad ler};
+  \node[ace] (a3) at (10.6,2.6) {\textbf{Negar} \quad\texttt{Estagiarios}\quad tudo};
+  \node[ace] (a4) at (10.6,1.85) {\textbf{Permitir} \quad\texttt{Backup}\quad ler + atributos};
+  \node[align=center, font=\scriptsize, manualgreen] at (10.6,0.9)
+    {Entradas ilimitadas, herdadas da pasta pai.\\\textbf{Negar prevalece sobre permitir.}};
+
+  \draw[manualgray, thick, dashed] (6.7,6.5) -- (6.7,0.5);
+\end{tikzpicture}
+```
+Os dois modelos de permissão. O Unix é simples e enxuto; o do Windows é expressivo e difícil de auditar.
+:::
+
+O modelo Unix cabe em nove bits e é fácil de auditar em massa; sua limitação é não expressar "este grupo lê, aquele escreve, aquele outro não vê" sem recorrer a ACLs estendidas. O modelo Windows expressa qualquer política, ao custo de uma complexidade que, na prática, produz permissões efetivas que ninguém consegue enunciar — especialmente com herança em árvores de pastas profundas e grupos aninhados.
+
+Dois detalhes causam a maioria dos erros reais:
+
+**A permissão de execução em diretório significa "atravessar", não "executar".** Sem ela não se acessa nada abaixo, mesmo com leitura no arquivo. Com ela e sem leitura no diretório, acessa-se um arquivo cujo nome já se conhece, mas não se lista o conteúdo — propriedade útil para diretórios que devem ser alcançáveis sem serem enumeráveis.
+
+**A permissão do diretório governa a criação e a exclusão, não a do arquivo.** Quem tem escrita num diretório pode apagar arquivos dele mesmo sem qualquer permissão sobre esses arquivos. É o motivo de existir o *sticky bit* em `/tmp`: sem ele, qualquer usuário apagaria os arquivos temporários de todos os outros.
+
+E há o erro clássico que aparece em toda auditoria: **`chmod 777`**. É a resposta rápida para "não estou conseguindo acessar" e significa que qualquer usuário do sistema — inclusive o processo web comprometido do caso de abertura — pode ler, alterar e apagar aquele arquivo. Em diretório com script executado por serviço, é escalonamento de privilégio servido em bandeja.
+
+## Memória: onde a exploração acontece
+
+O núcleo dá a cada processo um espaço de endereçamento virtual próprio, traduzido para memória física por tabelas que só o anel 0 altera. Isso garante isolamento: um processo não enxerga a memória de outro. A @fig-memoria mostra a organização típica desse espaço.
+
+::: {#fig-memoria}
+```{.tikz}
+%%| filename: espaco-memoria
+%%| alt: Organização do espaço de endereçamento de um processo, com pilha, heap, dados e código, e as regiões onde ocorrem os principais tipos de corrupção de memória
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    reg/.style={draw=manualgray, thick, fill=manualgray!6, align=center,
+                inner sep=4pt, minimum width=4.2cm, minimum height=1.0cm},
+    nota/.style={align=left, font=\scriptsize, text width=6.4cm}}
+
+  \node[reg, fill=manualblue!10, draw=manualblue] (pil) at (0,5.4)
+    {\textbf{Pilha} \scriptsize (cresce para baixo)};
+  \node[reg, fill=manualgray!4] (vazio) at (0,4.2) {\scriptsize espaço livre};
+  \node[reg, fill=manualred!10, draw=manualred] (heap) at (0,3.0)
+    {\textbf{Heap} \scriptsize (cresce para cima)};
+  \node[reg, fill=manualyellow!10, draw=manualyellow] (bss) at (0,1.9)
+    {\textbf{Dados} \scriptsize globais e estáticos};
+  \node[reg, fill=manualgreen!10, draw=manualgreen] (txt) at (0,0.8)
+    {\textbf{Código} \scriptsize somente leitura};
+
+  \node[font=\scriptsize, manualgray, anchor=west] at (2.3,6.1) {endereços altos};
+  \node[font=\scriptsize, manualgray, anchor=west] at (2.3,0.2) {endereços baixos};
+  \draw[->,>=stealth, manualgray] (2.4,5.9) -- (2.4,0.4);
+
+  \node[nota, manualblue, anchor=west] at (4.6,5.4)
+    {\textbf{Variáveis locais e endereço de retorno.} Escrever além do buffer sobrescreve o retorno e desvia a execução --- o estouro de pilha clássico.};
+  \node[nota, manualred, anchor=west] at (4.6,3.0)
+    {\textbf{Alocação dinâmica.} Uso após liberação e dupla liberação corrompem os metadados do alocador.};
+  \node[nota, manualgreen, anchor=west] at (4.6,0.8)
+    {\textbf{Instruções.} Marcado como não gravável; a proteção W\^{}X impede que dados injetados sejam executados.};
+\end{tikzpicture}
+```
+Espaço de endereçamento de um processo e as regiões onde a corrupção de memória ocorre.
+:::
+
+### Por que a corrupção de memória vira execução de código
+
+Linguagens como C e C++ não verificam limites de vetor. Se um programa reserva 64 bytes para um nome e copia 200, os 136 excedentes sobrescrevem o que estiver adiante — que, na pilha, inclui o **endereço de retorno** da função. Controlando esse endereço, o atacante controla para onde a execução desvia quando a função termina.
+
+Este manual não ensina a construir o desvio — o @sec-cap007 fixou essa fronteira, e o Volume 9 trata do assunto no nível conceitual necessário para entender e detectar. O que interessa aqui é a cadeia de mitigações que a indústria construiu, porque **entender por que cada uma existe é entender por que todas precisam estar ligadas**:
+
+| Mitigação | O que faz | O que a contorna |
+|---|---|---|
+| Canário de pilha | Valor sentinela antes do endereço de retorno; alterado, aborta | Vazamento de memória que revela o canário |
+| **DEP / NX** (W^X) | Páginas graváveis não são executáveis | Reúso de código já presente (ROP) |
+| **ASLR** | Randomiza posições de pilha, heap e bibliotecas | Vazamento de endereço; entropia baixa em 32 bits |
+| **PIE** | Randomiza também o executável | Idem |
+| **RELRO** | Torna a tabela de relocação somente leitura | — |
+| **CFI** | Restringe destinos de desvio indireto | Cadeias dentro dos destinos válidos |
+| Linguagem com memória segura | Elimina a classe inteira de falhas | Blocos `unsafe`, dependências em C |
+
+: Mitigações de corrupção de memória e seus limites. {#tbl-mitigacoes-memoria}
+
+Duas conclusões práticas. A primeira: **nenhuma mitigação isolada resolve**; cada uma eleva o custo, e a defesa vem da combinação. A segunda: essas proteções precisam ser **ativadas na compilação**, e software antigo ou binário proprietário mal empacotado frequentemente não as tem. Verificar isso num binário é tarefa de dois comandos, e está no fim do capítulo.
+
+A tendência de fundo é a migração para linguagens com memória segura. Levantamentos consistentes de grandes bases de código — Microsoft, Google, projetos do núcleo Linux — apontam que aproximadamente **dois terços das vulnerabilidades graves são falhas de segurança de memória**, e recomendações oficiais recentes empurram nessa direção para software novo. Não é solução para o que já existe, mas muda a conta para o que vai ser escrito.
+
+### Segredos vivem em memória
+
+Consequência menos óbvia e muito explorada: **tudo que um processo usa está em claro na sua memória**, por melhor que seja a criptografia em disco e em trânsito. Senhas digitadas, chaves privadas carregadas, tokens de sessão, o conteúdo descriptografado de um banco — tudo passa por ali.
+
+Por isso o privilégio de depuração é tão sensível: quem pode ler a memória de outro processo lê seus segredos sem quebrar nenhuma cifra. É o mecanismo por trás das ferramentas que extraem credenciais do processo de autenticação do Windows, e por trás da extração de chaves de um processo de servidor web. As defesas são de contenção — restringir quem tem o privilégio, isolar processos sensíveis, usar módulos de hardware que nunca expõem a chave, e limpar buffers sensíveis após o uso.
+
+## Isolamento: quando o processo não basta
+
+A separação entre processos é boa, mas grosseira demais para muitos casos. Um servidor web comprometido tem, por padrão, acesso a todo o sistema de arquivos legível pelo seu usuário. Daí a construção de camadas adicionais:
+
+**Redução de privilégio.** Cada serviço com seu próprio usuário sem interpretador de comandos e sem diretório pessoal. Barato, eficaz e ainda assim frequentemente ignorado — serviços rodando como root "porque era mais fácil" são achado comum em qualquer auditoria.
+
+**Capacidades.** O Linux fatiou os poderes de root em dezenas de capacidades independentes. Um servidor que precisa apenas abrir a porta 80 recebe `CAP_NET_BIND_SERVICE` em vez de ser root inteiro. Vale conhecer as que equivalem a root: `CAP_SYS_ADMIN` (chamada de "a nova root" com razão), `CAP_SYS_PTRACE`, `CAP_SYS_MODULE`, `CAP_DAC_OVERRIDE`.
+
+**Espaços de nomes e cgroups.** A base dos contêineres: o processo vê apenas um subconjunto de PIDs, montagens, interfaces de rede e usuários, com limites de recurso. Isolamento útil, mas **compartilhando o mesmo núcleo** — uma falha de anel 0 atravessa a fronteira. O Volume 8 trata das implicações.
+
+**Filtragem de chamadas de sistema.** O `seccomp` restringe quais chamadas um processo pode fazer. Se o serviço nunca precisa de `ptrace` nem de `mount`, negá-las reduz o que uma exploração bem-sucedida consegue fazer em seguida.
+
+**Controle de acesso obrigatório.** SELinux e AppArmor impõem política que o dono do arquivo não pode relaxar — o modelo MAC que o Volume 4 detalha. Curva de aprendizado real, e o único mecanismo que contém um processo root comprometido.
+
+**Virtualização.** Fronteira mais forte, com núcleo separado por máquina. É o assunto do @sec-cap014.
+
+O princípio que organiza a lista é o do **menor privilégio**, formulado por Saltzer e Schroeder em 1975 [@saltzer1975] e citado no @sec-cap001: cada componente recebe exatamente o necessário para sua função, e nada além. A lista acima é a caixa de ferramentas para aplicá-lo de fato.
+
+## Lendo o que a máquina conta
+
+Voltando ao caso de abertura: o que permitiu ler a situação em dois minutos foi saber onde o sistema operacional guarda cada resposta.
+
+| Pergunta | Onde está | O que revela |
+|---|---|---|
+| Quem iniciou este processo? | PID pai, linha de comando do pai | Origem do comprometimento |
+| Sob que identidade ele roda? | UID efetivo, grupos, token | O que ele alcança agora |
+| Qual binário ele executa? | `/proc/<pid>/exe`, imagem do processo | Executável apagado é sinal forte |
+| Que arquivos ele mantém abertos? | `/proc/<pid>/fd`, handles | Dados sendo lidos ou escritos |
+| Com quem ele fala? | Sockets do processo | Comando e controle |
+| O que está na memória dele? | Mapas de memória, regiões graváveis e executáveis | Código injetado |
+| Ele sobrevive a um reinício? | Unidades de serviço, tarefas agendadas, chaves de execução | Persistência |
+
+: As sete perguntas de triagem de um processo suspeito. {#tbl-triagem-processo}
+
+Um detalhe importante para a resposta a incidentes, e que o Volume 13 aprofunda: **desligar a máquina destrói a maior parte dessas respostas**. Memória é volátil; conexões desaparecem; o executável apagado, que só existe como descritor aberto, some para sempre. A ordem correta é preservar antes de conter.
+
+## ⚖️ Brasil em Foco
+
+**Registro de comando com privilégio e o não repúdio.** O @sec-cap003 tratou de responsabilização; aqui ela vira configuração. Contas administrativas compartilhadas — o `root` que três pessoas usam, o `Administrador` cuja senha está num bilhete — destroem a possibilidade de atribuir uma ação a uma pessoa. Isso enfraquece qualquer apuração interna, prejudica a defesa da organização num processo trabalhista e compromete a resposta a requisições judiciais. Acesso nominal com elevação registrada é o requisito mínimo.
+
+**Dados pessoais em memória e a notificação de incidente.** Se um processo comprometido tinha em memória dados pessoais de clientes, houve tratamento irregular sob a LGPD [@lgpd2018]. A Resolução CD/ANPD nº 15/2024 estabelece prazo e conteúdo da comunicação de incidente de segurança à autoridade e aos titulares [@anpd2024res15], e a avaliação sobre "que dados foram alcançados" depende diretamente das evidências da @tbl-triagem-processo — coletadas **antes** de desligar a máquina. Quem desliga primeiro perde a capacidade de dizer o que aconteceu, e a resposta "não sabemos" não é aceitável perante a ANPD.
+
+**Preservação de evidência é obrigação, não zelo.** O art. 13 do Marco Civil trata da guarda de registros de conexão [@marcocivil2014]; o Código de Processo Penal e a Convenção de Budapeste, promulgada pelo Decreto nº 11.491/2023 [@budapeste2023], tratam da preservação expedita de dados. Uma organização que recebe pedido de preservação e já reinstalou o servidor comprometido tem um problema jurídico além do técnico. Procedimento escrito de resposta que inclua "coletar memória e estado antes de qualquer contenção destrutiva" resolve os dois.
+
+**Software sem manutenção é risco jurídico e não apenas técnico.** Sistema que não recebe correção não tem as mitigações da @tbl-mitigacoes-memoria e acumula falhas conhecidas. Sob a LGPD, os arts. 46 e 47 exigem medidas de segurança aptas a proteger os dados; a ANPD já sinalizou, em guia orientativo dirigido a agentes de pequeno porte [@anpd2023guia], que manter software atualizado é medida básica esperada. Rodar sistema fora de suporte com dados pessoais é decisão que precisa estar documentada, com controles compensatórios, ou é exposição pura.
+
+## 🛠️ No Campo
+
+**1. Fazer a triagem de processo suspeito na ordem certa.** As sete perguntas da @tbl-triagem-processo, sem desligar nada:
+
+```bash
+PID=1234
+ls -l /proc/$PID/exe            # (deleted) é sinal forte
+ls -l /proc/$PID/cwd
+tr '\0' ' ' < /proc/$PID/cmdline; echo
+grep -E 'Uid|Gid|PPid|Threads' /proc/$PID/status
+ls -l /proc/$PID/fd | head -40
+ss -tanp | grep "pid=$PID"
+grep -E 'rwx' /proc/$PID/maps   # região gravável e executável: suspeita de injeção
+```
+
+```powershell
+# Windows: pai, linha de comando e dono do processo
+Get-CimInstance Win32_Process -Filter "ProcessId=1234" |
+  Select-Object ProcessId, ParentProcessId, CommandLine, ExecutablePath
+Get-NetTCPConnection -OwningProcess 1234
+```
+
+**2. Manter o inventário de binários SUID e comparar periodicamente.** Um SUID novo é indicador de alta confiança:
+
+```bash
+# Linha de base, guardada fora da máquina
+find / -xdev \( -perm -4000 -o -perm -2000 \) -type f -printf '%m %u %g %p\n' \
+  2>/dev/null | sort > /var/lib/baseline/suid.txt
+
+# Comparação na rotina
+diff <(find / -xdev \( -perm -4000 -o -perm -2000 \) -type f -printf '%m %u %g %p\n' \
+  2>/dev/null | sort) /var/lib/baseline/suid.txt
+```
+
+**3. Caçar permissões frouxas antes que alguém as encontre.** `777` em diretório de script executado por serviço é escalonamento pronto:
+
+```bash
+# Arquivos e diretórios graváveis por todos, fora das áreas temporárias
+find / -xdev -perm -0002 ! -type l ! -path '/proc/*' ! -path '/tmp/*' \
+  ! -path '/var/tmp/*' -printf '%m %p\n' 2>/dev/null | sort | head -40
+
+# Diretórios de escrita geral sem sticky bit — qualquer um apaga arquivo alheio
+find / -xdev -type d -perm -0002 ! -perm -1000 2>/dev/null
+```
+
+**4. Verificar se os binários em produção têm as mitigações ligadas.** Software interno compilado há anos costuma não ter:
+
+```bash
+# NX, PIE, RELRO, canário — o ideal é tudo habilitado
+readelf -lW /usr/local/bin/app | grep -E 'GNU_STACK|GNU_RELRO'
+readelf -hW /usr/local/bin/app | grep Type      # DYN = PIE, EXEC = sem PIE
+nm -D /usr/local/bin/app 2>/dev/null | grep -c stack_chk
+```
+
+**5. Reduzir o privilégio dos serviços com o que o systemd já oferece.** Ganho grande, esforço pequeno, sem tocar na aplicação:
+
+```ini
+[Service]
+User=app
+Group=app
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/app
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+```
+
+**6. Restringir quem pode ler a memória de outro processo.** Contenção direta contra extração de credenciais:
+
+```bash
+# Linux: só o processo pai pode depurar um filho
+sysctl -w kernel.yama.ptrace_scope=1
+echo 'kernel.yama.ptrace_scope = 1' > /etc/sysctl.d/10-ptrace.conf
+```
+
+```powershell
+# Windows: quem tem privilégios equivalentes a administração
+whoami /priv | Select-String 'SeDebug|SeImpersonate|SeBackup|SeTakeOwnership'
+```
+
+**7. Auditar contas de serviço com privilégios perigosos.** No Windows, `SeDebugPrivilege`, `SeImpersonatePrivilege` e `SeBackupPrivilege` concedidos a conta de serviço são administração por via indireta. A revisão é anual, no mínimo, e entra na mesma rotina que revisa membros de grupos administrativos.
+
+**8. Escrever o procedimento de preservação antes do incidente.** Uma página: coletar memória e estado (processos, conexões, descritores abertos) **antes** de conter, onde guardar, quem autoriza, como registrar a cadeia de custódia. Sem isso, a primeira reação do plantão será reiniciar o servidor — e com ele, a evidência.
+
+## Resumo
+
+- A separação entre **modo núcleo e modo usuário** é a fundação de toda segurança de sistema operacional. A chamada de sistema é a única passagem entre eles e o ponto onde a autorização é decidida; uma falha em anel 0 anula todas as demais proteções.
+- O que importa num processo é o **contexto**: quem o criou, sob que identidade roda, o que herdou. A relação **pai–filho** é a estrutura mais reveladora numa investigação, e órfãos apagam o rastro da origem.
+- **SUID no Unix e privilégios de token no Windows** são os mecanismos legítimos de elevação e as principais superfícies de escalonamento local. O inventário de SUID deve ser pequeno, conhecido e estável; `SeDebugPrivilege`, `SeImpersonatePrivilege` e `SeBackupPrivilege` equivalem a administração.
+- Os dois modelos de permissão trocam simplicidade por expressividade. Dois detalhes explicam a maioria dos erros: execução em diretório significa **atravessar**, e é a permissão do **diretório** que governa criação e exclusão. `chmod 777` é escalonamento servido pronto.
+- A **corrupção de memória** vira execução de código porque o endereço de retorno é dado gravável. As mitigações — canário, DEP/NX, ASLR, PIE, RELRO, CFI — só funcionam **em conjunto**, precisam ser ativadas na compilação, e cerca de dois terços das falhas graves pertencem a essa classe, que linguagens com memória segura eliminam de origem.
+- **Tudo que um processo usa está em claro na memória dele.** Criptografia em disco e em trânsito não protege contra quem tem privilégio de depuração — daí a sensibilidade desse privilégio e a existência de módulos de hardware que nunca expõem a chave.
+- O isolamento além do processo é uma escada: usuário próprio, capacidades, espaços de nomes, `seccomp`, MAC (SELinux/AppArmor) e virtualização. Todos são formas de aplicar o **menor privilégio**; contêineres compartilham o núcleo, e uma falha de anel 0 atravessa essa fronteira.
+- Numa triagem, sete perguntas resolvem quase tudo — e **desligar a máquina destrói a maior parte das respostas**. Preservar antes de conter é requisito técnico e, no Brasil, também condição para responder à ANPD e a pedidos de preservação.
