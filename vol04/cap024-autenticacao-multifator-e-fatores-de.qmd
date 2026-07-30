@@ -1,3 +1,325 @@
 # Autenticação multifator e fatores de autenticação {#sec-cap024}
 
-*(em elaboracao)*
+Em agosto de 2022, a Twilio informou que um grupo de atacantes havia comprometido contas de funcionários. O método não tinha nada de sofisticado: SMS dizendo que a senha expirara, com link para um domínio parecido com o da empresa. A página falsa pedia usuário, senha **e o código de autenticação de dois fatores** — e repassava tudo em tempo real para o site verdadeiro. A vítima recebia o código no celular, digitava na página do atacante e a sessão legítima abria do outro lado.
+
+A mesma campanha atingiu mais de cem organizações. Empresas com MFA obrigatório, treinamento de conscientização e política escrita foram comprometidas exatamente como as que não tinham nada disso.
+
+Duas semanas depois, a Cloudflare foi alvo da mesma campanha, com a mesma isca. Três funcionários entregaram credencial e código. **Nenhuma conta foi comprometida.** A diferença: a Cloudflare usava chaves de segurança FIDO2, e a chave simplesmente não produz nada utilizável para um domínio que não é o legítimo. Não houve decisão humana envolvida — o protocolo se recusou a assinar.
+
+Esses dois incidentes, separados por semanas e com a mesma isca, resumem o capítulo: **MFA não é uma coisa só, e a diferença entre suas formas é a diferença entre ser comprometido e não ser**.
+
+## Os fatores, e por que a categoria importa
+
+A autenticação combina evidências de três categorias clássicas:
+
+- **Algo que você sabe** — senha, PIN, resposta secreta. Barato, replicável sem limite, e transferível: se você sabe, pode contar (ou ser enganado a contar).
+- **Algo que você tem** — chave de segurança, celular com aplicativo, cartão inteligente, certificado. Exige posse; roubá-lo à distância é substancialmente mais difícil.
+- **Algo que você é** — impressão digital, face, íris, padrão de digitação. Conveniente, não secreto (você deixa impressões digitais em tudo) e, crucialmente, **não revogável**.
+
+Duas categorias adicionais aparecem na prática moderna e são melhor entendidas como **sinais de contexto** do que como fatores: **onde você está** (endereço IP, geolocalização, rede) e **o que você faz** (padrão de comportamento). Não autenticam sozinhas, mas ajustam a exigência — é a base da autenticação adaptativa.
+
+**Multifator exige categorias diferentes.** Senha mais pergunta secreta são dois conhecimentos: um fator só, com dois campos. Senha mais código do aplicativo autenticador são conhecimento mais posse: genuinamente dois fatores. A distinção não é acadêmica — ela determina se um único comprometimento derruba tudo.
+
+O ganho é grande e vale registrar sem exagero: **MFA elimina a esmagadora maioria dos ataques de credencial**, porque preenchimento de credenciais, pulverização e quebra offline (@sec-cap023) todos terminam com o atacante de posse de uma senha válida — e a senha válida deixa de bastar. O que MFA **não** elimina sozinho é o phishing em tempo real, que foi o que aconteceu na Twilio.
+
+## A hierarquia real de segurança
+
+Nem todo segundo fator resiste às mesmas coisas. A ordem abaixo é por resistência ao ataque que hoje mais importa: o phishing com retransmissão em tempo real.
+
+::: {#fig-hierarquia-mfa}
+```{.tikz}
+%%| filename: hierarquia-fatores-mfa
+%%| alt: Hierarquia dos métodos de segundo fator ordenada por resistência a phishing, do SMS na base até FIDO2 e passkeys no topo, com o ataque que derrota cada nível
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    niv/.style={draw, very thick, rounded corners=4pt, align=left, inner sep=5pt,
+                text width=6.0cm, font=\scriptsize, minimum height=1.0cm},
+    atq/.style={draw=manualred, thick, fill=manualred!7, rounded corners=3pt,
+                align=left, inner sep=4pt, text width=5.4cm, font=\scriptsize}}
+
+  \node[niv, draw=manualred, fill=manualred!14] (n1) at (0,0)
+    {\textbf{SMS / voz} \hfill \textcolor{manualred}{\textbf{fraco}}\\
+     \scriptsize melhor que só senha, pior que tudo o mais};
+  \node[atq] at (7.4,0)
+    {Troca de chip (\emph{SIM swap}), interceptação SS7, phishing em tempo real, malware que lê SMS};
+
+  \node[niv, draw=manualyellow, fill=manualyellow!16] (n2) at (0,1.55)
+    {\textbf{Notificação \emph{push} simples} \hfill \textcolor{manualyellow}{\textbf{médio}}\\
+     \scriptsize aprovar/negar num toque};
+  \node[atq] at (7.4,1.55)
+    {Fadiga de notificação: enviar 200 pedidos até alguém aprovar por cansaço};
+
+  \node[niv, draw=manualyellow, fill=manualyellow!12] (n3) at (0,3.1)
+    {\textbf{TOTP (aplicativo autenticador)} \hfill \textcolor{manualyellow}{\textbf{médio}}\\
+     \scriptsize código de 6 dígitos a cada 30\,s};
+  \node[atq] at (7.4,3.1)
+    {Phishing em tempo real: o código é digitado na página falsa e retransmitido em segundos};
+
+  \node[niv, draw=manualgreen, fill=manualgreen!12] (n4) at (0,4.65)
+    {\textbf{\emph{Push} com correspondência numérica} \hfill \textcolor{manualgreen}{\textbf{bom}}\\
+     \scriptsize número da tela digitado no celular};
+  \node[atq] at (7.4,4.65)
+    {Resiste à fadiga; ainda cai em phishing em tempo real bem construído};
+
+  \node[niv, draw=manualgreen, fill=manualgreen!20] (n5) at (0,6.2)
+    {\textbf{FIDO2 / WebAuthn / passkeys} \hfill \textcolor{manualgreen}{\textbf{forte}}\\
+     \scriptsize chave de segurança ou biometria do dispositivo};
+  \node[atq, draw=manualgreen, fill=manualgreen!8] at (7.4,6.2)
+    {\textbf{Resistente a phishing por construção}: a assinatura é vinculada à origem, e o domínio falso não obtém nada utilizável};
+
+  \draw[destaque, manualgreen, ->, >=stealth] (-4.0,-0.4) -- (-4.0,6.6)
+    node[midway, left, align=center, font=\scriptsize, rotate=90, yshift=8pt]
+    {resistência a phishing};
+\end{tikzpicture}
+```
+Hierarquia dos segundos fatores. O degrau que separa o topo do resto é qualitativo, não gradual.
+:::
+
+O salto entre os quatro primeiros níveis e o quinto não é de grau: é de natureza. Os quatro primeiros dependem de a pessoa **transmitir um segredo** — e qualquer segredo transmissível pode ser transmitido ao destinatário errado. O quinto não transmite segredo nenhum.
+
+## TOTP: como funciona e onde falha
+
+O código de seis dígitos do aplicativo autenticador é um HMAC truncado, com o tempo como contador. A especificação está na RFC 6238, sobre a base da RFC 4226 [@rfc6238; @rfc4226].
+
+O servidor e o aplicativo compartilham um segredo, estabelecido uma única vez no cadastro (o QR Code). A cada intervalo de 30 segundos, ambos calculam a mesma função sobre esse segredo e o carimbo de tempo. O código é o resultado, truncado.
+
+```python
+import hmac, hashlib, struct, time, base64
+
+def totp(segredo_b32: str, passo: int = 30, digitos: int = 6) -> str:
+    chave = base64.b32decode(segredo_b32, casefold=True)
+    contador = int(time.time()) // passo
+
+    resumo = hmac.new(chave, struct.pack(">Q", contador), hashlib.sha1).digest()
+
+    # Truncagem dinamica (RFC 4226): o ultimo nibble escolhe o deslocamento
+    desloc = resumo[-1] & 0x0F
+    trecho = struct.unpack(">I", resumo[desloc:desloc + 4])[0] & 0x7FFFFFFF
+    return str(trecho % (10 ** digitos)).zfill(digitos)
+```
+
+Três detalhes de implementação separam um TOTP correto de um TOTP frágil:
+
+**Janela de tolerância.** Relógios divergem. Aceitar o intervalo anterior e o seguinte (±1 passo) é o padrão razoável. Janela maior é ganho de conveniência com perda direta de segurança: cada passo extra multiplica a superfície de adivinhação.
+
+**Uso único obrigatório.** Um código válido por 30 segundos que pode ser reapresentado nesse intervalo permite reprodução. Registre o último contador aceito por usuário e recuse contadores iguais ou anteriores.
+
+**Limitação de taxa.** Seis dígitos são um milhão de possibilidades. Sem limite de tentativas, adivinhar é viável — especialmente com janela de tolerância ampla. Máximo de cinco tentativas por janela, com atraso progressivo.
+
+E, sobretudo: **o segredo TOTP é um segredo de longo prazo**, armazenado no servidor. Se ele vazar, o atacante gera códigos válidos indefinidamente. Ele precisa ser cifrado em repouso com chave que não esteja no mesmo banco — a lição do @sec-cap021 aplicada aqui.
+
+A limitação fundamental do TOTP não é implementação, porém. É que **ele é digitável**, e o que se digita numa página legítima também se digita numa página falsa.
+
+## Por que SMS é o pior fator que ainda vale a pena ter
+
+O NIST desaconselha SMS desde 2016 [@nistsp80063b], e as razões se acumularam desde então:
+
+**Troca de chip.** O atacante convence a operadora a portar o número para um chip sob seu controle — com engenharia social no atendimento, com documento falsificado, ou com um funcionário cooptado. É um vetor com histórico documentado e recorrente no Brasil, envolvendo tanto contas de aplicativo de mensagem quanto contas bancárias.
+
+**Interceptação na rede de sinalização.** O protocolo SS7 permite, a quem tem acesso à rede de sinalização, redirecionar mensagens. Esse acesso é mais disponível do que se imagina.
+
+**O SMS não é cifrado ponta a ponta** e aparece na tela bloqueada, visível a quem estiver por perto.
+
+**Encaminhamento e sincronização.** Mensagem espelhada no computador, no relógio, no aplicativo desktop — cada espelho é uma superfície nova.
+
+Dito isso, e sem ambiguidade: **SMS é muito melhor que nada**. Ele derruba preenchimento de credenciais, pulverização e uso de senha vazada — os ataques de maior volume. Onde a alternativa realista for "SMS ou nenhum segundo fator", o SMS entra. O erro é tratá-lo como equivalente aos demais, e sobretudo mantê-lo como **caminho de recuperação universal**: se a conta pode ser recuperada por SMS, a segurança da conta é a segurança do SMS, por mais forte que seja o fator principal.
+
+## Fadiga de notificação: o ataque contra o fator "bom"
+
+O *push* simples parecia a solução ideal — sem código para digitar, sem erro de digitação. Até que os atacantes perceberam que podiam simplesmente insistir.
+
+Com a senha em mãos, o atacante dispara pedidos de autenticação repetidamente. Às três da manhã, depois da quinquagésima notificação, alguém aprova para o celular parar de vibrar. Foi assim que a Uber foi comprometida em setembro de 2022 — combinando as notificações com uma mensagem no WhatsApp se passando por alguém do time de TI, pedindo que a pessoa aprovasse para "resolver o problema".
+
+A correção é a **correspondência numérica**: a tela de autenticação mostra um número de dois dígitos, e o celular pede que a pessoa o digite. Aprovar por engano deixa de ser possível — quem não está diante da tela legítima não sabe o número. Complementos que ajudam: mostrar origem geográfica e aplicativo no pedido, limitar pedidos por minuto, bloquear a conta após várias negações e alertar o time de segurança quando o padrão aparecer.
+
+## FIDO2, WebAuthn e passkeys
+
+Este é o degrau que muda a natureza do problema. A especificação WebAuthn, do W3C, com o protocolo CTAP da FIDO Alliance para a comunicação com o autenticador, substitui o segredo compartilhado por **criptografia de chave pública** — exatamente o material do @sec-cap018 [@webauthn2021; @fidoctap].
+
+No registro, o autenticador gera um par de chaves **exclusivo para aquele site**. A chave privada nunca sai do dispositivo; o site guarda apenas a pública. Na autenticação, o site envia um desafio aleatório, o autenticador assina e o site verifica com a chave pública que já tem.
+
+O detalhe que derrota o phishing está numa linha da estrutura assinada: o autenticador inclui a **origem** (o domínio que efetivamente fez a requisição, informado pelo navegador, não pela página) no que ele assina, e usa a chave correspondente àquele domínio. Numa página em `contoso-sso.com`, o navegador informa `contoso-sso.com`; o autenticador não tem chave registrada para esse domínio e não produz nada. Se produzisse, a assinatura conteria a origem errada e o servidor legítimo a rejeitaria.
+
+**Não há decisão humana no caminho.** É por isso que os três funcionários da Cloudflare que caíram na isca não comprometeram nada.
+
+::: {#fig-webauthn}
+```{.tikz}
+%%| filename: webauthn-antiphishing
+%%| alt: Comparação entre autenticação TOTP e WebAuthn diante de uma página de phishing, mostrando o código sendo retransmitido no primeiro caso e a assinatura falhando por vinculação de origem no segundo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ator/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+                 minimum width=2.3cm, minimum height=0.75cm, font=\scriptsize},
+    fx/.style={->, >=stealth, thick},
+    rot/.style={font=\scriptsize, align=center, inner sep=2pt}}
+
+  % ---------- TOTP
+  \node[font=\small\bfseries, manualred] at (3.4,1.5) {TOTP: o código viaja};
+  \node[ator, draw=manualblue, fill=manualblue!12]  (u1) at (0,0.6)   {Usuário};
+  \node[ator, draw=manualred,  fill=manualred!12]   (f1) at (3.4,0.6) {Página falsa\\\scriptsize contoso-sso.com};
+  \node[ator, draw=manualgreen,fill=manualgreen!12] (s1) at (7.0,0.6) {Site real\\\scriptsize contoso.com};
+
+  \draw[fx, manualred] (u1) -- node[rot, above]{senha + 123456} (f1);
+  \draw[fx, manualred] (f1) -- node[rot, above]{senha + 123456}
+                              node[rot, below]{\emph{em 4 segundos}} (s1);
+  \node[rot, manualred, text width=3.4cm] at (10.3,0.6)
+    {\textbf{Sessão aberta}\\para o atacante. O código era válido, só foi\\digitado no lugar errado.};
+
+  % ---------- WebAuthn
+  \node[font=\small\bfseries, manualgreen] at (3.4,-1.7) {WebAuthn: nada viaja};
+  \node[ator, draw=manualblue, fill=manualblue!12]  (u2) at (0,-2.6)   {Chave FIDO2};
+  \node[ator, draw=manualred,  fill=manualred!12]   (f2) at (3.4,-2.6) {Página falsa\\\scriptsize contoso-sso.com};
+  \node[ator, draw=manualgreen,fill=manualgreen!12] (s2) at (7.0,-2.6) {Site real\\\scriptsize contoso.com};
+
+  \draw[fx, manualgreen] (f2) -- node[rot, above]{desafio} (u2);
+  \draw[destaque, manualred, ->, >=stealth] (1.9,-3.4) -- (1.9,-4.1);
+  \node[rot, manualred, text width=4.2cm, anchor=north] at (2.4,-4.15)
+    {\textbf{A chave não responde.}\\Não há credencial registrada para
+     \texttt{contoso-sso.com}, e a origem entra no que seria assinado.};
+
+  \node[rot, manualgreen, text width=3.4cm] at (10.3,-2.6)
+    {\textbf{Nada utilizável} chega ao atacante. Sem decisão humana no caminho.};
+
+  \draw[manualgray, dashed] (-2.0,-0.9) -- (12.0,-0.9);
+\end{tikzpicture}
+```
+A diferença estrutural: o TOTP transmite um segredo; o WebAuthn assina uma origem.
+:::
+
+```javascript
+// Registro de uma credencial WebAuthn (lado do navegador)
+const credencial = await navigator.credentials.create({
+  publicKey: {
+    challenge: desafioDoServidor,          // aleatorio, uso unico
+    rp:   { name: "Manual de Segurança", id: "exemplo.com.br" },
+    user: { id: idUsuario, name: "ana@exemplo.com.br",
+            displayName: "Ana Souza" },
+    pubKeyCredParams: [
+      { type: "public-key", alg: -7   },   // ES256 (P-256)
+      { type: "public-key", alg: -257 },   // RS256
+    ],
+    authenticatorSelection: {
+      userVerification: "required",        // biometria ou PIN: 2FA num gesto
+      residentKey: "preferred",            // credencial descobrivel = passkey
+    },
+    timeout: 60000,
+    attestation: "none",
+  },
+});
+// O servidor armazena a chave publica, o ID da credencial e o contador.
+// A chave privada nunca sai do autenticador.
+```
+
+Um ponto de terminologia que confunde muita gente: **passkey é uma credencial FIDO2 sincronizada** entre os dispositivos da pessoa pelo ecossistema (Apple, Google, Microsoft, gerenciador de senha). A criptografia é a mesma; o que muda é onde a chave privada vive e como ela é reposta [@fidopasskeys].
+
+| | Chave de segurança física | Passkey sincronizada |
+|---|---|---|
+| Onde vive a chave privada | Só no dispositivo | No dispositivo e no cofre sincronizado |
+| Perda do dispositivo | Perde a credencial | Recupera pela conta do ecossistema |
+| Superfície adicional | Nenhuma | A conta do ecossistema vira alvo |
+| Adoção | Exige comprar e distribuir | Já embutida em celulares e navegadores |
+| Uso típico | Administrador, acesso privilegiado | Usuário final em escala |
+
+: Chave física e passkey: a mesma criptografia, decisões de custódia diferentes. {#tbl-passkey-chave}
+
+A recomendação prática que decorre da tabela: **passkeys para o usuário em geral** — resolvem o phishing em escala com adoção viável — e **chave física para acesso privilegiado**, onde a garantia de que a chave privada não é sincronizável importa mais que a conveniência.
+
+Um efeito colateral importante: com verificação de usuário exigida, a passkey já é dois fatores num gesto — posse do dispositivo mais biometria ou PIN. Isso permite eliminar a senha, e não apenas somar um fator a ela. É a diferença entre autenticação **sem senha** e autenticação **de dois fatores**, e a primeira é o destino.
+
+## Biometria: entender o que ela é
+
+Biometria não é segredo. Sua face está em fotos públicas; suas digitais ficam em tudo que você toca. O que a biometria oferece é **conveniência com vinculação ao corpo**, e o modelo de segurança correto é: a biometria destrava o autenticador local; o autenticador faz a criptografia.
+
+É assim que funciona no celular. A digital não vai para o servidor: ela libera o acesso à chave privada guardada no enclave seguro do aparelho, e é a chave que autentica. Essa arquitetura tem uma consequência forte — **a biometria correspondida no dispositivo é aceitável; a biometria correspondida no servidor é um banco de dados de características biométricas irrevogáveis**, com a implicação óbvia de que um vazamento não tem remediação: não se troca de rosto.
+
+As métricas que importam ao avaliar um sistema: taxa de falsa aceitação (impostor aceito), taxa de falsa rejeição (legítimo recusado), e **detecção de vivacidade** — a resistência a foto, máscara, molde de silicone ou vídeo gerado. Sistemas sem vivacidade caem com uma foto impressa, e a qualidade dos vídeos sintéticos atuais tornou a verificação facial remota sem vivacidade robusta um controle fraco.
+
+## Recuperação: onde o MFA quase sempre vaza
+
+O padrão de falha é sempre o mesmo. A organização implanta chaves FIDO2, treina todo mundo, comemora — e mantém, no fluxo de "perdi meu dispositivo", a possibilidade de a central de atendimento redefinir o MFA depois de confirmar nome, CPF e data de nascimento. **A segurança do sistema passa a ser a do atendimento telefônico.**
+
+Regra geral: **a recuperação não pode ser mais fraca que o fator que ela recupera**. Na prática:
+
+- **Registre mais de um autenticador desde o início.** Duas chaves de segurança, ou uma chave e uma passkey. Isso resolve a maior parte dos casos de perda sem nenhum fluxo excepcional.
+- **Códigos de recuperação de uso único**, gerados por CSPRNG, exibidos uma única vez, armazenados como resumo (não em claro), e invalidados na primeira utilização.
+- **Verificação de identidade compatível com o risco.** Para conta privilegiada: videoconferência com documento, ou presença física, ou aprovação de duas pessoas. Nunca só dados que constam de um cadastro vazado.
+- **Período de espera para mudanças sensíveis.** Trocar o MFA com efeito imediato é o alvo do atacante; efeito em 24 horas, com notificação ao titular e possibilidade de cancelamento, converte o ataque numa janela de detecção.
+
+## Autenticação adaptativa
+
+Nem toda operação merece a mesma fricção. A autenticação adaptativa (ou baseada em risco) calcula um escore a partir do contexto e ajusta a exigência: dispositivo conhecido e rede habitual passam com o fator principal; país novo, dispositivo desconhecido ou operação sensível exigem um fator adicional.
+
+Os sinais que costumam entrar no escore são conhecidos: dispositivo reconhecido, faixa de rede, geografia e viagem impossível (autenticação em São Paulo e, vinte minutos depois, em Lisboa), horário atípico para aquela pessoa, reputação do endereço de origem, e sensibilidade da operação pretendida.
+
+Dois cuidados. Primeiro, **a autenticação adaptativa complementa e não substitui o MFA em operação sensível** — reduzir fricção não pode virar dispensa de fator para transferência financeira ou alteração de cadastro. Segundo, o escore precisa ser explicável: quando alguém for barrado, o time de suporte tem de conseguir dizer por quê. Modelo opaco gera chamado insolúvel e, invariavelmente, uma exceção permanente que anula o controle.
+
+## ⚖️ Brasil em Foco
+
+**A troca de chip é o ataque que torna o SMS particularmente frágil no Brasil.** A portabilidade numérica e os canais de atendimento das operadoras foram repetidamente explorados por engenharia social para assumir o número da vítima e, com ele, o segundo fator. A Anatel regula portabilidade e atendimento, e as operadoras adotaram controles adicionais, mas o vetor persiste. Para quem projeta autenticação de serviço brasileiro, a conclusão prática é direta: **SMS pode ser um fator adicional, nunca o caminho de recuperação de conta de valor** [@anatel717].
+
+**As normas do Banco Central exigem autenticação compatível com o risco da operação.** A Resolução BCB 4.893/2021 estrutura a política de segurança cibernética das instituições financeiras, e o arranjo do Pix trouxe exigências específicas de autenticação, limites e mecanismos antifraude. A irreversibilidade da liquidação em segundos é o que muda a matemática: no cartão há estorno, no Pix não há. Isso empurra o setor para autenticação de posse vinculada ao dispositivo — que é, no fundo, o mesmo princípio criptográfico do FIDO2 [@bcb4893].
+
+**A LGPD trata dado biométrico como sensível, com regime mais restrito.** O art. 5º, II, classifica biometria como dado pessoal sensível; o art. 11 restringe as hipóteses de tratamento. Na prática isso significa que implantar reconhecimento facial exige base legal específica, avaliação de impacto e — o ponto mais frequentemente ignorado — preferência arquitetural pela **correspondência no dispositivo**, que evita a formação de um banco central de características biométricas. Vazamento de biometria é irremediável por natureza, e essa característica pesa na análise de proporcionalidade [@lgpd2018].
+
+**O gov.br usa níveis de confiabilidade, e o nível ouro é ancorado em biometria ou ICP-Brasil.** Bronze, prata e ouro correspondem a graus crescentes de garantia sobre a identidade, com o nível mais alto exigindo validação biométrica contra as bases da Justiça Eleitoral ou da CNH, ou certificado digital ICP-Brasil. É a materialização brasileira da distinção que o NIST SP 800-63 faz entre nível de garantia de identidade e nível de garantia de autenticação — o primeiro sobre quem a pessoa é, o segundo sobre a força da autenticação a cada acesso [@govbr2024; @nistsp80063a; @iti2024].
+
+**A assinatura eletrônica avançada e a qualificada dependem da força do segundo fator.** A Lei 14.063/2020 organiza os níveis de assinatura no relacionamento com o poder público, e a MP 2.200-2 sustenta a presunção de autoria da assinatura ICP-Brasil no controle exclusivo da chave. Autenticação por SMS não sustenta a mesma qualidade probatória que posse de chave criptográfica com verificação de usuário — e essa diferença aparece quando a assinatura é contestada em juízo [@lei14063; @mp2200].
+
+## 🛠️ No Campo
+
+**1. Levante a cobertura real antes de discutir tecnologia.** A conversa produtiva não é "qual MFA adotar", é "quais contas hoje não têm nenhum":
+
+```powershell
+# Entra ID / Microsoft 365: usuarios sem metodo forte registrado
+Get-MgReportAuthenticationMethodUserRegistrationDetail -All |
+  Where-Object { -not $_.IsMfaRegistered } |
+  Select-Object UserPrincipalName, IsAdmin, LastUpdatedDateTime |
+  Export-Csv .\sem-mfa.csv -NoTypeInformation -Encoding utf8
+
+# O achado que importa mais: administradores sem MFA
+Get-MgReportAuthenticationMethodUserRegistrationDetail -All |
+  Where-Object { $_.IsAdmin -and -not $_.IsMfaRegistered }
+```
+
+```bash
+# Google Workspace
+gam report users parameters accounts:is_2sv_enrolled | grep -i false
+
+# SSH: chave publica sim, senha nao (o "MFA" do administrador de Linux)
+grep -E '^(PasswordAuthentication|PubkeyAuthentication|AuthenticationMethods)' \
+     /etc/ssh/sshd_config
+# Alvo:
+#   PasswordAuthentication no
+#   AuthenticationMethods publickey,keyboard-interactive   (chave + TOTP)
+```
+
+**2. Priorize por valor da conta, não por facilidade de implantação.** A ordem que reduz risco mais rápido: administradores de domínio e de nuvem, acesso remoto e VPN, e-mail (que é o caminho de recuperação de todo o resto), sistemas financeiros, e só então o restante. Administrador sem MFA é achado crítico independentemente do tamanho da organização.
+
+**3. Elimine as exceções, porque elas concentram o ataque.** Toda implantação acumula dispensas: a conta de serviço que "não suporta", o executivo que reclamou, o sistema legado. Essas exceções são precisamente onde o atacante vai bater. Faça o inventário, dê prazo a cada uma e trate conta de serviço com o mecanismo adequado — certificado, identidade gerenciada, chave com escopo restrito — em vez de dispensa.
+
+**4. Desligue os protocolos de autenticação legados.** Este é o passo que anula o MFA sem que ninguém perceba: IMAP, POP3, SMTP AUTH e outros protocolos antigos não sabem apresentar segundo fator, e por isso o ignoram. Enquanto estiverem habilitados, existe um caminho com senha apenas. Bloqueá-los costuma reduzir mais risco que qualquer outra medida isolada da implantação.
+
+**5. Migre de *push* simples para correspondência numérica.** Configuração de baixo custo e efeito imediato contra fadiga de notificação. Some contexto no pedido (aplicativo, localização, endereço), limite de pedidos por minuto e alerta ao SOC quando um usuário acumular negações — esse é o sinal de que a senha dele já está em mãos erradas.
+
+**6. Implante FIDO2 pelo topo.** Chaves físicas para quem tem acesso privilegiado, duas por pessoa (uma em uso, uma de reserva em local seguro), com registro presencial. Depois passkeys para a população geral. Comece por um piloto com o time de segurança, que produzirá a documentação de recuperação antes de a escala tornar cada caso um chamado.
+
+**7. Audite o fluxo de recuperação como se fosse um ataque.** Ligue para a sua própria central de atendimento fingindo ser um usuário que perdeu o celular e veja o que basta para redefinir o MFA. Se nome, CPF e data de nascimento resolverem, seu MFA vale exatamente isso — todos esses dados estão em vazamentos públicos. É o teste mais barato e mais revelador de todo este capítulo.
+
+**8. Registre e detecte os eventos de MFA, não só os de senha.** Sinais que merecem alerta: múltiplas negações de *push* na mesma conta (senha comprometida em uso), registro de novo método logo após uma autenticação (persistência do atacante), remoção de método forte, e uso de código de recuperação — que deve ser evento raro e sempre investigado.
+
+**9. Teste a recuperação antes de precisar dela.** Escolha uma conta privilegiada não crítica, simule a perda do autenticador e execute o procedimento completo, cronometrando. O número que sair é o seu tempo real de recuperação, e ele é o insumo do plano de continuidade — porque uma organização inteira travada fora do provedor de identidade é um incidente de disponibilidade, não de segurança.
+
+**10. Documente o caminho para sem senha.** MFA sobre senha é a etapa intermediária, não o destino. Passkey com verificação de usuário já entrega dois fatores num gesto e elimina a senha do fluxo — o que remove, de uma vez, o phishing de credencial, o preenchimento de credenciais e a quebra offline do @sec-cap023.
+
+## Resumo
+
+- **MFA exige categorias diferentes de fator** — conhecimento, posse, inerência. Senha mais pergunta secreta é um fator só com dois campos.
+- **A hierarquia de segundos fatores é qualitativa, não gradual.** SMS, TOTP e *push* simples transmitem um segredo digitável; FIDO2 assina uma origem. É por isso que a Twilio caiu e a Cloudflare, com a mesma isca, não.
+- **TOTP** é HMAC truncado sobre o tempo: exige janela de tolerância curta, uso único por contador e limitação de taxa — e o segredo compartilhado precisa ser cifrado em repouso com chave fora do banco.
+- **SMS é o fator mais fraco e ainda vale mais que nada.** Troca de chip e SS7 o comprometem; o erro grave é usá-lo como caminho universal de recuperação.
+- **Fadiga de notificação** derrubou o *push* simples; a correção é correspondência numérica, com contexto no pedido e limite de tentativas.
+- **FIDO2 e WebAuthn são resistentes a phishing por construção**: a chave é exclusiva por domínio e a origem entra no material assinado, sem depender de decisão humana. Passkeys são a mesma criptografia com chave sincronizada — escala melhor; chave física serve melhor ao acesso privilegiado.
+- **Biometria não é segredo.** Ela deve destravar o autenticador local, com correspondência no dispositivo; base central de biometria é dado sensível e irrevogável.
+- **A recuperação define o piso de segurança de todo o esquema.** Registre dois autenticadores, use códigos de uso único armazenados como resumo, verifique identidade de forma compatível com o risco e aplique espera para mudanças sensíveis.
+- **Protocolo legado habilitado anula o MFA**: IMAP, POP3 e SMTP AUTH ignoram o segundo fator, e desligá-los costuma ser a medida isolada de maior efeito.
+- No Brasil, a troca de chip torna o SMS particularmente frágil, a irreversibilidade do Pix empurra o setor financeiro para posse criptográfica, a biometria é dado sensível sob a LGPD e os níveis do gov.br materializam a distinção entre garantia de identidade e garantia de autenticação.
