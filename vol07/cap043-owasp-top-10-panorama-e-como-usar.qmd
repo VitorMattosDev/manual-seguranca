@@ -1,3 +1,236 @@
 # OWASP Top 10: panorama e como usar {#sec-cap043}
 
-*(em elaboracao)*
+Um edital de licitação para desenvolvimento de sistema traz, no termo de referência, a exigência: "a aplicação deverá estar em conformidade com o OWASP Top 10". A frase aparece em milhares de contratos brasileiros, públicos e privados, e é quase sempre inútil — porque **não existe conformidade com o OWASP Top 10**. Não há critério de aprovação, não há certificação, não há lista de verificação normativa. A empresa contratada pode entregar qualquer coisa e afirmar, com honestidade técnica, que está em conformidade; e o contratante não tem como demonstrar o contrário.
+
+Isso não é defeito do documento. É uso errado dele. O Top 10 foi desenhado para ser um instrumento de conscientização — um mapa das dez classes de risco que mais aparecem em aplicações web, escrito para que gente que não é especialista em segurança entenda contra o que está lutando. Ele cumpre esse papel excepcionalmente bem, e é provavelmente o documento de segurança de aplicações mais lido do mundo.
+
+O problema começa quando ele é usado como escopo de teste, como padrão contratual ou como checklist de auditoria — três coisas que ele explicitamente não é, e para as quais existem outros documentos da mesma organização, muito mais adequados e muito menos conhecidos.
+
+Este capítulo apresenta as dez categorias, explica como a lista é construída (o que muda bastante a forma de lê-la) e mostra o encaixe entre o Top 10 e os documentos que efetivamente servem para especificar e para testar.
+
+## O que a lista é, e o que ela não é
+
+O Top 10 é publicado pela OWASP, uma fundação sem fins lucrativos que mantém projetos abertos de segurança de aplicações. A edição vigente é a de 2021 [@owasptop10].
+
+**O que ele é:** um documento de conscientização. Uma taxonomia comum que permite a uma pessoa desenvolvedora, uma gestora e uma auditora usarem o mesmo vocabulário. Um ponto de partida razoável para quem está começando e precisa saber onde olhar primeiro.
+
+**O que ele não é:**
+
+- **Não é uma lista de vulnerabilidades**, e sim de *categorias* de risco. "Injeção" agrupa centenas de fraquezas distintas.
+- **Não é exaustivo.** Dez categorias não cobrem tudo o que quebra uma aplicação. Condições de corrida, falhas de lógica de negócio e problemas de tratamento de arquivos aparecem diluídos ou não aparecem.
+- **Não é um padrão de conformidade.** Não há como estar em conformidade com um documento que não define critério de aprovação.
+- **Não é escopo de teste.** Um teste de invasão limitado ao Top 10 deixa de fora justamente as falhas de lógica específicas do negócio, que costumam ser as mais graves e as que nenhuma ferramenta encontra.
+- **Não é ordenado por gravidade.** A ordem reflete uma combinação de frequência, explorabilidade e impacto — a posição não diz que A01 é sempre pior que A07 no seu sistema.
+
+A recomendação de uso, que a própria OWASP faz e quase ninguém segue: **use o Top 10 para conscientizar e para conversar; use o ASVS para especificar; use o WSTG para testar** [@owaspasvs; @owaspwstg].
+
+## Como a lista é construída — e por que isso muda a leitura
+
+A metodologia de 2021 combina duas fontes, e conhecê-la evita más interpretações.
+
+**Oito categorias vêm de dados.** A OWASP coleta resultados reais de ferramentas e de testes em centenas de milhares de aplicações, e ordena por duas métricas: a **taxa de incidência** (em que fração das aplicações testadas aquela fraqueza aparece) e a explorabilidade e impacto médios das fraquezas mapeadas.
+
+**Duas categorias vêm de pesquisa de opinião** com profissionais da área. Essa parte existe por um motivo importante: os dados vêm predominantemente de ferramentas automatizadas, e **ferramentas só encontram o que sabem procurar**. Falhas de desenho e SSRF são sub-representadas nos dados justamente por serem difíceis de automatizar — não por serem raras. A pesquisa corrige esse viés.
+
+Isso tem uma consequência prática que muita gente inverte: **a posição de um risco na lista não é a sua importância no seu sistema**. Ela é a frequência com que aquela classe aparece no conjunto agregado de aplicações do mundo, temperada pelo viés das ferramentas que geraram os dados.
+
+## As dez categorias de 2021
+
+**A01 — Quebra de controle de acesso.** Subiu da quinta para a primeira posição, e é a que aparece em maior proporção das aplicações testadas. Cobre desde trocar um identificador na URL e ler o registro de outra pessoa até acessar função administrativa por conhecer o caminho. É o tema do @sec-cap047.
+
+**A02 — Falhas criptográficas.** Renomeada: em 2017 chamava-se "exposição de dados sensíveis", que descrevia o sintoma. O nome novo descreve a causa — ausência de cifragem, algoritmo obsoleto, chave mal gerenciada, dado sensível trafegando em claro. Tratada no @sec-cap021 e no @sec-cap041.
+
+**A03 — Injeção.** Caiu de primeiro para terceiro lugar, não porque tenha sumido, mas porque frameworks modernos passaram a parametrizar por padrão. **Absorveu o cross-site scripting**, que em 2017 era categoria própria — a lógica é que ambos são o mesmo defeito: dado não confiável interpretado como código por algum interpretador. Capítulos @sec-cap044 e @sec-cap045.
+
+**A04 — Desenho inseguro.** Categoria nova em 2021, e a mais significativa da edição. Reconhece formalmente que existe uma classe de problemas que **nenhuma quantidade de implementação correta resolve**, porque o defeito está na especificação: um fluxo de recuperação de senha por pergunta secreta está mal desenhado, ainda que implementado com perfeição. A contramedida é a modelagem de ameaças (@sec-cap005 e @sec-cap042).
+
+**A05 — Configuração incorreta de segurança.** Permissão em nuvem aberta, cabeçalho de segurança ausente, mensagem de erro detalhada em produção, conta padrão ativa, serviço de administração exposto. A causa quase sempre é a mesma: o padrão de fábrica do componente é permissivo, e ninguém mudou.
+
+**A06 — Componentes vulneráveis e desatualizados.** A dívida que ninguém escreveu: bibliotecas, frameworks e runtimes com falhas conhecidas. É a categoria mais fácil de detectar e uma das que menos se corrige (@sec-cap039).
+
+**A07 — Falhas de identificação e autenticação.** Ataque de credenciais, sessão que não expira, recuperação de senha frágil, ausência de segundo fator. É o @sec-cap046, com base no que foi construído no Volume 4.
+
+**A08 — Falhas de integridade de software e de dados.** Categoria nova, motivada pelos ataques a cadeia de suprimentos: atualização automática sem verificação de assinatura, dependência de repositório não confiável, desserialização de dado não confiável, pipeline de integração comprometido.
+
+**A09 — Falhas de registro e monitoração.** A única categoria que não é uma vulnerabilidade explorável diretamente — é a que faz todas as outras durarem meses sem serem percebidas. Está aqui porque a diferença entre um incidente contido em horas e uma exposição de dois anos é, quase sempre, registro adequado.
+
+**A10 — Falsificação de requisição no lado do servidor (SSRF).** Entrou pela pesquisa de opinião, não pelos dados. A adoção de arquiteturas em nuvem, com serviços de metadados acessíveis por HTTP a partir da própria instância, elevou muito o impacto dessa falha (@sec-cap047).
+
+::: {#fig-owasp-2017-2021}
+```{.tikz}
+%%| filename: owasp-2017-2021
+%%| alt: Comparação entre as categorias do OWASP Top 10 de 2017 e de 2021, mostrando reagrupamentos, categorias novas e absorções
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    it/.style={draw, thick, rounded corners=2pt, align=left, inner sep=3pt,
+               minimum width=4.6cm, minimum height=0.55cm, font=\tiny, anchor=west, fill=white}}
+
+  \node[font=\scriptsize, manualgray, anchor=west] at (0,6.1) {\textbf{OWASP Top 10 --- 2017}};
+  \node[font=\scriptsize, manualblue, anchor=west] at (7.6,6.1) {\textbf{OWASP Top 10 --- 2021}};
+
+  \node[it, draw=manualgray] (a17) at (0,5.5)  {A01 Injeção};
+  \node[it, draw=manualgray] (b17) at (0,4.9)  {A02 Autenticação quebrada};
+  \node[it, draw=manualgray] (c17) at (0,4.3)  {A03 Exposição de dados sensíveis};
+  \node[it, draw=manualgray] (d17) at (0,3.7)  {A04 Entidades externas de XML};
+  \node[it, draw=manualgray] (e17) at (0,3.1)  {A05 Controle de acesso quebrado};
+  \node[it, draw=manualgray] (f17) at (0,2.5)  {A06 Configuração incorreta};
+  \node[it, draw=manualgray] (g17) at (0,1.9)  {A07 Cross-site scripting};
+  \node[it, draw=manualgray] (h17) at (0,1.3)  {A08 Desserialização insegura};
+  \node[it, draw=manualgray] (i17) at (0,0.7)  {A09 Componentes vulneráveis};
+  \node[it, draw=manualgray] (j17) at (0,0.1)  {A10 Registro insuficiente};
+
+  \node[it, draw=manualred,    fill=manualred!8]    (a21) at (7.6,5.5)  {A01 Quebra de controle de acesso};
+  \node[it, draw=manualblue,   fill=manualblue!8]   (b21) at (7.6,4.9)  {A02 Falhas criptográficas};
+  \node[it, draw=manualblue,   fill=manualblue!8]   (c21) at (7.6,4.3)  {A03 Injeção};
+  \node[it, draw=manualgreen,  fill=manualgreen!14] (d21) at (7.6,3.7)  {A04 \textbf{Desenho inseguro} (nova)};
+  \node[it, draw=manualblue,   fill=manualblue!8]   (e21) at (7.6,3.1)  {A05 Configuração incorreta};
+  \node[it, draw=manualblue,   fill=manualblue!8]   (f21) at (7.6,2.5)  {A06 Componentes vulneráveis};
+  \node[it, draw=manualblue,   fill=manualblue!8]   (g21) at (7.6,1.9)  {A07 Identificação e autenticação};
+  \node[it, draw=manualgreen,  fill=manualgreen!14] (h21) at (7.6,1.3)  {A08 \textbf{Integridade} (nova)};
+  \node[it, draw=manualblue,   fill=manualblue!8]   (i21) at (7.6,0.7)  {A09 Registro e monitoração};
+  \node[it, draw=manualyellow, fill=manualyellow!16](j21) at (7.6,0.1)  {A10 \textbf{SSRF} (por pesquisa)};
+
+  \draw[->, >=stealth, thick, manualred]   (e17.east) -- (a21.west);
+  \draw[->, >=stealth, thick, manualgray]  (c17.east) -- (b21.west);
+  \draw[->, >=stealth, thick, manualgray]  (a17.east) -- (c21.west);
+  \draw[->, >=stealth, thick, manualgray]  (g17.east) to[out=0, in=180] (c21.west);
+  \draw[->, >=stealth, thick, manualgray]  (d17.east) to[out=0, in=180] (e21.west);
+  \draw[->, >=stealth, thick, manualgray]  (h17.east) to[out=0, in=180] (h21.west);
+  \draw[->, >=stealth, thick, manualgray]  (b17.east) to[out=0, in=180] (g21.west);
+
+  \node[draw=manualgreen, fill=manualgreen!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=13.0cm] at (6.4,-1.3)
+    {\textbf{O que a comparação revela.} As categorias de 2021 foram reagrupadas por
+     \emph{causa raiz} e não por sintoma: XSS virou um caso de injeção, XML externo
+     virou um caso de configuração. \textbf{Desenho inseguro} entrou reconhecendo que
+     há defeitos que implementação correta não resolve, e \textbf{SSRF} entrou pela
+     pesquisa de opinião --- os dados automatizados o subestimavam, porque
+     ferramenta só encontra o que sabe procurar.};
+\end{tikzpicture}
+```
+De 2017 para 2021: reagrupamento por causa raiz, duas categorias novas e uma entrada por pesquisa.
+:::
+
+## Usar a lista sem se enganar
+
+A pergunta prática é: onde cada documento da OWASP entra no trabalho real? A resposta é uma cadeia, e cada elo tem um papel que os outros não cumprem.
+
+**Top 10 — conscientizar e comunicar.** Serve para a formação de quem desenvolve, para a conversa com a diretoria e para dar nome às coisas. É o vocabulário.
+
+**ASVS — especificar e verificar.** Requisitos numerados, testáveis, em três níveis de rigor. É o que deveria estar no contrato no lugar de "conformidade com o Top 10": "a aplicação deve atender aos requisitos do ASVS nível 2, verificados por teste independente antes do aceite". Isso é exequível, auditável e discutível.
+
+**WSTG — testar.** O guia de testes descreve procedimentos concretos, caso a caso, para verificar cada classe de falha. É o documento que orienta o escopo de um teste de invasão em aplicação web.
+
+**Cheat Sheet Series — corrigir.** Orientação de implementação por tema, na linguagem de quem vai escrever o código [@owaspcheatsheets].
+
+**CWE — classificar com precisão.** Quando o assunto é rastrear uma falha específica, o Top 10 é grosso demais. O CWE dá o identificador exato, e o CWE Top 25 oferece uma lista complementar, orientada a fraquezas em vez de categorias de risco [@cwe; @cwetop25].
+
+::: {#fig-owasp-cadeia-docs}
+```{.tikz}
+%%| filename: owasp-cadeia-docs
+%%| alt: Encadeamento dos documentos OWASP por finalidade, do Top 10 para conscientização até o CWE para classificação precisa
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    doc/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+                minimum width=2.6cm, minimum height=1.35cm, font=\scriptsize}}
+
+  \node[doc, draw=manualblue,   fill=manualblue!12]   (t10) at (0,0)    {\textbf{Top 10}\\[2pt]\tiny conscientizar\\\tiny e comunicar};
+  \node[doc, draw=manualgreen,  fill=manualgreen!12]  (asvs)at (3.3,0)  {\textbf{ASVS}\\[2pt]\tiny especificar\\\tiny e contratar};
+  \node[doc, draw=manualyellow, fill=manualyellow!16] (wstg)at (6.6,0)  {\textbf{WSTG}\\[2pt]\tiny testar};
+  \node[doc, draw=manualred,    fill=manualred!12]    (cs)  at (9.9,0)  {\textbf{Cheat Sheets}\\[2pt]\tiny corrigir};
+  \node[doc, draw=manualgray,   fill=manualgray!12]   (cwe) at (13.2,0) {\textbf{CWE}\\[2pt]\tiny classificar\\\tiny com precisão};
+
+  \foreach \a/\b in {t10/asvs, asvs/wstg, wstg/cs, cs/cwe} {
+    \draw[->, >=stealth, very thick, manualgray] (\a) -- (\b);}
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=13.2cm] at (6.6,-2.0)
+    {\textbf{O erro mais comum do mercado brasileiro} é usar o primeiro elo para
+     fazer o trabalho do segundo. ``A aplicação deve estar em conformidade com o
+     OWASP Top 10'' não é exequível --- não há critério de aprovação. A cláusula
+     que funciona é: \emph{``deve atender aos requisitos do ASVS nível 2, verificados
+     por teste independente antes do aceite''}.};
+\end{tikzpicture}
+```
+Cada documento da OWASP tem uma finalidade que os outros não cumprem. Confundi-las produz contrato inexequível.
+:::
+
+## Os outros Top 10
+
+A OWASP mantém listas irmãs, com metodologia parecida e escopos distintos. Vale saber que existem para não aplicar a lista errada ao problema errado:
+
+- **API Security Top 10** [@owasptop10api], tratado no @sec-cap048. Ele existe porque APIs quebram de forma diferente: a falha dominante é autorização em nível de objeto, e boa parte do que o Top 10 web cobre (XSS, por exemplo) simplesmente não se aplica.
+- **Mobile Top 10**, complementado pelo MASVS, já mencionado no @sec-cap040.
+- **Top 10 para aplicações com modelos de linguagem**, que trata de injeção de prompt e de outras classes próprias — tema do Volume 16.
+
+## Erros que se repetem
+
+- **Exigir "conformidade com o OWASP Top 10" em contrato**, gerando obrigação sem critério de verificação.
+- **Limitar o escopo do teste de invasão ao Top 10**, garantindo que as falhas de lógica de negócio não sejam procuradas.
+- **Ler a ordem como gravidade** e priorizar A01 em um sistema cujo risco real está em A06.
+- **Tratar a lista como exaustiva** e concluir que a aplicação está segura porque as dez categorias foram verificadas.
+- **Usar a edição de 2017** — ainda comum em documentos e treinamentos —, o que faz o desenho inseguro sequer entrar na conversa.
+- **Confundir categoria com vulnerabilidade** no registro de achados, perdendo a rastreabilidade que só o CWE dá.
+
+## ⚖️ Brasil em Foco
+
+**A cláusula "conformidade com OWASP Top 10" é epidêmica em editais brasileiros, e é juridicamente frágil.** Um termo de referência precisa de critério objetivo de aceitação — é exigência da Lei 14.133/2021, e é também o que permite ao fiscal do contrato recusar uma entrega. Uma cláusula que remete a documento sem critério de aprovação não sustenta recusa e não sustenta glosa. A redação que funciona substitui a referência genérica por três elementos: **norma verificável** (ASVS nível 2, por exemplo), **método de verificação** (teste independente com relatório) e **consequência** (aceite condicionado, com retenção de parcela). Sem os três, a exigência é decorativa.
+
+**Para a LGPD, o Top 10 é insumo, não resposta.** O art. 46 exige medidas técnicas aptas a proteger dados pessoais, e o critério de adequação leva em conta a natureza dos dados e o estado da técnica. Demonstrar que a aplicação foi avaliada contra as categorias do Top 10 é evidência útil em uma fiscalização — mas evidência de esforço, não de suficiência. **Em um incidente envolvendo dados sensíveis, a pergunta da ANPD será sobre a falha concreta que foi explorada**, e a resposta precisa ser mais específica do que uma categoria [@lgpd2018; @anpd2023guia].
+
+**No setor de pagamentos, a referência é normativa por via indireta.** O PCI-DSS v4, no Requisito 6, exige que a equipe de desenvolvimento seja treinada em segurança de software e que as aplicações sejam protegidas contra classes de ataque reconhecidas pela indústria — e cita explicitamente as listas mantidas pela OWASP, pelo SANS e pelo CERT como fontes aceitáveis. Aqui a exigência tem critério, porque o PCI define o que precisa ser demonstrado e como [@pcidss4].
+
+**Governo federal e o material do CERT.br.** As práticas de segurança para desenvolvimento publicadas pelo CERT.br e o material de referência do gov.br para aplicações públicas usam a mesma taxonomia, o que ajuda: um achado descrito como "A01" é entendido do mesmo jeito por equipe de desenvolvimento, por auditoria interna e pelo órgão de controle. **É exatamente para isso que a lista serve — vocabulário comum** [@cert2024praticas].
+
+**A tradução para o português tem armadilha de comunicação.** "Broken Access Control" costuma virar "controle de acesso quebrado", o que sugere algo que estava funcionando e parou. Na maioria dos casos o controle **nunca existiu** naquele endpoint. A diferença importa quando o achado vai para um relatório executivo: "controle de acesso ausente na função X" comunica o problema com precisão; "quebrado" convida à resposta errada, que é procurar o que se quebrou.
+
+## 🛠️ No Campo
+
+**1. Use o Top 10 na formação, e o ASVS no contrato.** Reescreva os termos de referência que a sua organização usa. A cláusula exequível tem norma, método e consequência.
+
+**2. Mapeie cada aplicação do inventário contra as dez categorias, uma vez.** Não como auditoria, como triagem: para cada sistema, qual categoria é o risco dominante? A resposta muda a ordem do trabalho, e é diferente da ordem da lista.
+
+**3. Registre achados com CWE, não só com a categoria do Top 10.** "A03" não permite buscar reincidência; `CWE-89` permite. Guarde os dois campos no rastreador de defeitos: a categoria comunica, o CWE rastreia.
+
+**4. Comece pelo A05, que é o mais barato.** Configuração incorreta rende o maior número de correções por hora investida, e boa parte se resolve com cabeçalhos e com desligar o que veio ligado de fábrica:
+
+```bash
+curl -sI https://exemplo.gov.br | grep -iE \
+  'strict-transport|content-security-policy|x-content-type|x-frame|referrer-policy'
+```
+
+Ausência de todos eles é o padrão em aplicação brasileira não revisada, e cada um é uma linha de configuração no servidor web.
+
+**5. Ligue a verificação de A06 antes de qualquer outra ferramenta.** É a categoria com detecção mais confiável e correção mais mecânica:
+
+```bash
+npm audit --audit-level=high
+pip-audit --strict
+mvn org.owasp:dependency-check-maven:check
+```
+
+**6. Trate A04 com sessão de modelagem, não com ferramenta.** Desenho inseguro é a única categoria da lista que nenhuma varredura encontra. Se a resposta da sua organização para o A04 for o nome de um produto, a resposta está errada.
+
+**7. Verifique A09 pelo teste do incidente simulado.** Escolha um evento — cinco tentativas de login falhas seguidas de sucesso para o mesmo usuário, a partir de dois países — e pergunte: esse evento gera registro? O registro chega a algum lugar onde alguém olha? Quanto tempo ele fica guardado? Se qualquer resposta for "não sei", A09 é o seu risco prioritário, independentemente da posição na lista.
+
+**8. Monte um laboratório com aplicação deliberadamente vulnerável.** Ambientes de treino permitem exercitar as categorias sem tocar em sistema de terceiro — e mantêm o exercício dentro da fronteira legal discutida no @sec-cap007. É a forma correta de treinar a equipe:
+
+```bash
+docker run --rm -p 127.0.0.1:3000:3000 bkimminich/juice-shop
+```
+
+Sempre com a porta ligada apenas ao endereço local, e em máquina de laboratório (@sec-cap014).
+
+**9. Traduza a categoria para o risco do negócio antes de levar à diretoria.** "A01" não move orçamento. "Qualquer usuário autenticado consegue ler o prontuário de qualquer paciente, e isso é incidente comunicável à ANPD" move.
+
+**10. Reveja o material de treinamento quando a lista mudar.** Muito curso e muita apostila em circulação no Brasil ainda usam a edição de 2017. O sintoma é fácil de detectar: se o material lista XSS como categoria própria e não menciona desenho inseguro, está desatualizado em uma geração inteira.
+
+## Resumo
+
+- O OWASP Top 10 é um **documento de conscientização** e um vocabulário comum. Não é lista de vulnerabilidades, não é exaustivo, não é ordenado por gravidade e **não é padrão de conformidade** — não há critério de aprovação a ser cumprido.
+- A lista é construída com **oito categorias vindas de dados e duas de pesquisa de opinião**; a pesquisa existe porque ferramentas automatizadas subestimam o que não sabem procurar, como falhas de desenho e SSRF.
+- A edição de 2021 reagrupou as categorias **por causa raiz**: XSS foi absorvido por injeção, XML externo virou caso de configuração, e entraram **desenho inseguro** (defeitos que implementação correta não resolve) e **falhas de integridade** (cadeia de suprimentos).
+- Cada documento da OWASP tem sua função: **Top 10 para comunicar, ASVS para especificar e contratar, WSTG para testar, Cheat Sheets para corrigir, CWE para classificar com precisão**. Usar o primeiro para o trabalho do segundo é o erro mais comum do mercado.
+- A ordem da lista reflete frequência agregada no mundo, **não a importância no seu sistema** — a triagem por aplicação é o que define a ordem real do trabalho.
+- No Brasil, "conformidade com o OWASP Top 10" em edital é cláusula inexequível: sem critério objetivo, não sustenta recusa de entrega nem glosa. A redação que funciona tem **norma verificável, método de verificação e consequência contratual**.
+- Para a LGPD, avaliação contra o Top 10 é evidência de esforço, não de suficiência; no dia do incidente, a pergunta da ANPD é sobre a falha concreta, e a resposta precisa ser mais específica do que uma categoria.
