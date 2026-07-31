@@ -1,3 +1,246 @@
 # IDS, IPS e detecção em rede {#sec-cap031}
 
-*(em elaboracao)*
+Voltemos ao caso que abriu o @sec-cap028. Quando os atacantes instalaram o programa de coleta nos terminais de pagamento da Target, a ferramenta de detecção da empresa **gerou alerta**. O sistema funcionou como projetado: viu o comportamento anômalo, classificou, notificou. Ninguém agiu. O alerta se perdeu no volume, e a exfiltração seguiu por semanas.
+
+Essa é a lição mais importante deste capítulo, e ela não é sobre tecnologia: **detectar não é o mesmo que perceber**. Um sistema de detecção mal calibrado produz tantos alertas que os verdadeiros deixam de ser distinguíveis — e o resultado operacional é indistinguível de não ter detecção nenhuma, com a diferença de que custou caro e produziu uma sensação de cobertura.
+
+Este capítulo trata do instrumento e da matemática que governa sua utilidade. O contexto organizacional — quem olha, com que processo, com que fila — é o Volume 12.
+
+## IDS e IPS: a mesma análise, decisões diferentes
+
+Um **sistema de detecção de intrusão** observa o tráfego e alerta. Um **sistema de prevenção** faz a mesma análise, mas está no caminho do tráfego e pode descartá-lo. A diferença não é de inteligência: é de posicionamento e de consequência do erro [@nistsp80094].
+
+::: {#fig-ids-posicionamento}
+```{.tikz}
+%%| filename: ids-posicionamento
+%%| alt: Comparação entre o IDS conectado a uma porta espelhada fora do caminho do tráfego e o IPS instalado em linha, com as consequências de falso positivo e falso negativo em cada arranjo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    eq/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=1.9cm, minimum height=0.75cm, font=\scriptsize},
+    fx/.style={->, >=stealth, very thick}}
+
+  % --------- IDS
+  \node[font=\small\bfseries, manualblue] at (3.1,3.5) {IDS --- fora do caminho};
+  \node[eq, draw=manualgray, fill=manualgray!10] (r1) at (0.4,2.2)  {borda};
+  \node[eq, draw=manualgray, fill=manualgray!10] (s1) at (5.8,2.2)  {rede\\interna};
+  \draw[fx, manualgreen] (r1) -- node[above, font=\tiny]{tráfego segue}(s1);
+
+  \node[eq, draw=manualblue, fill=manualblue!12] (ids) at (3.1,0.5) {IDS};
+  \draw[->, >=stealth, thick, manualblue, dashed] (3.1,2.2) -- (ids)
+    node[midway, right, font=\tiny, xshift=2pt]{cópia (SPAN/TAP)};
+
+  \node[align=left, font=\tiny, text width=5.6cm, manualgray] at (3.1,-0.9)
+    {\textbf{Falso positivo:} ruído na fila do analista.\\
+     \textbf{Falso negativo:} o ataque passa despercebido.\\
+     \textbf{Falha do sensor:} a rede continua funcionando.};
+
+  \draw[manualgray, dashed, thick] (7.3,-1.9) -- (7.3,3.8);
+
+  % --------- IPS
+  \node[font=\small\bfseries, manualred] at (11.0,3.5) {IPS --- em linha};
+  \node[eq, draw=manualgray, fill=manualgray!10] (r2) at (8.5,2.2)  {borda};
+  \node[eq, draw=manualred,  fill=manualred!12]  (ips) at (11.0,2.2) {IPS};
+  \node[eq, draw=manualgray, fill=manualgray!10] (s2) at (13.5,2.2) {rede\\interna};
+  \draw[fx, manualgray] (r2) -- (ips);
+  \draw[fx, manualgreen] (ips) -- (s2);
+  \draw[->, >=stealth, very thick, manualred] (11.0,1.6) -- (11.0,0.7)
+    node[midway, right, font=\tiny, xshift=2pt]{descarta};
+
+  \node[align=left, font=\tiny, text width=5.6cm, manualgray] at (11.0,-0.9)
+    {\textbf{Falso positivo:} serviço legítimo bloqueado.\\
+     \textbf{Falso negativo:} o ataque passa despercebido.\\
+     \textbf{Falha do sensor:} a rede para, ou passa a permitir tudo.};
+
+  \node[align=left, font=\scriptsize, text width=12.6cm, draw=manualyellow,
+        fill=manualyellow!10, thick, rounded corners=3pt, inner sep=6pt] at (7.0,-2.9)
+    {\textbf{A escolha não é técnica, é de tolerância a erro.} Bloquear
+     automaticamente exige confiança altíssima na regra --- e é por isso que a
+     prática madura mantém a maioria das assinaturas em modo de alerta,
+     promovendo a bloqueio apenas as de precisão comprovada no próprio ambiente.};
+\end{tikzpicture}
+```
+O mesmo mecanismo de análise, dois posicionamentos e consequências de erro completamente diferentes.
+:::
+
+O IDS recebe uma cópia do tráfego, por porta espelhada ou derivação óptica. Erra sem consequência para a disponibilidade, e por isso pode ser agressivo na detecção. O IPS decide no caminho: um falso positivo derruba um serviço legítimo, e uma falha do equipamento é uma decisão de projeto — abrir (a rede continua, sem inspeção) ou fechar (a rede para).
+
+Na prática, quase todo firewall de próxima geração moderno traz um módulo de prevenção, e a pergunta operacional deixou de ser "IDS ou IPS" para virar **quais assinaturas bloqueiam e quais apenas alertam**. A resposta madura é conservadora: bloquear o que tem precisão comprovada — exploração conhecida de vulnerabilidade específica, tráfego para infraestrutura maliciosa confirmada — e alertar o resto.
+
+Vale distinguir também o sensor de rede do sensor de host. O de rede vê a comunicação entre máquinas e não depende de instalar nada; é cego ao que acontece dentro do host e ao tráfego cifrado. O de host vê processo, arquivo e chamada de sistema, mas só onde foi instalado — e é justamente na impressora, na câmera e no equipamento industrial, onde nada se instala, que o sensor de rede é insubstituível. São complementares, e o Volume 6 desenvolve o lado do host.
+
+## Como a detecção decide
+
+**Por assinatura.** Compara o tráfego com padrões conhecidos. Preciso, explicável e com baixo índice de falso positivo quando a regra é boa — e estruturalmente incapaz de ver o que nunca foi catalogado. É a maior parte do valor prático de um sensor de rede, porque a maior parte dos ataques reais usa técnicas conhecidas.
+
+**Por anomalia.** Constrói um perfil do que é normal e alerta no desvio. Pode ver o inédito, e paga por isso com falsos positivos abundantes, sensibilidade a mudanças legítimas do ambiente e um problema incômodo: se o comportamento malicioso já estava presente durante o aprendizado, ele virou parte da linha de base.
+
+**Por comportamento e protocolo.** Verifica se o tráfego respeita a especificação e a semântica esperada: SMB negociando versão obsoleta, HTTP com cabeçalho impossível, DNS carregando volume que não corresponde a resolução de nome. É onde a detecção de exfiltração por canal encoberto costuma acontecer.
+
+**Por reputação e indicadores.** Compara endereços, domínios e certificados com listas de infraestrutura maliciosa conhecida. Barato, útil e efêmero — os indicadores envelhecem em dias (Volume 11).
+
+## A matemática que derruba o programa
+
+Aqui está a parte que a maioria dos projetos ignora e que explica o caso da Target melhor que qualquer outra consideração.
+
+Suponha um sensor com **99% de acerto** — detecta 99% dos ataques e produz apenas 1% de falsos positivos. Um número que qualquer fornecedor consideraria excelente. Suponha uma rede com 10 milhões de sessões por dia, das quais 10 são efetivamente maliciosas.
+
+- Verdadeiros positivos: 99% de 10 ≈ **10 alertas corretos**.
+- Falsos positivos: 1% de 9.999.990 ≈ **100.000 alertas incorretos**.
+
+A probabilidade de um alerta qualquer ser verdadeiro é de aproximadamente **0,01%**. Um analista que investigasse cada alerta trabalharia dez mil investigações para achar uma real. Este é o **paradoxo da taxa base**, formalizado por Axelsson no contexto de detecção de intrusão, e é a razão matemática pela qual sensores mal ajustados são inúteis mesmo quando funcionam exatamente como anunciado [@axelsson2000].
+
+Três consequências práticas decorrem daí, e elas orientam todo o resto do capítulo:
+
+1. **A taxa de falso positivo importa muito mais que a de detecção.** Reduzir falsos positivos de 1% para 0,01% multiplica por cem a utilidade do sensor; aumentar a detecção de 99% para 99,9% quase não muda nada.
+2. **Reduzir o denominador é tão eficaz quanto melhorar o sensor.** Aplicar a regra apenas ao tráfego onde ela faz sentido — assinaturas de servidor web só na direção do servidor web — corta ordens de grandeza do ruído. É o motivo pelo qual a segmentação do @sec-cap028 melhora a detecção: menos tráfego legítimo cruzando o sensor significa maior densidade de sinal.
+3. **Sem calibração, o programa morre por saturação.** Não por falha técnica: por exaustão de quem olha.
+
+## Escrever e calibrar regras
+
+A anatomia de uma regra do Suricata é legível e vale dissecar, porque cada campo é uma oportunidade de reduzir ruído [@suricata2024]:
+
+```
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+  msg:"Possivel canal de comando e controle - user-agent atipico";
+  flow:established,to_server;
+  http.user_agent; content:"Mozilla/4.0 (compatible)"; bsize:24;
+  threshold:type limit, track by_src, count 1, seconds 3600;
+  classtype:trojan-activity; sid:9000001; rev:2;
+)
+```
+
+- `$HOME_NET -> $EXTERNAL_NET` restringe a direção — metade do ruído desaparece só com isso, e definir essas variáveis corretamente é a primeira tarefa de qualquer implantação.
+- `flow:established,to_server` elimina varredura e pacotes soltos.
+- `bsize` ancora o casamento e evita o padrão aparecendo por acaso.
+- `threshold` impede que um único host gere milhares de eventos idênticos.
+- `sid` e `rev` são identidade e versão: sem eles não há como rastrear a evolução da regra.
+
+O ciclo de calibração que funciona, e que precisa ser rotina e não projeto:
+
+1. Implantar em modo de alerta, com o conjunto de regras aberto.
+2. Medir por duas semanas: quais assinaturas geram volume, e quanto delas é ruído.
+3. Investigar as dez mais ruidosas. Quase sempre são tráfego legítimo peculiar do ambiente — um sistema antigo, um agente de monitoramento, um equipamento industrial.
+4. Suprimir por origem e destino específicos, **nunca desabilitar a regra inteira**. A diferença é entre "esta impressora não dispara esta assinatura" e "ninguém mais detecta isso".
+5. Promover a bloqueio apenas as de precisão comprovada no ambiente.
+6. Repetir mensalmente. Ambiente muda, e regra calibrada em 2024 não serve em 2027.
+
+## Metadados: a alternativa quando não se pode inspecionar
+
+Com a maior parte do tráfego cifrado, a detecção por conteúdo perde alcance — e a resposta não é decifrar tudo (@sec-cap029), mas mudar o que se observa.
+
+O **monitoramento por metadados** registra o que aconteceu, não o que foi dito: quem falou com quem, quando, por quanto tempo, com que volume, com que nome de servidor solicitado, com que certificado, com que impressão digital de negociação TLS. Ferramentas como o Zeek produzem esse registro estruturado de forma contínua, e o valor dele é que **serve para perguntas que ninguém formulou ainda** [@zeek2024].
+
+É uma diferença de postura importante. Uma assinatura responde a uma pergunta feita de antemão. Um registro de conexões responde à pergunta que surge depois — "este endereço apareceu num indicador publicado hoje; alguém falou com ele nos últimos noventa dias?". Sem o registro histórico, a resposta é "não sabemos", e é exatamente essa a pergunta que domina as primeiras horas de uma resposta a incidente.
+
+O que se detecta sem decifrar nada:
+
+- **Regularidade temporal.** Conexões a cada 300 segundos com desvio mínimo não são humanas — é sinalização de canal de comando e controle.
+- **Assimetria de volume.** Uma estação que envia muito mais do que recebe está exfiltrando.
+- **Impressão digital de negociação TLS.** A combinação de parâmetros oferecidos no início do handshake identifica a biblioteca cliente. Um agente que se apresenta como navegador mas negocia como biblioteca de linha de comando é um sinal forte.
+- **Certificado autoassinado** em porta não usual, com validade suspeita.
+- **DNS com muitos subdomínios longos** para o mesmo domínio pai — o padrão clássico de exfiltração por resolução de nomes (@sec-cap032).
+
+## Evasão: o problema que não envelheceu
+
+Em 1998, Ptacek e Newsham descreveram uma classe de ataque que continua atual: o sensor e o host de destino **interpretam o mesmo tráfego de formas diferentes**, e o adversário explora a diferença [@ptacek1998].
+
+Os mecanismos: fragmentação de IP com remontagem ambígua; segmentos TCP sobrepostos com conteúdo conflitante, que sistemas operacionais distintos resolvem de maneiras distintas; TTL calibrado para que um pacote alcance o sensor mas expire antes do destino; e as codificações alternativas de camada 7 que fazem o padrão não casar. A contramedida é a **normalização** — o sensor remonta como o destino remontaria — mas ela exige saber qual sistema operacional está do outro lado, o que nem sempre se sabe.
+
+A evasão moderna é mais simples e mais eficaz: **usar TLS**. E, quando o canal é cifrado e o destino é um serviço legítimo de nuvem usado como intermediário, a análise de conteúdo não tem a que se agarrar. Sobram os metadados — o que reforça o argumento da seção anterior.
+
+Há ainda um vetor que merece nota: **o sensor como alvo**. Ele processa tráfego arbitrário e hostil por definição. Falhas em decodificadores de protocolo já permitiram execução de código no próprio sensor, e um sensor em linha comprometido é um adversário no caminho de todo o tráfego. Sensor exige correção, isolamento na rede de gestão e privilégio mínimo, como qualquer sistema exposto.
+
+## Onde colocar, e o dado que ninguém mede
+
+Posicionamento define o que se pode ver:
+
+- **Borda de internet** — o que entra e o que sai. Obrigatório, e o melhor ponto para detectar comando e controle e exfiltração.
+- **Entre zonas internas** — onde a movimentação lateral aparece. É o ponto mais valioso e o mais frequentemente ausente.
+- **Diante dos ativos críticos** — banco de dados, controlador de domínio, ambiente de escopo regulatório.
+- **Rede de gestão** — pouquíssimo tráfego, altíssimo valor; qualquer anomalia ali é significativa.
+
+E a métrica que decide se o sensor está funcionando não é o número de alertas: é a **taxa de descarte por sobrecarga**. Um sensor recebendo mais tráfego do que consegue processar descarta pacotes silenciosamente e continua reportando "operacional" no painel. O ataque que passou nos 8% descartados não aparece em lugar nenhum. Monitorar essa taxa é obrigação diária, não checagem eventual.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD alcança o conteúdo dos alertas, não só o tráfego.** Um sensor que inspeciona pacotes captura, inevitavelmente, dado pessoal: endereços, identificadores de sessão, às vezes conteúdo de formulário. Alertas com carga útil armazenada por anos constituem tratamento de dado pessoal. A prática defensável é minimizar (guardar o metadado longamente e a carga útil por pouco tempo), restringir o acesso ao repositório de alertas e declarar essa base de dados no registro de operações de tratamento. Segurança da informação é finalidade legítima — não é dispensa de princípio [@lgpd2018; @anpd2023guia].
+
+**Detecção é pré-requisito da obrigação de comunicar incidentes.** A LGPD exige comunicação de incidente de segurança com dado pessoal à ANPD, e a Resolução 15/2024 estabelece prazo e conteúdo mínimo — incluindo a natureza dos dados afetados e o número de titulares. Nada disso é respondível sem registro histórico. Uma organização que não guarda metadados de rede descobre, no pior momento, que não consegue delimitar o incidente e precisa comunicar pelo pior cenário [@anpd2024res15].
+
+**Para provedores, o sensor toca o sigilo das comunicações.** O Marco Civil e a Lei 9.296/96 protegem o conteúdo das comunicações; inspecionar conteúdo do tráfego de assinantes é terreno onde a inspeção de metadados para fins de segurança e engenharia de tráfego é defensável, e a inspeção de conteúdo não é — salvo ordem judicial específica. A distinção entre metadado operacional e conteúdo, que este capítulo trata como escolha técnica, no ambiente de provedor é também uma fronteira jurídica [@marcocivil2014; @lei9296].
+
+**O CERT.br é destinatário natural das notificações e fonte de indicadores.** Notificar incidentes e consumir os indicadores publicados nacionalmente melhora a detecção com contexto brasileiro — infraestrutura de fraude com Pix, campanhas de phishing dirigidas a instituições nacionais, redes de dispositivos comprometidos em ASNs locais. É informação que nenhum conjunto de regras internacional traz com a mesma precisão [@cert2024praticas].
+
+**No setor financeiro, a capacidade de detecção é requisito regulatório.** A Resolução BCB 4.893/2021 exige mecanismos de detecção e resposta, com registro e rastreabilidade proporcionais ao risco. A pergunta do supervisor não costuma ser se existe um sensor: é se existe alguém olhando, com que tempo de resposta, e qual foi o resultado do último teste da capacidade [@bcb4893].
+
+## 🛠️ No Campo
+
+**1. Meça a taxa de descarte antes de qualquer outra coisa.** Um sensor sobrecarregado é um sensor cego que reporta saúde:
+
+```bash
+# Suricata: pacotes perdidos por sobrecarga do kernel e do capture
+suricatasc -c "iface-stat eth1" | grep -E 'drop|invalid'
+grep -E 'kernel_drops|capture.kernel_packets' /var/log/suricata/stats.log | tail -5
+```
+
+Acima de 1% de descarte, os resultados já não são confiáveis — e ninguém avisa.
+
+**2. Defina `$HOME_NET` corretamente.** É o ajuste isolado que mais reduz ruído, e é o mais frequentemente deixado no padrão:
+
+```yaml
+vars:
+  address-groups:
+    HOME_NET:     "[10.0.0.0/8,192.168.0.0/16,172.16.0.0/12]"
+    EXTERNAL_NET: "!$HOME_NET"
+    DNS_SERVERS:  "[10.0.1.10,10.0.1.11]"
+    SQL_SERVERS:  "[10.20.5.0/24]"
+```
+
+**3. Suprima por par origem-destino, jamais desabilite a regra.** A diferença entre calibrar e cegar:
+
+```
+# Certo: aquela impressora especifica para de gerar aquele alerta especifico
+suppress gen_id 1, sig_id 2010935, track by_src, ip 10.30.4.51
+
+# Errado: ninguem mais detecta isso, em lugar nenhum
+# disablesid 2010935
+```
+
+**4. Colete metadados mesmo sem inspecionar conteúdo.** É o que responde à pergunta que ainda não foi feita:
+
+```bash
+# Zeek: quem falou com o indicador publicado hoje, nos ultimos 90 dias
+zcat /opt/zeek/logs/2*/conn*.log.gz | zeek-cut id.orig_h id.resp_h service |
+  grep '198.51.100.7' | sort -u
+
+# Sinalizacao regular: intervalos com desvio quase nulo
+zcat conn*.log.gz | zeek-cut ts id.orig_h id.resp_h |
+  awk '{k=$2" "$3; if(p[k]){print k, $1-p[k]} p[k]=$1}' |
+  sort | awk '{s[$1" "$2]+=$3; n[$1" "$2]++} END{for(i in s) if(n[i]>20) print n[i], s[i]/n[i], i}' |
+  sort -rn | head
+```
+
+**5. Instrumente entre zonas, não só na borda.** Movimentação lateral não atravessa a borda. O sensor entre a rede corporativa e a de servidores costuma ser o de maior densidade de sinal — pouco tráfego legítimo, muito significado.
+
+**6. Comece pelo caminho crítico, não pelo conjunto completo de regras.** Habilitar tudo produz saturação na primeira semana e descrédito na segunda. Comece pelas categorias de alta precisão — atividade de trojan, exploração conhecida, tráfego para infraestrutura maliciosa — e amplie conforme o ruído for domado.
+
+**7. Escreva regras específicas do seu ambiente.** As melhores detecções são locais e não existem em conjunto público nenhum: conexão iniciada a partir da DMZ para dentro, acesso ao controlador de domínio vindo de sub-rede de estações, uso de protocolo administrativo fora da rede de gestão, resolução de nomes que não passa pelo resolvedor interno.
+
+**8. Corrija e isole o próprio sensor.** Ele processa tráfego hostil por definição, e já houve execução de código via decodificador de protocolo. Sensor na rede de gestão, com correção em dia e privilégio mínimo.
+
+**9. Ensaie a detecção com atividade controlada e autorizada.** Gere, em laboratório ou em janela combinada e documentada, o comportamento que deveria disparar alerta — varredura interna, conexão a domínio de teste, transferência volumosa — e meça duas coisas: o alerta apareceu, e alguém o viu. A segunda é a que falha.
+
+**10. Meça o programa pelo tempo até a percepção.** Alertas por dia é vaidade. As métricas úteis: tempo mediano até o primeiro toque humano, percentual de alertas efetivamente triados, taxa de falso positivo por assinatura, cobertura de sensores por zona e taxa de descarte por sobrecarga.
+
+## Resumo
+
+- **Detectar não é perceber.** No caso Target, a ferramenta alertou e ninguém agiu. Um sensor mal calibrado é operacionalmente equivalente a não ter sensor, com custo maior e falsa sensação de cobertura.
+- IDS e IPS fazem a **mesma análise** e diferem em posicionamento e consequência do erro: fora do caminho, o falso positivo é ruído; em linha, é serviço legítimo bloqueado. A prática madura bloqueia apenas assinaturas de precisão comprovada no próprio ambiente.
+- Os métodos se complementam: **assinatura** (precisa, cega ao inédito), **anomalia** (vê o inédito, gera ruído e aprende o mal se ele já estava lá), **protocolo e comportamento** e **reputação** (barata e efêmera).
+- **O paradoxo da taxa base é a matemática que derruba programas**: com 99% de detecção e 1% de falso positivo sobre 10 milhões de sessões, a chance de um alerta ser real fica em torno de 0,01%. Reduzir falso positivo vale muito mais que aumentar detecção — e reduzir o tráfego que cruza o sensor, via segmentação, vale tanto quanto.
+- A calibração é rotina, não projeto: alertar, medir, investigar as mais ruidosas, **suprimir por par origem-destino em vez de desabilitar a regra**, promover a bloqueio o que for preciso, repetir mensalmente.
+- Com tráfego cifrado, a resposta não é decifrar tudo, é **mudar o que se observa**: metadados de conexão respondem às perguntas que surgem depois, como "alguém falou com este endereço nos últimos noventa dias?".
+- A **evasão descrita em 1998 continua atual** — fragmentação, sobreposição e TTL exploram a diferença de interpretação entre sensor e destino —, e a evasão moderna é simplesmente usar TLS. O próprio sensor é alvo e exige correção e isolamento.
+- A métrica de saúde que ninguém acompanha é a **taxa de descarte por sobrecarga**: acima de 1%, os resultados não são confiáveis, e o painel continua verde.
+- No Brasil, alertas com carga útil são tratamento de dado pessoal sob a LGPD e exigem minimização; a capacidade de detecção é pré-requisito para comunicar incidentes à ANPD dentro do prazo; e, para provedores, a fronteira entre metadado e conteúdo é jurídica, não apenas técnica.
