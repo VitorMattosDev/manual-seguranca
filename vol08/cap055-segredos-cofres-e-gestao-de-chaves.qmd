@@ -1,3 +1,244 @@
 # Segredos, cofres e gestão de chaves {#sec-cap055}
 
-*(em elaboracao)*
+Uma equipe descobre uma senha de banco de dados de produção em um arquivo de configuração no repositório. A resposta parece óbvia: remover o arquivo, adicioná-lo à lista de ignorados, fazer o commit. Alguém mais atento propõe reescrever o histórico para apagar a senha de vez.
+
+Nenhuma das duas coisas resolve. O repositório foi clonado por doze pessoas, está espelhado em dois sistemas de backup e passou por três executores de integração contínua que guardaram cópias em cache. **A partir do momento em que um segredo entra em um repositório, ele está comprometido**, e a única correção é a rotação. Reescrever o histórico é higiene; rotacionar é a correção.
+
+Esse é o resumo emocional do capítulo. O resumo técnico é outro: o problema de gestão de segredos não se resolve escondendo melhor, e sim **reduzindo a quantidade de segredos que precisam existir**. Cada capítulo anterior deste volume apontou para cá — o papel do @sec-cap051 que dispensa a chave estática, a imagem do @sec-cap052 que não carrega credencial, o cofre externo que substitui o segredo em base64 do @sec-cap053, a federação do @sec-cap054 que elimina a chave do pipeline. Este capítulo fecha o volume juntando as peças.
+
+## Três coisas diferentes com o mesmo nome
+
+"Segredo" é usado para três categorias que exigem tratamento distinto:
+
+**Credencial** autentica um principal: senha, chave de API, token, certificado de cliente. Costuma ser de longa duração por preguiça e deveria ser de curta duração por projeto.
+
+**Chave criptográfica** cifra ou assina: chave simétrica de cifragem de dados, chave privada de assinatura. O @sec-cap016 e o @sec-cap018 trataram do que elas fazem; aqui trata-se de onde elas vivem e quem pode usá-las.
+
+**Material de configuração sensível** não autentica nem cifra, mas não deveria vazar: endereço interno, string de conexão, parâmetro de negócio.
+
+A distinção importa porque as respostas diferem. Credencial deve, sempre que possível, ser **gerada sob demanda e expirar sozinha**. Chave criptográfica deve, sempre que possível, **nunca sair do módulo que a guarda** — você envia o dado para ser cifrado, não pede a chave. Configuração sensível precisa de controle de acesso, mas não de todo o aparato.
+
+## Por onde os segredos vazam
+
+A lista é curta e cada item é ordinário:
+
+**Repositório de código**, no estado atual ou no histórico. É a fonte campeã, e existem sistemas varrendo repositórios públicos e testando credenciais em segundos.
+
+**Camada de imagem de contêiner**, pelo motivo do @sec-cap052: camada não se apaga.
+
+**Variável de ambiente.** Cômoda e vazadora: aparece em despejo de erro, em listagem de processos, em relatório de falha enviado a terceiro e — como no incidente de cadeia de suprimentos do capítulo anterior — em qualquer código que rode no mesmo processo.
+
+**Registro de log.** A requisição registrada com o cabeçalho de autorização completo, o corpo do formulário com a senha, a exceção que imprime a string de conexão. E o log costuma ir para um sistema com acesso muito mais amplo do que o do segredo original.
+
+**Arquivo de estado de infraestrutura**, tratado no @sec-cap054.
+
+**Bilhete de suporte, mensagem e planilha.** A credencial enviada por mensagem instantânea "só para desbloquear" fica na conversa para sempre, e é indexada.
+
+**Backup e ambiente de teste.** A cópia de produção que virou massa de homologação carrega as credenciais junto.
+
+Duas observações fecham o diagnóstico. Primeira: **segredo compartilhado entre pessoas nunca é revogável de fato** — quando alguém sai da equipe, você não sabe o que ainda está em posse de quem. Segunda: **segredo que não expira sozinho depende de alguém lembrar**, e a memória organizacional falha em prazos longos.
+
+## O cofre e o problema do segredo zero
+
+Um cofre de segredos centraliza o armazenamento com cifragem, controle de acesso, auditoria de cada leitura e — o recurso que mais importa — **geração dinâmica**.
+
+Segredo dinâmico inverte o modelo: em vez de guardar uma senha de banco criada uma vez e usada por anos, a aplicação pede uma credencial ao cofre no momento em que precisa; o cofre cria um usuário no banco, com permissões específicas e prazo curto, entrega e revoga automaticamente ao fim do prazo [@vaultdocs]. Três consequências grandes: a credencial vazada expira sozinha; cada instância tem a sua, o que torna o rastreamento possível; e a rotação deixa de ser projeto e vira comportamento normal do sistema.
+
+Mas todo cofre enfrenta a mesma pergunta, e ela é o cerne do assunto: **se a aplicação precisa se autenticar no cofre para pegar os segredos, como ela se autentica?** Esse é o problema do segredo zero. Guardar uma credencial de cofre em variável de ambiente apenas move o problema um passo — agora existe um segredo estático que dá acesso a todos os outros.
+
+A resposta correta é **identidade de carga de trabalho**: a plataforma atesta quem é a aplicação, e o cofre confia nessa atestação. As formas práticas, todas já mencionadas neste volume:
+
+- **Papel anexado ao recurso de nuvem**: a plataforma entrega credenciais temporárias sem nenhum segredo gravado.
+- **Conta de serviço do orquestrador**: o cofre valida o token projetado pelo Kubernetes com o servidor de API e concede acesso ao que aquela conta pode ver.
+- **Federação por token de curta duração** para o pipeline.
+- **Identidade criptográfica de carga de trabalho**, com certificado de curta duração emitido automaticamente e renovado sem intervenção [@spiffe].
+
+Todas têm a mesma propriedade: **a identidade vem da plataforma, não de um arquivo**. É isso que quebra a cadeia — não existe segredo zero para vazar.
+
+::: {#fig-segredo-zero}
+```{.tikz}
+%%| filename: segredo-zero
+%%| alt: Comparação entre o modelo com credencial estática em arquivo e o modelo de identidade de carga de trabalho atestada pela plataforma com credenciais dinâmicas de curta duração
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=2.3cm, minimum height=0.8cm}}
+
+  \node[font=\scriptsize, manualred] at (-3.4,3.6) {\textbf{Segredo estático}};
+  \node[bx, draw=manualred, fill=manualred!12] (a1) at (-3.4,2.7) {aplicação};
+  \node[bx, draw=manualred, fill=manualred!16] (a2) at (-3.4,1.5)
+    {\textbf{arquivo .env}\\ senha permanente};
+  \node[bx, draw=manualgray, fill=manualgray!12] (a3) at (-3.4,0.3) {banco de dados};
+  \draw[->, >=stealth, thick, manualred] (a1) -- (a2);
+  \draw[->, >=stealth, thick, manualred] (a2) -- (a3);
+  \node[manualred, font=\tiny, align=center, text width=3.2cm] at (-3.4,-0.85)
+    {vaza em repositório, imagem, log e backup --- e \textbf{não expira}};
+
+  \node[font=\scriptsize, manualgreen] at (3.4,3.6) {\textbf{Identidade de carga de trabalho}};
+  \node[bx, draw=manualgreen, fill=manualgreen!14] (b1) at (3.4,2.7) {aplicação};
+  \node[bx, draw=manualblue, fill=manualblue!14] (b2) at (0.9,1.5)
+    {\textbf{plataforma}\\ atesta a identidade};
+  \node[bx, draw=manualblue, fill=manualblue!14] (b3) at (3.4,1.5)
+    {\textbf{cofre}\\ valida e gera};
+  \node[bx, draw=manualgray, fill=manualgray!12] (b4) at (3.4,0.3) {banco de dados};
+  \draw[->, >=stealth, thick, manualgreen] (b1) -- (b2);
+  \draw[->, >=stealth, thick, manualgreen] (b2) -- (b3);
+  \draw[->, >=stealth, thick, manualgreen] (b3) -- (b4);
+  \node[manualgreen, font=\tiny, align=center, text width=4.0cm] at (3.9,-0.85)
+    {credencial \textbf{dinâmica}, exclusiva daquela instância, expira sozinha ---
+     \textbf{nada gravado em disco}};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (0,-2.5)
+    {\textbf{O problema do segredo zero:} se a aplicação precisa de uma credencial
+     para falar com o cofre, o cofre só moveu o problema. A saída é a identidade vir
+     \emph{da plataforma} --- papel anexado ao recurso, conta de serviço do
+     orquestrador, federação de token ou certificado de curta duração. Aí não existe
+     segredo zero para vazar.};
+\end{tikzpicture}
+```
+Os dois modelos lado a lado. A diferença não é onde o segredo é guardado: é a existência dele.
+:::
+
+## Chaves criptográficas: hierarquia e envelope
+
+Chaves exigem um raciocínio próprio. A pergunta central não é "onde guardo a chave", e sim **"como faço para nunca precisar movê-la"**.
+
+A construção padrão é a **cifragem em envelope**, e ela resolve três problemas de uma vez:
+
+1. Uma **chave mestra** vive dentro de um serviço de gestão de chaves ou de um módulo de hardware. Ela **nunca sai** — não existe operação que a exporte em texto claro.
+2. Para cada objeto, gera-se uma **chave de dados** aleatória, que cifra o conteúdo.
+3. A chave de dados é cifrada pela chave mestra e **guardada junto do dado cifrado**.
+4. Para decifrar, envia-se a chave de dados cifrada ao serviço, que devolve a versão em claro apenas em memória, pelo tempo da operação.
+
+O ganho é grande: dados de qualquer volume são cifrados localmente, com desempenho, enquanto o controle real fica concentrado em uma chave que nunca é exposta. E o controle de acesso à chave mestra passa a ser o controle de acesso ao dado — **revogar a permissão de uso da chave inutiliza o dado cifrado**, o que é a forma mais confiável de exclusão em larga escala.
+
+Sobre onde a chave mestra vive, três níveis, em ordem de garantia:
+
+**Serviço gerenciado de chaves do provedor.** Chave não exportável, controle de acesso por política, auditoria de cada uso, rotação automática. Cobre bem a maioria dos casos.
+
+**Módulo de hardware dedicado.** Quando há exigência regulatória ou risco alto: operações criptográficas dentro de hardware resistente a violação, com certificação de módulo criptográfico como referência de avaliação [@fips1403].
+
+**Chave gerenciada pelo cliente com material próprio.** Para quem precisa demonstrar controle exclusivo, com a contrapartida honesta: se você perde o material, o dado se perde junto — e o provedor não pode ajudar.
+
+::: {#fig-envelope-chaves}
+```{.tikz}
+%%| filename: envelope-chaves
+%%| alt: Hierarquia de chaves na cifragem em envelope, com a chave mestra no módulo de hardware, chaves de dados cifradas junto ao conteúdo e o fluxo de decifragem
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=2.6cm, minimum height=0.85cm}}
+
+  \node[bx, draw=manualred, fill=manualred!14, very thick, minimum width=4.6cm] (km) at (0,3.2)
+    {\textbf{CHAVE MESTRA}\\ dentro do módulo --- \textbf{nunca sai}};
+  \node[manualgray, font=\tiny, anchor=west, align=left, text width=4.6cm] at (2.6,3.2)
+    {rotação automática; auditoria de cada uso; política de acesso separada da do dado};
+
+  \node[bx, draw=manualyellow, fill=manualyellow!16] (d1) at (-3.2,1.5) {chave de dados 1};
+  \node[bx, draw=manualyellow, fill=manualyellow!16] (d2) at (0,1.5)    {chave de dados 2};
+  \node[bx, draw=manualyellow, fill=manualyellow!16] (d3) at (3.2,1.5)  {chave de dados 3};
+  \foreach \d in {d1, d2, d3}
+    {\draw[->, >=stealth, thick, manualred] (km) -- (\d);}
+  \node[manualred, font=\tiny] at (-1.9,2.45) {cifra};
+
+  \node[bx, draw=manualblue, fill=manualblue!14, minimum height=1.0cm] (o1) at (-3.2,-0.1)
+    {\textbf{objeto 1}\\ dado cifrado +\\ chave cifrada};
+  \node[bx, draw=manualblue, fill=manualblue!14, minimum height=1.0cm] (o2) at (0,-0.1)
+    {\textbf{objeto 2}\\ dado cifrado +\\ chave cifrada};
+  \node[bx, draw=manualblue, fill=manualblue!14, minimum height=1.0cm] (o3) at (3.2,-0.1)
+    {\textbf{objeto 3}\\ dado cifrado +\\ chave cifrada};
+  \foreach \a/\b in {d1/o1, d2/o2, d3/o3}
+    {\draw[->, >=stealth, thick, manualblue] (\a) -- (\b);}
+
+  \node[draw=manualgreen, fill=manualgreen!12, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (0,-1.9)
+    {\textbf{Revogar a permissão de uso da chave mestra inutiliza todo o dado
+     cifrado por baixo dela} --- é a exclusão criptográfica, a forma mais confiável
+     de apagar em larga escala e a que melhor responde a um pedido de eliminação de
+     dados. Em compensação, perder o material da chave, quando ele é seu, perde o
+     dado junto: não existe recuperação.};
+\end{tikzpicture}
+```
+A hierarquia da cifragem em envelope. O controle de acesso à chave mestra é o controle de acesso ao dado.
+:::
+
+## Ciclo de vida e rotação
+
+Uma chave ou credencial tem etapas, e cada uma precisa de dono definido [@nistsp80057; @nistsp800130]:
+
+**Geração** com aleatoriedade adequada, dentro do módulo quando possível. **Distribuição** sem passar por canal inseguro — idealmente sem distribuição alguma, com a aplicação buscando sob demanda. **Uso** com finalidade única: chave de assinatura não cifra, chave de cifragem não assina, credencial de leitura não escreve. **Rotação** periódica e, principalmente, **sob suspeita**. **Revogação** imediata quando necessário. **Destruição** com registro.
+
+A rotação merece um parágrafo prático, porque é onde os planos falham. Rotacionar exige **suportar duas versões simultaneamente** por uma janela: a nova chave passa a ser usada para cifrar, a antiga continua disponível para decifrar o que já existe. Sistema que não suporta duas versões não é rotacionável — e "não é rotacionável" significa que, no dia de um vazamento, a escolha será entre indisponibilidade e continuar exposto. Descobrir isso durante o incidente é o pior momento possível.
+
+A frequência importa menos do que a capacidade. **Um sistema que rotaciona em minutos, quando precisa, é mais seguro do que um que rotaciona todo trimestre por calendário e não sabe fazer fora dele.** E vale medir: cronometre uma rotação de ponta a ponta em um ambiente não crítico, e use esse número como métrica.
+
+## O plano de rotação de emergência
+
+Vale escrever o roteiro antes de precisar dele, porque a pressão do momento produz decisões ruins:
+
+1. **Assuma comprometimento total.** Se o segredo esteve exposto, considere que foi usado.
+2. **Rotacione primeiro, investigue depois.** A ordem inversa é a que aparece nos relatórios de incidente com prejuízo maior.
+3. **Procure o uso**, não só a exposição: registros de autenticação, origem das chamadas, ações realizadas com aquela credencial, no período inteiro em que ela esteve exposta — que costuma ser bem maior do que o período em que se acreditava que estava.
+4. **Verifique persistência.** Quem usou a credencial pode ter criado outra: usuário novo, chave de acesso adicional, papel com confiança alterada, chave pública inserida em servidor.
+5. **Revogue as sessões ativas**, não só a credencial. Token emitido antes da rotação continua válido até expirar, salvo revogação explícita.
+6. **Registre a linha do tempo** para a comunicação regulatória, que tem prazo curto.
+7. **Elimine a causa**: a pergunta final não é "por que vazou", e sim **"por que esse segredo estático precisava existir?"**.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD trata criptografia como medida de referência, e a chave é o que a torna real.** O art. 46 exige medidas técnicas aptas a proteger dados pessoais, e o art. 48, §3º, permite à ANPD considerar, na dosimetria de eventual sanção, as medidas adotadas — incluindo a comprovação de que o dado afetado estava criptografado. O detalhe decisivo é **quem controla a chave**: dado cifrado com chave gerenciada pelo provedor, acessível pela mesma credencial que foi comprometida, decifra automaticamente para o atacante e não protege nada. A separação entre a permissão de acessar o dado e a permissão de usar a chave é o que transforma cifragem em controle efetivo [@lgpd2018].
+
+**Exclusão criptográfica ajuda a atender o direito de eliminação.** O art. 18 da LGPD assegura ao titular a eliminação dos dados tratados com base no consentimento. Em arquiteturas com backup imutável e réplicas distribuídas, apagar fisicamente todas as cópias é tecnicamente difícil. Cifrar os dados de cada titular com chave própria e destruir essa chave é uma abordagem defensável e verificável, desde que documentada — e é bem mais confiável do que declarar exclusão em sistemas onde a cópia sobrevive [@lgpd2018; @nistsp80057].
+
+**O ecossistema de pagamentos brasileiro é intensivo em chaves.** O Pix e o open finance operam sobre certificados e assinaturas digitais, com requisitos de proteção de chave privada, e o PCI-DSS v4 dedica todo o Requisito 3 à proteção de dados de conta e à gestão de chaves, incluindo separação de funções, guarda em módulo criptográfico e rotação. Para instituições de pagamento e provedores de tecnologia que atendem esse mercado — segmento grande e crescente no país —, módulo de hardware e gestão formal de chaves não são refinamento: são requisito de operação e de auditoria [@pcidss4; @bcbopenfinance; @bcb85].
+
+**ICP-Brasil impõe requisitos próprios de guarda de chave privada.** Certificados A3 e equivalentes exigem que a chave privada seja gerada e mantida em dispositivo criptográfico, sem exportação. Para sistemas que assinam documentos, notas fiscais eletrônicas ou comunicações oficiais, isso significa que a chave de assinatura **não pode** estar num arquivo no servidor — e a arquitetura precisa prever um módulo criptográfico ou serviço equivalente desde o desenho [@iti2024].
+
+**Credencial vazada em repositório é padrão de incidente local.** O CERT.br registra recorrentemente comprometimentos que começam em credencial exposta em código, reaproveitada de outro vazamento ou compartilhada entre ambientes. Para provedores regionais e empresas de médio porte, a varredura de segredos com bloqueio no pré-commit é a medida de melhor relação entre custo e efeito disponível — e é gratuita [@cert2024praticas].
+
+**A comunicação de incidente depende de saber o que a credencial fez.** O prazo de três dias úteis da Resolução CD/ANPD nº 15/2024 exige descrever os dados afetados. Sem auditoria de uso da credencial e da chave — quem leu qual segredo, quando, a partir de onde —, a resposta é uma estimativa pessimista. Cofre com auditoria e serviço de chaves com registro de cada operação são o que permitem responder com precisão em vez de com hipótese [@anpd2024res15].
+
+## 🛠️ No Campo
+
+**1. Comece pela varredura, no pré-commit e no histórico.** Bloquear a entrada é barato; encontrar o que já entrou é urgente.
+
+**2. Rotacione tudo o que a varredura encontrar.** Sem exceção e sem debate sobre "esse era de teste". Se esteve no repositório, é público.
+
+**3. Faça o inventário de segredos estáticos** e, para cada um, responda: dá para substituir por identidade de plataforma? A maioria dá, e essa é a lista de trabalho do próximo trimestre.
+
+**4. Elimine o segredo zero.** Papel anexado ao recurso, conta de serviço do orquestrador, federação de token no pipeline, certificado de carga de trabalho. Credencial de cofre em variável de ambiente é o problema com outro nome.
+
+**5. Prefira segredo dinâmico onde o cofre suportar** — banco de dados e serviços internos são os casos de melhor retorno. Credencial que expira sozinha muda o perfil de risco por completo.
+
+**6. Tire segredo das variáveis de ambiente** quando puder, usando arquivo em memória com permissão restrita ou busca em tempo de execução. Variável vaza em despejo, em listagem de processos e em qualquer código que rode junto.
+
+**7. Filtre segredo no registro de log**, e teste o filtro. Cabeçalho de autorização, corpo de formulário de autenticação e string de conexão são os três mais comuns.
+
+**8. Use cifragem em envelope com chave que você controla**, e mantenha a política de uso da chave separada da política de acesso ao dado. É essa separação que faz a cifragem valer alguma coisa em vazamento por credencial.
+
+**9. Ligue rotação automática da chave mestra** e verifique que a decifragem de versões anteriores continua funcionando — rotação sem teste de leitura antiga é indisponibilidade programada.
+
+**10. Garanta que os sistemas suportem duas versões simultâneas.** Sem isso, não há rotação de emergência possível.
+
+**11. Ative auditoria de uso** no cofre e no serviço de chaves, envie para fora, e alerte no anormal: leitura de segredo por principal inesperado, volume atípico, uso de chave a partir de origem nova.
+
+**12. Escreva e ensaie o plano de rotação de emergência.** Cronometre. O número que sair é a sua real capacidade de resposta.
+
+**13. Nunca compartilhe segredo por mensagem, planilha ou bilhete de suporte.** Se for inevitável entre pessoas, use compartilhamento de uso único com expiração — e rotacione depois.
+
+**14. Separe segredos por ambiente.** Credencial de homologação não abre produção. Parece óbvio e falha o tempo todo.
+
+**15. Meça duas coisas:** quantos segredos estáticos ainda existem (a meta é decrescente até zero) e quanto tempo leva uma rotação completa. As duas juntas descrevem a maturidade melhor do que qualquer política escrita.
+
+## Resumo
+
+- **Segredo em repositório está comprometido**, e a única correção é a rotação — reescrever o histórico é higiene, não conserto.
+- O problema não se resolve escondendo melhor, e sim **reduzindo a quantidade de segredos que precisam existir**. Todo o volume aponta para isso: papel anexado ao recurso, imagem sem credencial, cofre no lugar do base64, federação no lugar da chave do pipeline.
+- Três categorias exigem tratamento distinto: **credencial** (deve ser curta e dinâmica), **chave criptográfica** (não deve sair do módulo) e **configuração sensível** (precisa de controle de acesso, não de todo o aparato).
+- Os vazamentos vêm sempre dos mesmos lugares: repositório e histórico, camada de imagem, variável de ambiente, registro de log, arquivo de estado, mensagem e bilhete, backup e massa de teste.
+- **Segredo dinâmico** inverte o modelo: credencial criada sob demanda, exclusiva daquela instância, revogada automaticamente. A rotação deixa de ser projeto e vira comportamento do sistema.
+- **O problema do segredo zero** é o cerne: se a aplicação precisa de credencial para falar com o cofre, o cofre só moveu o problema. A saída é a identidade vir da **plataforma**, não de um arquivo.
+- Em chaves, a **cifragem em envelope** concentra o controle em uma chave mestra que nunca sai do módulo — e revogar o uso dessa chave é a forma mais confiável de exclusão em larga escala.
+- **A capacidade de rotacionar vale mais do que a frequência.** Sistema que não suporta duas versões simultâneas não é rotacionável, e isso só se descobre no pior dia.
+- No Brasil, o que decide se a criptografia protege é **quem controla a chave**; a exclusão criptográfica é uma resposta defensável ao art. 18 da LGPD; e Pix, open finance, PCI-DSS e ICP-Brasil tornam módulo criptográfico e gestão formal de chaves requisito de operação, não refinamento.
