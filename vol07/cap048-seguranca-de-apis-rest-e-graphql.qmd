@@ -1,3 +1,254 @@
 # Segurança de APIs REST e GraphQL {#sec-cap048}
 
-*(em elaboracao)*
+Uma operadora regional reescreve o aplicativo do assinante. A nova versão fala com `/api/v2`, que nasceu com autorização revisada, limite de requisições e respostas enxutas. O projeto é bem-feito e a equipe tem orgulho dele.
+
+O que ninguém desligou foi o `/api/v1`. Ele ficou no ar porque uma fatia dos assinantes ainda usava a versão antiga do aplicativo, e depois porque ninguém lembrou. Dois anos depois, um pesquisador percebe que `v1` continua respondendo, sem limite de requisições, devolvendo o objeto completo do assinante — CPF, endereço de instalação, plano, histórico de faturas — para qualquer token válido, de qualquer assinante, sobre qualquer identificador.
+
+A falha não foi de código. Foi de **inventário**. E é o traço que mais distingue a segurança de APIs da segurança de aplicações web tradicionais: numa aplicação com interface renderizada no servidor, o que não está na tela tende a não existir. Numa arquitetura de API, **o que ninguém mapeou continua atendendo**, e continua atendendo exatamente como foi escrito no dia em que foi escrito.
+
+## O que muda quando o cliente não é a aplicação
+
+O @sec-cap045 e o @sec-cap047 já cobriram falhas que também aparecem em APIs. Vale isolar o que é específico, porque a mudança de arquitetura desloca a superfície de ataque de forma não trivial.
+
+**Não existe interface para esconder nada.** Numa aplicação renderizada no servidor, uma boa parte da lógica de negócio é invisível ao usuário. Numa API, o contrato *é* a superfície: cada endpoint, cada parâmetro, cada campo de resposta está declarado, documentado e disponível. O aplicativo móvel ou o frontend não é a aplicação — é **um cliente entre outros possíveis**, e o outro possível é um script.
+
+**O cliente é território hostil.** Chave de API embutida no aplicativo móvel é chave pública, porque o binário é descompilável. Validação feita no frontend é sugestão. Campo desabilitado na tela é um campo que a API aceita. A regra é a mesma do @sec-cap047, mas o risco de esquecê-la é maior, porque a equipe de backend passa a raciocinar sobre "o que o nosso app envia" em vez de "o que a rede pode enviar".
+
+**A automação é o padrão, não a exceção.** APIs são feitas para serem chamadas em volume. Isso torna o consumo irrestrito de recursos uma vulnerabilidade de primeira classe: sem limite por token e por conta, um endpoint de consulta vira ferramenta de raspagem da base inteira, e um endpoint caro vira negação de serviço barata (@sec-cap035).
+
+**A cadeia é entre serviços.** Uma requisição do usuário costuma disparar chamadas entre serviços internos, e é comum que essas chamadas confiem umas nas outras porque "estão na rede interna". Confiança por localização de rede é exatamente o que o @sec-cap027 desmonta — e é o que transforma uma falha em um serviço de borda em acesso a tudo.
+
+**A autorização vira o problema dominante.** O OWASP mantém uma lista específica para APIs, e as duas primeiras posições são autorização: falha de autorização em nível de objeto e em nível de função. As categorias de injeção, que dominam a lista geral, caem para o fim [@owasptop10api; @owaspapisec].
+
+## As falhas que aparecem em API e não aparecem em outro lugar
+
+**Autorização em nível de objeto (BOLA).** É o IDOR do @sec-cap047, e continua sendo a falha número um — mas em API ela é mais grave por dois motivos: os identificadores são explícitos no contrato, e a exploração é trivialmente automatizável. A correção é a mesma: escopo do usuário dentro da consulta.
+
+**Autorização em nível de propriedade.** Duas faces do mesmo problema. Na saída, **exposição excessiva de dados**: o endpoint devolve o registro inteiro e confia que o cliente exiba só o que interessa. O aplicativo mostra o nome; a resposta traz CPF, telefone, hash de senha e as anotações internas do atendimento. Na entrada, **atribuição em massa**: o cliente envia campos que a interface nunca ofereceu e o servidor os aceita.
+
+A defesa é a mesma nos dois sentidos: **lista fechada de campos**, declarada por endpoint. E o teste é banal — olhe a resposta crua, não a tela. A maioria dos vazamentos desta categoria é encontrada abrindo o inspetor de rede e lendo o JSON.
+
+**Autorização em nível de função (BFLA).** O endpoint administrativo existe, não está documentado no contrato público, e não verifica o papel de quem chama. A descoberta vem por padrão de nomes, por versão anterior da documentação, ou pelo próprio código do frontend, que costuma conter as rotas administrativas que só os administradores enxergam. **Não estar documentado não é controle de acesso.**
+
+**Consumo irrestrito de recursos.** Sem limite por token, por conta e por endereço, e sem teto de tamanho de página, de tamanho de corpo e de tempo de execução. Um `?limite=1000000` que a aplicação obedece é um problema de segurança, não de desempenho. Endpoints que custam dinheiro por chamada — envio de SMS, disparo de e-mail, consulta a bureau de crédito, geração de documento — merecem limite próprio e mais rígido, porque o dano é financeiro e imediato.
+
+**Acesso irrestrito a fluxos sensíveis de negócio.** A categoria mais sutil: nenhum endpoint está tecnicamente vulnerável, e ainda assim a automação do fluxo causa dano. Compra de todo o estoque de um item promocional por script, criação em massa de contas, abuso de programa de indicação, esgotamento de agenda de atendimento. A defesa não é técnica no sentido usual — é entender qual fluxo tem valor econômico quando automatizado, e impor atrito proporcional: limite por conta, verificação de dispositivo, análise de comportamento.
+
+**Gestão imprópria de inventário.** O caso da abertura. Versões antigas no ar, ambientes de homologação expostos com dados de produção, documentação desatualizada, endpoints internos alcançáveis pela internet, integrações de parceiros que ninguém revisita. **Não se protege o que não se sabe que existe**, e esta é a categoria em que a resposta é organizacional: inventário vivo, gerado a partir do código e do gateway, não de um documento.
+
+**Consumo inseguro de APIs de terceiros.** A organização valida rigorosamente o que vem do usuário e aceita sem verificação o que vem da API do parceiro. Resposta de terceiro é entrada não confiável: valide o esquema, imponha tempo limite, trate o parceiro comprometido como cenário possível.
+
+::: {#fig-inventario-api}
+```{.tikz}
+%%| filename: inventario-api
+%%| alt: Superfície real de uma API dividida entre endpoints documentados, endpoints sombra e endpoints zumbis, mostrando que a parte protegida é apenas a documentada
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ep/.style={draw, thick, rounded corners=2pt, align=left, inner sep=4pt,
+               minimum width=5.4cm, minimum height=0.95cm, font=\tiny,
+               anchor=west, fill=white}}
+
+  \node[draw=manualblue, very thick, rounded corners=4pt, fill=manualblue!8,
+        minimum width=12.8cm, minimum height=4.9cm, anchor=north west] at (0,4.6) {};
+  \node[font=\scriptsize, manualblue, anchor=north west] at (0.2,4.45)
+    {\textbf{A SUPERFÍCIE REAL DE UMA API}};
+
+  \node[ep, draw=manualgreen, fill=manualgreen!12] at (0.4,3.3)
+    {\textbf{DOCUMENTADA} --- está no contrato,\\
+     no gateway, nos testes e no inventário};
+  \node[ep, draw=manualyellow, fill=manualyellow!14] at (0.4,2.1)
+    {\textbf{SOMBRA} --- existe em produção, nunca\\
+     entrou no contrato: rota de depuração,\\
+     endpoint interno, homologação exposta};
+  \node[ep, draw=manualred, fill=manualred!12] at (0.4,0.75)
+    {\textbf{ZUMBI} --- versão anterior que ficou no ar\\
+     ``enquanto os clientes antigos migram''\\
+     e nunca recebeu as correções da nova};
+
+  \node[font=\tiny, align=left, text width=5.6cm, anchor=west] at (6.6,3.3)
+    {revisada, com limite de requisições,\\resposta enxuta e autorização por objeto};
+  \node[font=\tiny, align=left, text width=5.6cm, anchor=west] at (6.6,2.1)
+    {\textbf{não aparece em nenhuma varredura} que\\parta da documentação --- e é a
+     documentação\\que a maioria das ferramentas consome};
+  \node[font=\tiny, align=left, text width=5.6cm, anchor=west] at (6.6,0.75)
+    {\textbf{congelada no dia em que foi escrita}, com\\os defeitos que a versão nova
+     corrigiu, e\\atendendo com o mesmo token de hoje};
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.4cm] at (6.4,-0.9)
+    {\textbf{O inventário é controle de segurança, não documentação.} Numa aplicação
+     com interface renderizada no servidor, o que não está na tela tende a não
+     existir. Numa API, o que ninguém mapeou continua atendendo --- e continua
+     atendendo exatamente como foi escrito no dia em que foi escrito.};
+\end{tikzpicture}
+```
+Endpoints documentados, sombra e zumbis. As ferramentas que partem do contrato só enxergam a primeira faixa.
+:::
+
+## REST: os pontos que decidem
+
+**Autenticação entre serviços não é a mesma coisa que sessão de usuário.** O @sec-cap046 tratou da segunda. Para a primeira, o padrão é OAuth 2.0 com fluxo de credenciais de cliente, escopos estreitos e tokens de vida curta [@rfc6749; @rfc9700]. Duas melhorias valem o esforço em contexto sensível: **certificado de cliente** vinculando o token ao canal TLS, e **prova de posse** da chave pelo cliente — ambas transformam um token roubado em token inútil, porque ele deixa de ser um portador puro [@rfc8705; @rfc9449].
+
+**Chave de API não é autenticação forte.** Serve para identificar o chamador e aplicar cota. Não serve como único controle para dado sensível, e nunca deve viajar em URL — vai para o log do servidor, para o cabeçalho de referência e para o histórico.
+
+**Versionamento é decisão de segurança.** Toda versão publicada é superfície que alguém terá de manter, corrigir e desligar. A política precisa existir **antes** da segunda versão: prazo de suporte declarado, métrica de uso por versão no gateway, e data de desligamento com aviso. Sem isso, `v1` fica no ar para sempre — e o "para sempre" é a história da abertura deste capítulo.
+
+**Limite de requisições em três dimensões**: por token, por conta e por origem. Só por origem é contornável com distribuição; só por token é contornável criando tokens. E o limite precisa cobrir também os endpoints caros com um teto próprio.
+
+**Paginação com teto imposto pelo servidor.** O cliente pede o tamanho; o servidor decide o máximo. Sem teto, o parâmetro de paginação é um endpoint de exportação em massa que ninguém projetou.
+
+**Erro que não conta a vida interna.** Rastreamento de pilha, consulta SQL, caminho de arquivo e nome de serviço interno em resposta de erro são presente de reconhecimento. Resposta genérica ao cliente, detalhe no log, identificador de correlação ligando os dois.
+
+**Cabeçalhos e CORS.** `Access-Control-Allow-Origin` refletindo a origem com credenciais habilitadas equivale a não ter política (@sec-cap045). E vale desligar o que a API não usa: negociação de conteúdo que aceita formatos exóticos amplia a superfície de desserialização sem benefício algum.
+
+## GraphQL: a flexibilidade que vira superfície
+
+GraphQL resolve um problema real — o cliente pede exatamente os campos de que precisa, numa requisição só [@graphqlspec]. E cria uma classe de problemas que não existe em REST, todos derivados da mesma raiz: **quem monta a consulta é o cliente**.
+
+**Um endpoint, mil consultas.** A proteção de perímetro por caminho de URL deixa de funcionar. Todo o tráfego passa por `/graphql` com método `POST`, e regra de gateway baseada em caminho não distingue uma leitura de perfil de uma exportação da base. O controle precisa entender a consulta, não a rota.
+
+**Introspecção.** O esquema é consultável por padrão: tipos, campos, argumentos, mutações — o mapa completo da API, servido pela própria API. Em produção, desligar. Não é defesa suficiente, porque ferramentas reconstroem esquema por tentativa e as consultas continuam funcionando sem ele, mas é gratuito e remove a conveniência.
+
+**Profundidade e complexidade.** Relações circulares no esquema permitem consultas aninhadas que crescem multiplicativamente — cliente pede pedidos, cada pedido pede o cliente, que pede os pedidos. Uma consulta de vinte linhas vira milhões de resoluções e derruba o serviço. As defesas se somam: **limite de profundidade**, **orçamento de complexidade** com custo declarado por campo, teto de quantidade de itens por relação e tempo limite de execução.
+
+**Lotes e apelidos.** O mesmo campo pode ser pedido várias vezes na mesma consulta, com apelidos diferentes. Isso permite empacotar centenas de tentativas — de um código de segundo fator, por exemplo — em **uma única requisição HTTP**, atravessando qualquer limite de requisições que conte requisições. É o contorno mais elegante da categoria e o mais esquecido: o limite precisa contar operações dentro da consulta, não requisições.
+
+**Autorização por campo, não por endpoint.** O ponto que mais quebra na prática. Como não há endpoint, a verificação precisa acontecer em cada resolvedor. E é comum que o campo `email` seja protegido quando alcançado por um caminho e desprotegido quando alcançado por outro — `usuario.email` verifica, `pedido.cliente.email` não. **A pergunta certa não é "este campo é protegido?", é "todos os caminhos até este campo verificam?"**
+
+**Consultas persistidas** são a resposta mais robusta em aplicações que controlam os próprios clientes: o servidor aceita apenas consultas de uma lista previamente registrada, identificadas por resumo. Isso elimina de uma vez consulta arbitrária, profundidade abusiva e lote malicioso — o cliente não monta mais nada. Não serve para API pública, mas serve para a maioria dos casos reais, que é aplicação própria falando com backend próprio.
+
+::: {#fig-graphql-limites}
+```{.tikz}
+%%| filename: graphql-limites
+%%| alt: Consulta GraphQL aninhada crescendo multiplicativamente e os controles que a contêm, incluindo limite de profundidade, orçamento de complexidade e consultas persistidas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    nv/.style={draw, thick, rounded corners=2pt, align=left, inner sep=3pt,
+               font=\tiny, anchor=west, fill=white, minimum height=0.5cm},
+    ct/.style={draw, very thick, rounded corners=2pt, align=left, inner sep=4pt,
+               font=\tiny, anchor=west, minimum width=5.8cm, minimum height=0.72cm}}
+
+  \node[font=\scriptsize, manualred, anchor=west] at (0,3.9)
+    {\textbf{UMA CONSULTA, CRESCIMENTO MULTIPLICATIVO}};
+
+  \node[nv, draw=manualgray,  minimum width=1.6cm] at (0.2,3.2)  {cliente};
+  \node[nv, draw=manualblue,  minimum width=2.2cm] at (1.1,2.6)  {pedidos \tiny($\times$100)};
+  \node[nv, draw=manualyellow,minimum width=2.8cm] at (2.0,2.0)  {cliente \tiny($\times$100)};
+  \node[nv, draw=manualred,   minimum width=3.4cm] at (2.9,1.4)  {pedidos \tiny($\times$10\,000)};
+  \node[nv, draw=manualred,   minimum width=4.0cm] at (3.8,0.8)  {itens \tiny($\times$1\,000\,000)};
+
+  \node[font=\tiny, manualred, anchor=west, text width=3.6cm, align=left] at (8.4,2.0)
+    {vinte linhas de consulta,\\milhões de resoluções ---\\o serviço cai sem que
+     nenhuma\\vulnerabilidade tenha sido explorada};
+
+  \node[ct, draw=manualgreen, fill=manualgreen!10] at (0,-0.4)
+    {\textbf{limite de profundidade} --- corta o aninhamento};
+  \node[ct, draw=manualgreen, fill=manualgreen!10] at (0,-1.3)
+    {\textbf{orçamento de complexidade} --- custo por campo};
+  \node[ct, draw=manualgreen, fill=manualgreen!10] at (0,-2.2)
+    {\textbf{teto de itens por relação} + tempo limite};
+
+  \node[ct, draw=manualyellow, fill=manualyellow!14, minimum width=6.0cm] at (6.6,-0.4)
+    {\textbf{contar operações, não requisições} --- apelidos\\
+     empacotam centenas de tentativas em \emph{uma} chamada};
+  \node[ct, draw=manualyellow, fill=manualyellow!14, minimum width=6.0cm] at (6.6,-1.3)
+    {\textbf{autorizar no resolvedor} --- todo caminho até o\\
+     campo verifica, não apenas o caminho óbvio};
+  \node[ct, draw=manualblue, fill=manualblue!14, minimum width=6.0cm] at (6.6,-2.2)
+    {\textbf{consultas persistidas} --- o cliente não monta\\
+     mais nada; resolve os três problemas de uma vez};
+\end{tikzpicture}
+```
+O crescimento multiplicativo de uma consulta aninhada e os controles que o contêm.
+:::
+
+## O contrato como artefato de segurança
+
+O caminho que junta tudo é tratar a especificação da API — OpenAPI para REST, o esquema para GraphQL — como **artefato executável**, e não como documentação [@openapi].
+
+Escrito o contrato, ele passa a servir para: validar requisição e resposta no gateway, rejeitando o que não está declarado antes de chegar à aplicação; gerar casos de teste de segurança automaticamente, inclusive os negativos; alimentar a varredura dinâmica com os endpoints reais; e produzir o inventário — comparando o que o contrato declara com o que o gateway efetivamente atende. **A diferença entre essas duas listas é a lista de endpoints sombra**, e ela é a única forma prática de encontrá-los.
+
+A validação de esquema no gateway merece ênfase porque é o controle de melhor retorno da lista: campo não declarado é rejeitado, tipo errado é rejeitado, tamanho acima do teto é rejeitado. Isso elimina atribuição em massa por construção e reduz a superfície de tudo o que vem depois. É a aplicação, em nível de API, do mesmo princípio de negar por padrão do @sec-cap047. E o gateway não substitui a verificação na aplicação — assume-se que o atacante alcança o serviço por dentro (@sec-cap027) —, mas remove a maior parte do ruído antes.
+
+## Erros que se repetem
+
+- **Confiar que o cliente é o aplicativo.** Chave embutida em binário é chave pública; validação no frontend é sugestão.
+- **Devolver o objeto inteiro** e confiar que o cliente exiba só o que interessa.
+- **Aceitar o corpo inteiro** na entrada, sem lista fechada de campos.
+- **Deixar a versão anterior no ar** sem prazo, sem métrica de uso e sem data de desligamento.
+- **Limite de requisições só por origem**, contornável por distribuição.
+- **Nenhum teto no tamanho de página**, transformando paginação em exportação em massa.
+- **Endpoint administrativo não documentado** tratado como endpoint protegido.
+- **Introspecção do GraphQL ligada em produção**.
+- **Contar requisições em vez de operações** em GraphQL, ignorando lote por apelidos.
+- **Autorizar por tipo e não por caminho** no GraphQL, deixando o campo protegido em uma rota e aberto em outra.
+- **Confiar na resposta da API do parceiro** sem validar esquema nem impor tempo limite.
+- **Erro detalhado na resposta**, entregando rastreamento de pilha e nome de serviço interno.
+
+## ⚖️ Brasil em Foco
+
+**O open finance brasileiro é a maior superfície de API regulada do país, e o regulador definiu o perfil de segurança.** A arquitetura do Banco Central para compartilhamento de dados e iniciação de pagamento se apoia em OAuth 2.0 e OpenID Connect com o perfil de segurança reforçado adotado internacionalmente para o setor financeiro: TLS mútuo, tokens vinculados ao canal ou à posse da chave, assinatura de requisição nos fluxos de pagamento e um diretório central que registra as instituições participantes e seus certificados. Para o desenvolvedor brasileiro, isso significa que **os controles descritos aqui não são recomendação, são requisito de participação** — e que o modelo vale como referência mesmo fora do setor regulado [@bcbopenfinance; @rfc8705; @rfc9449].
+
+**O Pix trouxe APIs de pagamento para dentro de empresas que não são bancos.** Provedores de serviço de pagamento, sistemas de gestão, plataformas de cobrança e o comércio em geral passaram a integrar APIs que movimentam dinheiro em tempo real. Duas consequências práticas: a chave de integração vira alvo de alto valor — e não pode viver em repositório, em variável de ambiente de estação de trabalho ou em arquivo de configuração versionado —, e **o webhook de notificação de recebimento precisa de autenticação e verificação de assinatura**, porque um webhook aceito sem verificação permite forjar a confirmação de um pagamento que nunca aconteceu. É a falha de integração mais comum no comércio eletrônico brasileiro [@bcb4893].
+
+**Exposição excessiva de dados em API é violação direta da minimização da LGPD.** O art. 6º, III da LGPD estabelece a necessidade — tratamento limitado ao mínimo necessário para a finalidade. Uma API que devolve CPF, endereço e telefone porque "o modelo do banco tem esses campos", quando a tela mostra apenas o nome, trata dado sem necessidade a cada chamada. E o problema se agrava porque **o dado excedente costuma ficar registrado**: em log de proxy, em cache de CDN, em armazenamento local do aplicativo, e no relatório de erro enviado a serviços de telemetria. A lista fechada de campos na resposta não é só controle de segurança; é conformidade [@lgpd2018].
+
+**Ambiente de homologação com dados reais é o achado recorrente do setor público brasileiro.** Integrações entre órgãos multiplicaram as APIs governamentais, e a prática de popular homologação com uma cópia da produção transforma um ambiente sem hardening, sem monitoramento e frequentemente sem autenticação forte em depósito de dado pessoal de cidadão. A regra é direta: **homologação recebe dado sintético ou anonimizado**, e a exceção precisa de justificativa formal, base legal e os mesmos controles da produção.
+
+**A raspagem sistemática de API expõe ao art. 154-A e ao dever de comunicação.** Automatizar consultas a uma API para coletar dados de terceiros em massa configura acesso não autorizado quando ultrapassa o escopo concedido, com as penas agravadas pela Lei 14.155/2021. Do lado de quem opera a API, a coleta em massa por token legítimo é um incidente de segurança comunicável quando envolve dado pessoal, e a Resolução ANPD 15/2024 exige que a comunicação dimensione o alcance — o que só é possível com registro por chamada, por token e por recurso acessado [@lei12737; @lei14155; @anpd2024res15].
+
+**PCI-DSS v4 endereça APIs explicitamente.** O Requisito 6 trata de APIs no ciclo de desenvolvimento seguro e o Requisito 4 exige criptografia forte na transmissão. Para adquirentes, subadquirentes e gateways de pagamento brasileiros, o inventário de APIs deixou de ser boa prática e virou item auditável [@pcidss4].
+
+## 🛠️ No Campo
+
+**1. Levante o inventário real, não o documentado.** Cruze três fontes: as rotas registradas no código, as rotas que o gateway efetivamente atende e os caminhos que aparecem no log de acesso dos últimos noventa dias. **O que aparece no log e não aparece no contrato é endpoint sombra**, e é por onde começar.
+
+```bash
+# caminhos distintos efetivamente atendidos, por volume
+awk '{print $7}' /var/log/nginx/api-access.log \
+  | cut -d'?' -f1 | sed -E 's#/[0-9]+#/{id}#g' | sort | uniq -c | sort -rn | head -50
+```
+
+**2. Procure as versões esquecidas.** Se `v2` existe, teste `v1`, `v0`, `beta`, `interno`, `legacy` e os subdomínios de homologação. Cada um que responder é um capítulo de abertura esperando para acontecer.
+
+**3. Defina a política de ciclo de vida antes da próxima versão.** Prazo de suporte declarado, métrica de uso por versão no gateway, aviso aos consumidores e data de desligamento efetiva. Sem métrica de uso, ninguém tem coragem de desligar.
+
+**4. Leia as respostas cruas dos dez endpoints mais usados.** Não a tela — o JSON. Compare campo a campo com o que a interface realmente exibe. É o exercício de trinta minutos com o maior retorno em exposição de dados.
+
+**5. Feche a lista de campos nos dois sentidos.** Serializador explícito na saída, validação de esquema na entrada, ambos por endpoint. E rejeite campo não declarado em vez de ignorá-lo silenciosamente.
+
+**6. Valide o contrato no gateway.** Requisição fora do esquema é rejeitada antes de chegar à aplicação — tipo, formato, tamanho e campos. Mantém a aplicação como segunda camada, não como única.
+
+**7. Ponha limite em três dimensões e teto em tudo o que é numérico.** Por token, por conta e por origem; teto de tamanho de página, de tamanho de corpo, de profundidade e de tempo de execução. Endpoint que custa dinheiro por chamada recebe limite próprio e mais rígido.
+
+**8. Faça o teste dos dois usuários em cada endpoint com identificador.** É o mesmo teste do @sec-cap047 e continua sendo o de maior retorno. Automatizado em CI, ele impede a regressão.
+
+**9. Desligue a introspecção do GraphQL em produção e imponha os três limites** — profundidade, complexidade e itens por relação:
+
+```javascript
+const server = new ApolloServer({
+  schema,
+  introspection: false,
+  validationRules: [depthLimit(7), complexityLimit(1000)]
+});
+```
+
+**10. Conte operações, não requisições.** Confirme que o limitador enxerga apelidos e lotes; caso contrário, uma requisição carrega mil tentativas. Em aplicação com clientes próprios, migre para consultas persistidas e resolva os três problemas de uma vez.
+
+**11. Verifique a autorização em cada resolvedor, por caminho.** Escolha um campo sensível — `cpf`, `email`, `saldo` — e enumere todos os caminhos do esquema que chegam nele. Cada caminho precisa verificar.
+
+**12. Trate resposta de terceiro como entrada não confiável.** Validação de esquema, tempo limite, disjuntor e um plano para o cenário em que o parceiro está comprometido.
+
+**13. Autentique e verifique a assinatura dos webhooks que recebe.** Segredo compartilhado, assinatura sobre o corpo, verificação de horário para impedir reenvio. Webhook de pagamento aceito sem verificação é confirmação de pagamento forjável.
+
+## Resumo
+
+- Em API, **o contrato é a superfície** e o cliente é território hostil: chave embutida em binário é pública, validação no frontend é sugestão, e o aplicativo é apenas um dos clientes possíveis — o outro é um script.
+- As duas primeiras posições da lista específica de APIs são **autorização**: em nível de objeto (o IDOR do @sec-cap047, mais grave aqui porque é automatizável) e em nível de função (endpoint administrativo que confia em não estar documentado).
+- **Autorização em nível de propriedade tem duas faces**: exposição excessiva na saída e atribuição em massa na entrada. A defesa é a mesma nos dois sentidos — lista fechada de campos por endpoint.
+- **Consumo irrestrito é vulnerabilidade, não questão de desempenho.** Limite por token, por conta e por origem, tetos em tudo o que é numérico, e limite próprio para endpoints que custam dinheiro por chamada.
+- **Gestão de inventário é controle de segurança.** Versão zumbi e endpoint sombra continuam atendendo como foram escritos; a diferença entre o que o contrato declara e o que o gateway atende é a lista que ninguém tem.
+- GraphQL desloca o problema: um endpoint só quebra a proteção por caminho, a introspecção publica o mapa, o aninhamento cresce multiplicativamente, **apelidos empacotam centenas de tentativas em uma requisição** e a autorização precisa valer em todos os caminhos até o campo — não só no óbvio.
+- **Consultas persistidas** resolvem consulta arbitrária, profundidade e lote de uma vez, e cabem na maioria dos casos reais, que é aplicação própria falando com backend próprio.
+- O contrato — OpenAPI ou esquema — vale mais como **artefato executável** do que como documentação: valida no gateway, gera teste, alimenta varredura e produz o inventário.
+- No Brasil, o open finance tornou requisito regulatório o que em outros contextos é recomendação (TLS mútuo, token vinculado à posse, assinatura de requisição); o Pix levou APIs que movimentam dinheiro para dentro de empresas que não são bancos, com o webhook não verificado como falha recorrente; e resposta excessiva de API é violação direta da minimização exigida pela LGPD.
