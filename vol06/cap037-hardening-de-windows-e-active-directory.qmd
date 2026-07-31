@@ -1,3 +1,290 @@
 # Hardening de Windows e Active Directory {#sec-cap037}
 
-*(em elaboracao)*
+Uma empresa de médio porte tem cerca de trezentas estações e doze servidores num único domínio Active Directory. Numa terça-feira, um usuário do setor financeiro abre um anexo. O computador dele é comprometido — nada extraordinário até aqui, e é exatamente o tipo de evento que qualquer organização deve assumir como inevitável.
+
+O que acontece nas cinco horas seguintes é que decide o desfecho. O atacante lê a memória do processo de autenticação e encontra credenciais de um administrador do domínio que, três semanas antes, havia acessado aquela mesma estação para resolver um problema de impressora. Com essa credencial, ele se autentica no controlador de domínio. Às onze da noite, controla toda a floresta, e a partir dali qualquer coisa que a organização faça em qualquer sistema integrado ao AD passa por ele.
+
+O erro não foi o anexo. Foi a **estação de baixa confiança ter recebido, uma única vez, uma credencial de altíssimo privilégio**. Este capítulo é sobre impedir que isso aconteça — e sobre o fato de que essa única decisão arquitetural vale mais do que a soma de todos os ajustes de configuração que a seguem.
+
+## Por que o AD concentra o risco
+
+O Active Directory é, na prática da maioria das organizações brasileiras, a fonte única de identidade: autentica estações, servidores de arquivo, sistemas internos, VPN (@sec-cap030), impressoras e, via federação (@sec-cap025), boa parte dos serviços em nuvem. Essa centralização é o benefício e o problema.
+
+**Comprometer o AD é comprometer tudo o que confia nele.** Não existe "invasão parcial de floresta": quem obtém controle do banco de dados de diretório pode forjar identidades, alterar políticas aplicadas a todas as máquinas e ler ou reescrever autorizações em qualquer sistema integrado. É por isso que a recuperação de um AD comprometido é, invariavelmente, um projeto de semanas — tema que o Volume 14 retoma.
+
+Disso decorre a única regra estrutural que realmente organiza o hardening de Windows corporativo: **credenciais de alto privilégio nunca podem ser usadas em máquinas de menor confiança.** Todo o resto — políticas de grupo, baselines, regras de superfície de ataque — é reforço.
+
+## O modelo de camadas
+
+A resposta consolidada a esse problema é separar o ambiente em camadas por nível de confiança e proibir que credenciais desçam de camada [@microsoft2024eam].
+
+**Camada 0** — o que controla a identidade: controladores de domínio, servidores de certificado e federação, ferramentas de gestão de identidade, e as contas administrativas do domínio. Comprometer qualquer item da camada 0 é comprometer o domínio inteiro.
+
+**Camada 1** — servidores de aplicação, de arquivos, de banco de dados. Contêm dados valiosos, mas não controlam a identidade.
+
+**Camada 2** — estações de trabalho e dispositivos de usuário. É a camada com maior exposição a ataques de entrega — anexo, navegador, mídia removível — e, por definição, a menos confiável.
+
+A regra de fluxo é assimétrica e vale a pena enunciá-la com precisão: **uma credencial pode administrar a própria camada e as inferiores, mas jamais pode ser exposta numa camada inferior.** Um administrador de domínio só se autentica em controladores de domínio e em estações administrativas dedicadas; para dar suporte a uma estação, usa-se uma conta da camada 2, que não tem valor fora dela.
+
+::: {#fig-camadas-ad}
+```{.tikz}
+%%| filename: camadas-ad
+%%| alt: Modelo de camadas do Active Directory com camada zero de identidade, camada um de servidores e camada dois de estações, mostrando que credenciais administram para baixo mas nunca podem ser expostas em camada inferior
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    tz/.style={draw, very thick, rounded corners=3pt, align=left, inner sep=6pt,
+               minimum width=6.6cm, minimum height=1.25cm, font=\scriptsize, anchor=west}}
+
+  \node[tz, draw=manualred, fill=manualred!12] (t0) at (0,3.6)
+    {\textbf{Camada 0 --- controle da identidade}\\[1pt]
+     \tiny controladores de domínio, autoridade certificadora, federação,\\
+     \tiny ferramentas de gestão de identidade, contas de administrador do domínio};
+  \node[tz, draw=manualyellow, fill=manualyellow!16] (t1) at (0,1.7)
+    {\textbf{Camada 1 --- servidores}\\[1pt]
+     \tiny aplicação, arquivos, banco de dados\\
+     \tiny \emph{dados valiosos, mas não controlam quem é quem}};
+  \node[tz, draw=manualblue, fill=manualblue!10] (t2) at (0,-0.2)
+    {\textbf{Camada 2 --- estações e dispositivos}\\[1pt]
+     \tiny anexo, navegador, mídia removível\\
+     \tiny \emph{a camada que será comprometida --- assuma isso}};
+
+  \draw[->, >=stealth, ultra thick, manualgreen] (7.0,3.6) .. controls (8.6,3.0) .. (7.0,1.7);
+  \draw[->, >=stealth, ultra thick, manualgreen] (7.0,1.7) .. controls (8.6,1.1) .. (7.0,-0.2);
+  \node[font=\tiny, manualgreen, align=left, anchor=west] at (8.8,1.7)
+    {\textbf{administra}\\para baixo};
+
+  \draw[->, >=stealth, ultra thick, manualred] (-0.35,-0.2) .. controls (-2.0,1.7) .. (-0.35,3.6);
+  \node[draw=manualred, fill=white, thick, rounded corners=2pt, font=\tiny, inner sep=2pt,
+        align=center, manualred] at (-2.2,1.7) {\textbf{NUNCA}\\se autentica\\para cima};
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.6cm] at (4.4,-2.1)
+    {\textbf{Uma credencial exposta é uma credencial perdida.} Basta um logon
+     interativo de administrador do domínio numa estação para que aquela estação
+     passe a valer o domínio inteiro. O suporte à camada 2 usa conta da camada 2,
+     que não tem valor fora dela --- e é isso que torna o comprometimento do
+     endpoint um incidente contido em vez de um incidente terminal.};
+\end{tikzpicture}
+```
+O modelo de camadas: o privilégio desce para administrar, mas a credencial nunca sobe para se autenticar.
+:::
+
+Na prática, isso exige três providências concretas: **estações administrativas dedicadas** (máquinas endurecidas, sem e-mail e sem navegação, usadas só para administrar), **contas separadas por camada** — a mesma pessoa tem uma conta comum e uma administrativa distinta — e **restrição técnica de logon**, para que o modelo não dependa de disciplina. A política de "negar logon" aplicada por camada é o que transforma a regra num controle.
+
+## Onde as credenciais ficam expostas
+
+Compreender o mecanismo de roubo de credenciais explica por que as defesas são as que são.
+
+Windows mantém material de autenticação em memória para permitir autenticação única: quem já provou a identidade não precisa digitar a senha a cada acesso a um recurso de rede. Esse material — resumos de senha, tíquetes Kerberos e, em configurações legadas, até senhas em texto reversível — vive no processo de autenticação local. Um atacante com privilégio administrativo **naquela máquina** consegue lê-lo.
+
+A consequência é contraintuitiva e central: **não é preciso quebrar a senha do administrador do domínio.** Basta capturar o material deixado por um logon anterior. Daí a regra do modelo de camadas.
+
+As defesas que atacam esse ponto:
+
+**Credential Guard.** Isola o material de autenticação num ambiente protegido por virtualização, fora do alcance de quem controla o sistema operacional. É o controle isolado de maior impacto contra roubo de credencial em memória em hardware moderno [@microsoft2024credguard].
+
+**Grupo de Usuários Protegidos.** Impede que contas dele usem autenticação legada, restringe o cache de credenciais e força tíquetes de vida curta. Aplicado às contas administrativas, fecha caminhos inteiros de reutilização.
+
+**Administração remota sem expor credencial.** Modos de acesso remoto que não deixam credencial na máquina de destino, e ferramentas de administração que executam comandos sem estabelecer sessão interativa, resolvem o caso mais comum de exposição acidental: o suporte que "só entrou para verificar".
+
+**Senha única por máquina para o administrador local.** A mesma senha de administrador local em trezentas estações significa que comprometer uma é comprometer todas — lateralmente, sem tocar no AD. A solução gerenciada da própria plataforma gera senha distinta por máquina, rotaciona automaticamente e armazena no diretório com acesso controlado. É barato, rápido e corta o vetor de movimentação lateral mais usado que existe [@microsoft2024laps].
+
+**Protocolos legados desligados.** Formas antigas de armazenamento e negociação de credencial permanecem disponíveis por compatibilidade e são exploradas rotineiramente. Desativá-las é configuração, não projeto.
+
+## Kerberos, delegação e os caminhos para a camada 0
+
+O Kerberos é sólido como protocolo [@rfc4120]; o que se explora são configurações permissivas ao redor dele. Quatro famílias, com a contramedida correspondente:
+
+**Contas de serviço com senha fraca.** Qualquer usuário autenticado pode solicitar um tíquete para um serviço e tentar, fora da rede, descobrir a senha que o protege. Se a senha da conta de serviço é curta ou previsível, ela cai — e contas de serviço costumam ter privilégio alto e senha que nunca muda. **Contramedida:** contas de serviço gerenciadas, com senha longa gerada e rotacionada pela plataforma; onde isso não for possível, senha aleatória longa e privilégio mínimo. E, sobretudo: **nenhuma conta de serviço deveria ser administradora de domínio** — essa combinação é a que transforma uma senha fraca em comprometimento total.
+
+**Contas sem pré-autenticação exigida.** Uma opção legada permite obter material verificável sem provar a identidade primeiro, viabilizando ataque de senha fora da rede contra a conta. **Contramedida:** auditar e remover essa exceção, que raramente tem justificativa atual.
+
+**Delegação irrestrita.** Um servidor configurado para delegação irrestrita armazena os tíquetes de todos que se conectam a ele. Comprometê-lo entrega as credenciais de quem passou por ali — inclusive administradores. **Contramedida:** eliminar delegação irrestrita, usar delegação restrita quando necessária e marcar as contas administrativas como sensíveis e não delegáveis.
+
+**Falsificação de tíquetes.** Quem obtém a chave da conta de serviço de emissão de tíquetes do domínio pode forjar credenciais válidas para qualquer identidade, com validade longa — e isso persiste mesmo depois de trocar todas as senhas de usuário. **Contramedida:** essa chave só se resolve com rotação (duas vezes, respeitando o intervalo de replicação) e faz parte obrigatória de qualquer plano de recuperação de comprometimento de domínio.
+
+Há ainda um caminho que ganhou destaque nos últimos anos: **a infraestrutura de certificados integrada ao AD**. Modelos de certificado mal configurados podem permitir que um usuário comum solicite um certificado em nome de outra identidade, incluindo administrativa — e o certificado emitido é uma credencial legítima, difícil de detectar e de duração longa. A autoridade certificadora corporativa é **componente de camada 0** e precisa ser tratada como tal: revisão dos modelos, restrição de quem inscreve e exigência de aprovação para modelos sensíveis [@schroeder2021adcs].
+
+::: {#fig-caminho-camada0}
+```{.tikz}
+%%| filename: caminho-camada0
+%%| alt: Cadeia do comprometimento de um domínio Windows em quatro degraus, do acesso inicial na estação até o controle do domínio, com a contramedida correspondente a cada degrau
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.55cm, minimum height=1.15cm, font=\scriptsize},
+    mg/.style={draw, thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.55cm, minimum height=1.25cm, font=\tiny,
+               draw=manualgreen, fill=manualgreen!10},
+    fl/.style={->, >=stealth, very thick, manualred}}
+
+  \node[et, draw=manualblue,   fill=manualblue!10]   (a) at (0,2.2)    {acesso inicial\\\tiny anexo, navegador};
+  \node[et, draw=manualyellow, fill=manualyellow!16] (b) at (3.35,2.2) {privilégio local\\\tiny na estação};
+  \node[et, draw=manualred,    fill=manualred!10]    (c) at (6.7,2.2)  {roubo de\\credencial};
+  \node[et, draw=manualred,    fill=manualred!16]    (d) at (10.05,2.2){camada 0\\\tiny domínio inteiro};
+
+  \draw[fl] (a) -- (b);
+  \draw[fl] (b) -- (c);
+  \draw[fl] (c) -- (d);
+
+  \node[mg] (ca) at (0,0.1)    {atualização, ASR,\\controle de execução,\\macro bloqueada};
+  \node[mg] (cb) at (3.35,0.1) {usuário sem\\privilégio local,\\senha única por máquina};
+  \node[mg] (cc) at (6.7,0.1)  {Credential Guard,\\Usuários Protegidos,\\sem logon de camada 0};
+  \node[mg] (cd) at (10.05,0.1){estação administrativa,\\sem delegação irrestrita,\\modelos de certificado revisados};
+
+  \foreach \x/\y in {a/ca, b/cb, c/cc, d/cd} {
+    \draw[->, >=stealth, thick, manualgreen] (\y) -- (\x);}
+
+  \node[draw=manualyellow, fill=manualyellow!12, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.6cm] at (5.0,-1.9)
+    {\textbf{Quebrar qualquer elo interrompe a cadeia --- mas os elos não custam
+     o mesmo.} O primeiro degrau é o mais tentado e o menos evitável. O terceiro
+     é o mais barato de fechar e o mais frequentemente ignorado: sem credencial de
+     alto privilégio na estação, o atacante fica preso na camada 2 com um
+     computador de escritório.};
+\end{tikzpicture}
+```
+Do anexo ao domínio: quatro degraus e a contramedida de cada um.
+:::
+
+## Superfície do endpoint e políticas
+
+Com a arquitetura de credenciais resolvida, o restante é reduzir a superfície das máquinas.
+
+**Usuário comum não é administrador local.** É o controle mais impopular e um dos mais eficazes: elimina o segundo degrau da cadeia sem depender de detecção. Onde há software legado que exige privilégio, a resposta é elevação pontual e auditada, não administrador permanente.
+
+**Controle de execução.** Permitir apenas o que foi aprovado — por assinatura, caminho ou reputação — em vez de tentar bloquear o que é ruim. Aplicado primeiro em modo de auditoria, para descobrir o que existe de verdade no parque antes de bloquear qualquer coisa.
+
+**Regras de redução de superfície de ataque.** Bloquear os comportamentos que aparecem em quase toda cadeia de intrusão: aplicativo de escritório criando processo filho, script ofuscado, executável vindo de anexo, acesso ao processo de autenticação. É configuração de política, sem custo de licença adicional.
+
+**Macros e conteúdo ativo.** Bloqueio de macros em documentos vindos da internet, sem exceção por conveniência. Continua sendo um dos vetores de entrega mais produtivos.
+
+**Baselines e políticas de grupo.** As baselines de segurança publicadas pelo próprio fabricante dão um ponto de partida testado, aplicável por política de grupo, com documentação do efeito de cada item [@microsoft2024baselines; @cisbenchmarks]. Como no Linux, o valor está em declarar o referencial e documentar as exceções.
+
+**Protocolos de resolução de nomes locais.** Mecanismos legados de descoberta na rede local permitem que qualquer máquina responda "sou eu" a uma consulta e colete material de autenticação. Desligá-los, exigir assinatura no compartilhamento de arquivos e exigir assinatura e vinculação de canal no acesso ao diretório fecham uma família inteira de ataques internos.
+
+## Ver o que acontece
+
+Um domínio sem coleta de eventos é um domínio sobre o qual nada pode ser afirmado depois. O essencial:
+
+**Encaminhamento centralizado de eventos.** Registro que fica só na máquina é apagável por quem a controla. O encaminhamento nativo do Windows resolve isso sem agente adicional.
+
+**Auditoria avançada configurada por política.** A configuração padrão registra pouco. Autenticação, uso de privilégio, criação de processo com linha de comando, alterações em grupos privilegiados, modificações em objetos de política de grupo e acesso a objetos sensíveis do diretório são o conjunto mínimo.
+
+**Monitoramento de processos.** Uma ferramenta de monitoramento de sistema com configuração pública e madura enriquece muito o que se enxerga — criação de processo com linha de comando e origem, conexões de rede por processo, carregamento de módulos [@sysmon2024]. É o insumo que o Volume 12 usará para escrever detecção.
+
+**Vigilância específica da camada 0.** Alterações no grupo de administradores do domínio, modificações em objetos de política de grupo, emissão de certificados por modelos sensíveis e replicação de diretório solicitada por origem inesperada são eventos raros e de altíssimo valor. Alerta com poucos falsos positivos e consequência enorme.
+
+## Erros que se repetem
+
+- **Administrador de domínio acessando estação de usuário** — o erro que custa o domínio.
+- **Mesma senha de administrador local em todo o parque**, sem rotação por máquina.
+- **Conta de serviço com privilégio de domínio e senha antiga** que nunca muda.
+- **Delegação irrestrita esquecida** num servidor de aplicação de dez anos atrás.
+- **Autoridade certificadora tratada como servidor comum**, e não como camada 0.
+- **Auditoria padrão**, sem encaminhamento centralizado, descoberta só no incidente.
+- **Aplicar baseline em bloco sem piloto**, quebrar produção e desligar tudo em seguida.
+
+## ⚖️ Brasil em Foco
+
+**Contas administrativas nominais são pré-requisito de responsabilização.** O art. 37 da LGPD exige que os agentes de tratamento mantenham registro das operações, e a atribuição de responsabilidade (@sec-cap003) depende de saber **quem** fez. Um domínio em que várias pessoas compartilham a mesma conta administrativa não consegue responder isso — e essa incapacidade aparece tanto na resposta a incidente quanto em processo trabalhista sobre acesso indevido a dados de funcionários [@lgpd2018].
+
+**Comprometimento de AD costuma ser incidente comunicável.** Quando o atacante obtém controle do diretório, presume-se acesso potencial a tudo que dele depende — inclusive bases com dados pessoais. A Resolução ANPD 15/2024 estabelece prazo e conteúdo da comunicação, e um dos itens exigidos é a descrição da extensão do incidente. Sem eventos encaminhados e preservados, essa descrição vira especulação, o que enfraquece a posição da organização perante a autoridade e perante os titulares [@anpd2024res15].
+
+**A invasão e o que vem depois são crimes distintos.** A Lei 12.737/2012 tipifica a invasão de dispositivo informático (art. 154-A do Código Penal); a Lei 14.155/2021 agravou penas e criou tipos qualificados para fraude eletrônica; e a extorsão típica do ransomware, tema do Volume 11, soma o art. 158. Para a vítima, o que sustenta a investigação são os registros de autenticação e de criação de processo — exatamente os que a auditoria padrão não guarda [@lei12737; @lei14155].
+
+**Windows sem licença é problema de segurança antes de ser problema jurídico.** É comum, em pequenas e médias empresas brasileiras, encontrar estações com sistema ativado por meios irregulares. Além da violação da Lei 9.610/1998 e da Lei 9.609/1998, essas instalações frequentemente têm atualização automática desabilitada — porque atualizar quebra a ativação — e trazem componentes de origem desconhecida. O parque que não pode atualizar é o parque que acumula vulnerabilidades conhecidas, e o custo de regularizar é ordens de grandeza menor que o de um incidente.
+
+**Setores regulados cobram evidência.** A Resolução BCB 4.893/2021 exige controle de acesso compatível com a criticidade e trilhas de auditoria; a Resolução 740/2020 da Anatel trata da segurança das redes de telecomunicações. Em fiscalização, a pergunta prática é sempre a mesma: quem tem privilégio administrativo, como isso é revisado e onde estão os registros [@bcb4893; @anatel740].
+
+**O CERT.br mantém orientações e recebe notificações de incidentes**, e vale registrar o contato técnico correto nas faixas de endereçamento da organização — é por ali que chega o aviso de que uma máquina sua está participando de algo [@cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Descubra quem tem privilégio de domínio hoje.** A lista quase sempre é maior que a esperada:
+
+```powershell
+Get-ADGroupMember "Domain Admins" -Recursive |
+  Select-Object name, objectClass, distinguishedName
+Get-ADGroupMember "Enterprise Admins" -Recursive | Select-Object name
+```
+
+Toda conta de serviço nessa lista é um achado a tratar imediatamente.
+
+**2. Ache contas de serviço com senha antiga e alto privilégio:**
+
+```powershell
+Get-ADUser -Filter {ServicePrincipalName -like "*"} `
+  -Properties ServicePrincipalName, PasswordLastSet, MemberOf |
+  Select-Object Name, PasswordLastSet, ServicePrincipalName |
+  Sort-Object PasswordLastSet
+```
+
+**3. Elimine a delegação irrestrita:**
+
+```powershell
+Get-ADComputer -Filter {TrustedForDelegation -eq $true} -Properties TrustedForDelegation |
+  Select-Object Name, DNSHostName
+Get-ADUser -Filter {TrustedForDelegation -eq $true} | Select-Object Name
+```
+
+E marque as contas administrativas como não delegáveis, além de colocá-las no grupo de Usuários Protegidos.
+
+**4. Exija pré-autenticação em todas as contas:**
+
+```powershell
+Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true} | Select-Object Name, Enabled
+```
+
+**5. Implante senha única por máquina para o administrador local.** É o item de melhor relação esforço/benefício deste capítulo: corta a movimentação lateral entre estações sem depender de detecção. Configure a rotação automática e restrinja quem pode ler as senhas no diretório.
+
+**6. Bloqueie tecnicamente o logon entre camadas.** O modelo só existe se for imposto por política — negar logon interativo, por serviço, em lote e via acesso remoto para as contas de camada 0 em todas as máquinas de camadas 1 e 2. Sem isso, é recomendação, não controle.
+
+**7. Verifique o estado das proteções de credencial:**
+
+```powershell
+Get-CimInstance -ClassName Win32_DeviceGuard `
+  -Namespace root\Microsoft\Windows\DeviceGuard |
+  Select-Object SecurityServicesConfigured, SecurityServicesRunning
+```
+
+**8. Desligue a resolução de nomes legada e exija assinatura.** Fecha uma família inteira de ataques internos:
+
+```powershell
+Set-DnsClientGlobalSetting -SuffixSearchList @()
+Set-SmbServerConfiguration -RequireSecuritySignature $true -EnableSMB1Protocol $false -Force
+Set-SmbClientConfiguration -RequireSecuritySignature $true -Force
+```
+
+Complemente exigindo assinatura e vinculação de canal no acesso ao diretório, aplicados por política de grupo.
+
+**9. Ative as regras de redução de superfície em auditoria antes de bloquear:**
+
+```powershell
+Add-MpPreference -AttackSurfaceReductionRules_Ids <ID> -AttackSurfaceReductionRules_Actions AuditMode
+Get-MpPreference | Select-Object -ExpandProperty AttackSurfaceReductionRules_Ids
+```
+
+Rode por duas ou três semanas, analise o que seria bloqueado, trate as exceções legítimas e só então mude para bloqueio.
+
+**10. Configure auditoria avançada e encaminhamento de eventos.** O mínimo por política: logon e logoff, uso de privilégio sensível, criação de processo **com linha de comando**, alterações em grupos privilegiados, alterações em objetos de política de grupo e acesso a objetos do diretório. Depois, encaminhe para um coletor:
+
+```powershell
+wecutil qc /q
+winrm quickconfig -q
+```
+
+**11. Audite os modelos de certificado.** Trate a autoridade certificadora como camada 0: revise quem pode inscrever, quais modelos permitem informar o próprio nome do titular e quais dispensam aprovação do responsável. Modelo com essas características é caminho direto para o domínio.
+
+**12. Tenha um plano de recuperação de floresta, testado.** Backup do estado do sistema dos controladores, procedimento documentado de restauração, e o procedimento de rotação dupla da chave de emissão de tíquetes. Improvisar isso durante um incidente é o que transforma dias em semanas — e o Volume 14 volta ao assunto.
+
+## Resumo
+
+- **Comprometer o AD é comprometer tudo que confia nele.** A regra estrutural que organiza o hardening de Windows corporativo é uma só: credenciais de alto privilégio nunca podem ser usadas em máquinas de menor confiança.
+- O **modelo de camadas** separa controle de identidade (camada 0), servidores (camada 1) e estações (camada 2). O privilégio administra para baixo; a credencial **nunca** se autentica para cima. Exige estações administrativas dedicadas, contas separadas por camada e bloqueio técnico de logon.
+- O roubo de credencial não quebra senha: **captura o material deixado em memória por um logon anterior**. Credential Guard, grupo de Usuários Protegidos, administração remota que não deixa credencial e desligamento de protocolos legados atacam esse ponto.
+- **Senha única por máquina para o administrador local** é o controle de melhor relação esforço/benefício: corta a movimentação lateral entre estações sem depender de detecção.
+- Ao redor do Kerberos, quatro configurações permissivas: **conta de serviço com senha fraca** (nunca administradora de domínio), **conta sem pré-autenticação**, **delegação irrestrita** e **falsificação de tíquetes** (que só se resolve com rotação dupla da chave de emissão). A autoridade certificadora corporativa é componente de camada 0.
+- No endpoint: usuário sem privilégio administrativo, controle de execução iniciado em auditoria, regras de redução de superfície, bloqueio de macros vindas da internet e baseline declarada com exceções documentadas.
+- **Auditoria padrão registra pouco.** Encaminhamento centralizado, auditoria avançada com criação de processo e linha de comando, monitoramento de processos e vigilância específica dos eventos de camada 0 são o que permite afirmar algo depois.
+- No Brasil, contas nominais sustentam a responsabilização exigida pela LGPD; comprometimento de domínio costuma ser incidente comunicável sob a Resolução ANPD 15/2024, e a descrição da extensão depende dos registros; invasão é crime da Lei 12.737/2012; e sistema sem licença normalmente é sistema sem atualização, o que é problema de segurança antes de ser jurídico.
