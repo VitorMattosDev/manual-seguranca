@@ -1,3 +1,239 @@
 # Infraestrutura como código e segurança de pipeline {#sec-cap054}
 
-*(em elaboracao)*
+Em 2020 descobriu-se que atacantes haviam comprometido o sistema de construção de um fabricante de software de gerenciamento de redes e inserido código malicioso **durante a compilação**. O produto foi assinado com o certificado legítimo da empresa, distribuído pelo canal oficial de atualizações e instalado por milhares de organizações, incluindo agências governamentais [@solarwinds2020].
+
+Em 2021, um serviço de cobertura de testes descobriu que um script usado por dezenas de milhares de projetos havia sido modificado para exfiltrar variáveis de ambiente dos ambientes de integração contínua dos clientes. Como essas variáveis costumam guardar credenciais de nuvem, chaves de registro e tokens de repositório, um único ponto comprometido rendeu credenciais de um número enorme de organizações distintas [@codecov2021].
+
+Os dois casos ensinam a mesma coisa, e ela é desconfortável: **o pipeline é o alvo de maior valor da organização**. Ele tem credenciais de produção, autoridade para publicar artefatos que ninguém revisa depois, e — na maioria das empresas — controles de acesso muito mais frouxos do que os do ambiente que ele controla. Uma equipe que endureceu servidores, apertou permissões de nuvem e adotou política de admissão frequentemente deixou intacta a máquina que pode reconfigurar tudo isso com um commit.
+
+Este capítulo trata das duas metades do problema: o **código** que descreve a infraestrutura e o **sistema** que aplica esse código.
+
+## Por que infraestrutura como código muda a segurança
+
+Descrever a infraestrutura em arquivos versionados, e aplicá-los por ferramenta, muda quatro coisas de uma vez:
+
+**Revisável antes de existir.** A mudança de rede aparece como diferença em um pedido de mesclagem, com autor, data e justificativa. Toda a revisão do @sec-cap042 passa a valer para infraestrutura, e uma regra de firewall aberta para a internet vira um comentário em vez de um achado seis meses depois.
+
+**Reproduzível.** O ambiente de homologação é igual ao de produção porque saiu do mesmo código. Isso elimina a categoria inteira de "funcionava no teste" — e, mais importante para segurança, permite reconstruir o ambiente do zero depois de um incidente, o que é a diferença entre erradicação e limpeza aproximada.
+
+**Auditável.** O histórico do repositório responde quem mudou o quê, quando e por quê. É evidência de conformidade que se produz sozinha.
+
+**Errável em escala.** É a contrapartida honesta. Um módulo com um padrão inseguro replicado em quarenta ambientes propaga o erro instantaneamente. Automação amplifica o acerto e o engano com a mesma eficiência.
+
+Dois conceitos operacionais completam o quadro. O **desvio** é a diferença entre o que o código descreve e o que existe de fato, produzida por alguém que "só fez um ajuste rápido no console". Detectar desvio continuamente é controle de segurança, não capricho de organização: uma porta aberta manualmente e nunca revertida é exatamente o tipo de exposição que ninguém revisa. E a **imutabilidade** — substituir em vez de alterar — reduz o desvio ao mínimo por construção.
+
+## O arquivo de estado é um alvo
+
+Ferramentas declarativas mantêm um **arquivo de estado**: o mapa entre o que o código descreve e o que existe no provedor. Esse arquivo é frequentemente tratado como detalhe de implementação, e é um dos artefatos mais sensíveis da organização.
+
+Ele contém a topologia inteira — identificadores, endereços, nomes de recursos — e, em muitos casos, **valores de atributos sensíveis em texto claro**: senha inicial de banco de dados, chave gerada, token de serviço. Marcar uma variável como sensível esconde o valor da saída do terminal; **não o remove do estado**.
+
+O tratamento correto é curto e inegociável: estado em armazenamento remoto, nunca no repositório de código; cifrado em repouso com chave gerenciada por você; com controle de acesso restrito a quem opera aquele ambiente; com versionamento habilitado; e com travamento para impedir aplicações simultâneas. Estado de produção acessível a toda a equipe de desenvolvimento é uma escalada de privilégio silenciosa.
+
+## Verificar o código antes de aplicá-lo
+
+A varredura de infraestrutura como código é análise estática (@sec-cap049) sobre arquivos de definição. Ela encontra bem uma classe específica de problema — o padrão inseguro declarado explicitamente:
+
+- repositório de objetos sem bloqueio de acesso público;
+- grupo de segurança liberando administração remota para a internet;
+- cifragem em repouso desligada;
+- registro de auditoria não habilitado;
+- política com curinga em ação e recurso;
+- banco de dados com endereço público.
+
+O que ela **não** encontra é igualmente importante: o efeito combinado de recursos corretos individualmente, a permissão que faz sentido no ambiente A e não no B, e a lógica de negócio da arquitetura. É a mesma limitação de sempre, e vale a mesma resposta: automatizar o automatizável para liberar a revisão humana para o que exige contexto.
+
+Um passo além da varredura é a **política como código** aplicada ao plano de execução — não ao arquivo-fonte, mas ao conjunto de mudanças que a ferramenta pretende fazer. A diferença importa: o plano já resolveu variáveis, módulos e condicionais, então a política avalia o que **efetivamente** vai acontecer. Regras típicas: nenhum recurso fora das regiões aprovadas, nenhum repositório público, cifragem obrigatória com chave da organização, etiquetas de propriedade obrigatórias, e destruição de recurso persistente exigindo aprovação explícita.
+
+::: {#fig-ciclo-iac}
+```{.tikz}
+%%| filename: ciclo-iac
+%%| alt: Ciclo da infraestrutura como código do pedido de mesclagem à aplicação, com varredura, política sobre o plano de execução, aprovação e detecção de desvio realimentando o repositório
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw=manualblue, fill=manualblue!14, very thick, rounded corners=3pt,
+               align=center, font=\tiny, inner sep=4pt, minimum width=2.2cm,
+               minimum height=0.85cm},
+    gt/.style={draw=manualgreen, fill=manualgreen!16, very thick, rounded corners=3pt,
+               align=center, font=\tiny, inner sep=4pt, minimum width=2.2cm,
+               minimum height=0.85cm}}
+
+  \node[et] (r1) at (0,2.6)   {\textbf{pedido de}\\ \textbf{mesclagem}};
+  \node[gt] (r2) at (2.7,2.6) {\textbf{varredura}\\ do código};
+  \node[gt] (r3) at (5.4,2.6) {\textbf{plano de}\\ \textbf{execução}};
+  \node[gt] (r4) at (8.1,2.6) {\textbf{política}\\ sobre o plano};
+  \node[et] (r5) at (10.8,2.6) {\textbf{aplicação}\\ pelo pipeline};
+
+  \foreach \a/\b in {r1/r2, r2/r3, r3/r4, r4/r5}
+    {\draw[->, >=stealth, very thick, manualblue] (\a) -- (\b);}
+
+  \node[draw=manualred, fill=manualred!14, very thick, rounded corners=3pt,
+        align=center, font=\tiny, inner sep=4pt, minimum width=2.6cm,
+        minimum height=0.85cm] (dr) at (5.4,0.6) {\textbf{detecção de desvio}};
+  \draw[->, >=stealth, thick, manualred] (r5) |- (dr);
+  \draw[->, >=stealth, thick, manualred] (dr) -| (r1);
+  \node[manualred, font=\tiny, anchor=west, align=left, text width=3.4cm] at (7.0,0.6)
+    {alguém mudou produção fora do processo: trate como incidente pequeno};
+
+  \node[manualgray, font=\tiny, align=center, text width=2.4cm] at (2.7,1.45)
+    {padrão inseguro declarado};
+  \node[manualgray, font=\tiny, align=center, text width=2.4cm] at (8.1,1.45)
+    {o que vai \emph{de fato} acontecer};
+
+  \node[draw=manualgreen, fill=manualgreen!12, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (5.4,-1.0)
+    {\textbf{A política avalia o plano, não o arquivo-fonte.} O plano já resolveu
+     variáveis, módulos e condicionais --- é ali que se vê que aquele módulo
+     ``genérico'' vai abrir uma porta para a internet. E o ciclo só fecha com a
+     detecção de desvio: sem ela, o console continua sendo um caminho paralelo que
+     ninguém revisa.};
+\end{tikzpicture}
+```
+O ciclo completo da mudança de infraestrutura. A detecção de desvio é o que impede o caminho paralelo pelo console.
+:::
+
+E a prática mais subestimada: **módulos internos com o padrão seguro embutido**. Se o módulo de rede da organização já nasce com registro ligado, cifragem habilitada e sem acesso público, a equipe que o usa acerta sem precisar saber por quê. Controle embutido no caminho fácil vence política escrita em documento, sempre.
+
+## O pipeline é infraestrutura de produção
+
+Aqui está a mudança de perspectiva que este capítulo pede. O executor de integração contínua tem, tipicamente: credencial de nuvem com permissão de implantação, credencial de publicação no registro de imagens, token com escrita no repositório, e acesso à rede de produção. **É uma máquina de produção com privilégio administrativo** — e costuma ser tratada como ferramenta de desenvolvimento.
+
+Quatro riscos concentram o problema:
+
+**Credenciais de longa duração no pipeline.** Chave de nuvem guardada como segredo do repositório é a credencial mais roubada da indústria, pelo motivo do caso de 2021: qualquer coisa que consiga ler variáveis de ambiente durante a execução a captura. A substituição é a federação por token de curta duração do @sec-cap051 — o provedor de nuvem confia no emissor do sistema de CI e concede um papel com base em declarações verificáveis: **qual repositório, qual ramo, qual fluxo de trabalho**. Sem essa restrição por declaração, qualquer repositório da organização assume o papel de produção.
+
+**Fluxos disparados por contribuição externa.** Um fluxo de trabalho que roda automaticamente em pedidos de mesclagem de terceiros e tem acesso aos segredos do repositório entrega esses segredos a quem abrir o pedido — basta que o código do pedido seja executado. A regra é simples: **fluxos com segredos não rodam código não confiável**. Separe o fluxo de validação (sem segredos, sobre o código do pedido) do fluxo de implantação (com segredos, sobre o código já mesclado).
+
+**Dependências do próprio pipeline.** Ações, plugins e imagens de construção referenciados por etiqueta móvel são substituíveis por quem controlar o repositório de origem. Fixe por resumo criptográfico, espelhe internamente o que for crítico, e revise o que cada componente de terceiro faz.
+
+**Executor persistente e compartilhado.** Um executor que não é destruído entre execuções carrega restos: cache envenenado, credencial em disco, processo deixado para trás. Um projeto contamina o próximo. **Executor efêmero**, criado e destruído a cada execução, elimina a categoria.
+
+::: {#fig-fronteiras-pipeline}
+```{.tikz}
+%%| filename: fronteiras-pipeline
+%%| alt: Fronteiras de confiança do pipeline mostrando os pontos de comprometimento e os controles correspondentes do código até a produção
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw=manualblue, fill=manualblue!14, very thick, rounded corners=3pt,
+               align=center, font=\tiny, inner sep=4pt, minimum width=2.0cm,
+               minimum height=0.8cm},
+    rk/.style={draw=manualred, fill=manualred!12, thick, rounded corners=2pt,
+               align=left, font=\tiny, inner sep=3pt, text width=2.0cm},
+    ct/.style={draw=manualgreen, fill=manualgreen!14, thick, rounded corners=2pt,
+               align=left, font=\tiny, inner sep=3pt, text width=2.0cm}}
+
+  \node[et] (p1) at (0,3.2)    {\textbf{repositório}};
+  \node[et] (p2) at (2.6,3.2)  {\textbf{executor}\\ de CI};
+  \node[et] (p3) at (5.2,3.2)  {\textbf{construção}\\ e artefato};
+  \node[et] (p4) at (7.8,3.2)  {\textbf{registro}};
+  \node[et] (p5) at (10.4,3.2) {\textbf{produção}};
+
+  \foreach \a/\b in {p1/p2, p2/p3, p3/p4, p4/p5}
+    {\draw[->, >=stealth, very thick, manualblue] (\a) -- (\b);}
+
+  \node[rk] at (0,2.05)    {commit malicioso; revisão contornada};
+  \node[rk] at (2.6,2.05)  {segredo lido por código não confiável};
+  \node[rk] at (5.2,2.05)  {dependência ou ação substituída};
+  \node[rk] at (7.8,2.05)  {artefato trocado no registro};
+  \node[rk] at (10.4,2.05) {credencial de implantação roubada};
+
+  \node[ct] at (0,0.55)    {ramo protegido; revisão obrigatória; commit assinado};
+  \node[ct] at (2.6,0.55)  {executor efêmero; sem segredo em fluxo de terceiro};
+  \node[ct] at (5.2,0.55)  {dependência por resumo; procedência assinada};
+  \node[ct] at (7.8,0.55)  {registro privado; imutabilidade; assinatura};
+  \node[ct] at (10.4,0.55) {federação por token curto, restrita a repositório e ramo};
+
+  \node[manualred, font=\tiny, anchor=east] at (-1.25,2.05) {\textbf{risco}};
+  \node[manualgreen, font=\tiny, anchor=east] at (-1.25,0.55) {\textbf{controle}};
+
+  \node[draw=manualyellow, fill=manualyellow!14, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\scriptsize, text width=12.2cm] at (4.6,-1.1)
+    {\textbf{O pipeline tem mais privilégio do que qualquer servidor que ele
+     implanta} --- e quase sempre menos controle de acesso. Enquanto a chave de
+     produção estiver guardada como segredo estático do repositório, todo o resto
+     desta linha é secundário: é dela que saem os incidentes.};
+\end{tikzpicture}
+```
+As fronteiras de confiança do pipeline, com o risco e o controle de cada etapa.
+:::
+
+## Integridade do que é entregue
+
+Se o pipeline pode ser comprometido, o consumidor do artefato precisa de meios de verificar que ele não foi. Três elementos, em ordem de esforço crescente:
+
+**Origem verificável.** Commits assinados e ramo protegido com revisão obrigatória garantem que o código que entrou na construção passou pelo processo. Sem ramo protegido, a revisão é sugestão.
+
+**Procedência do artefato.** Uma declaração assinada, gerada pelo próprio sistema de construção, dizendo qual código-fonte, qual fluxo e quais entradas produziram aquele artefato. É o que permite a quem consome perguntar "isto saiu mesmo do pipeline oficial?" e obter resposta verificável [@slsa].
+
+**Verificação no consumo.** Procedência que ninguém confere é metadado. O ponto de aplicação já foi descrito: o controle de admissão do @sec-cap053 recusa a imagem sem assinatura ou sem procedência válida.
+
+Some a isso a **construção reprodutível** onde for viável — mesma entrada produzindo o mesmo artefato bit a bit —, o que permite que um terceiro confirme independentemente que o binário corresponde ao código [@cncfsupplychain; @nistsp800218].
+
+## Segregação e o problema do aprovador
+
+Um último ponto, mais organizacional do que técnico, e que costuma ser o que falta. Se a mesma pessoa escreve o código, aprova a mudança e tem acesso administrativo para aplicá-la manualmente, não há segregação de funções — só a aparência dela.
+
+Três medidas resolvem a maior parte:
+
+**Ninguém aplica em produção pelo console.** O caminho é o pipeline. Acesso administrativo humano em produção existe como quebra de vidro: credencial temporária, mediante justificativa, com alerta automático e revisão posterior.
+
+**Aprovação por pessoa distinta**, com ramo protegido impedindo o contorno. Em mudanças de alto impacto — permissões, rede de borda, chaves —, aprovação de duas pessoas.
+
+**Ambientes com fronteiras reais.** Contas ou assinaturas separadas por ambiente, cada uma com o seu papel de implantação, de modo que o pipeline de homologação não tenha nenhuma permissão em produção. Separação por etiqueta dentro da mesma conta é convenção, não fronteira.
+
+## ⚖️ Brasil em Foco
+
+**O histórico do repositório é a evidência mais barata do art. 46 da LGPD.** Demonstrar medidas técnicas de segurança costuma ser trabalhoso; com infraestrutura como código, o histórico do repositório e os registros do pipeline provam, com carimbo de data e autoria, quais controles existiam em cada momento. Numa investigação de incidente ou numa fiscalização da ANPD, poder mostrar que a cifragem estava habilitada desde uma data específica — e quem a alterou — muda materialmente a discussão sobre diligência [@lgpd2018].
+
+**Segregação de funções é exigência expressa no setor financeiro.** As normas de segurança cibernética aplicáveis a instituições financeiras e de pagamento tratam de segregação, controle de mudanças e rastreabilidade. O arranjo descrito aqui — mudança por pedido de mesclagem, aprovação por terceiro, aplicação exclusiva pelo pipeline, acesso administrativo por quebra de vidro — atende ao requisito de forma direta e auditável, e costuma ser mais fácil de evidenciar do que processos manuais equivalentes [@bcb4893; @bcb85].
+
+**Comprometimento de pipeline de fornecedor já atingiu organizações brasileiras.** Ataques à cadeia de suprimentos de software não respeitam fronteira: uma biblioteca ou ferramenta comprometida no exterior chega às empresas brasileiras pela mesma atualização automática. O CERT.br e a comunidade nacional acompanham incidentes desse tipo, e a lição prática para fornecedores locais é dupla — proteger o próprio pipeline e exigir procedência dos fornecedores [@cert2024praticas; @solarwinds2020].
+
+**Contratações públicas e a rastreabilidade do artefato.** A Lei nº 14.133/2021 e as normas de segurança da informação para a administração federal empurram na direção de exigir rastreabilidade do que é entregue. Assinatura de artefato e declaração de procedência atendem a esse requisito, e tendem a virar critério de habilitação em contratos de software para o setor público [@lei14133; @ingsi5].
+
+**Região aprovada como regra de política.** Como a escolha de região tem efeito jurídico direto sob o art. 33 da LGPD e a Resolução CD/ANPD nº 19/2024, transformá-la em regra de política como código no pipeline — nenhum recurso fora das regiões aprovadas — é a forma mais confiável de garantir conformidade. Vale mais do que qualquer treinamento: o controle está no caminho, e não na memória de quem cria o recurso [@anpd2024res19].
+
+**A Estratégia Nacional de Segurança Cibernética trata a cadeia de suprimentos como prioridade.** O Decreto nº 10.222/2020 e os desdobramentos setoriais colocam integridade de fornecedores e de software no centro da agenda, o que se traduz em exigências crescentes de inventário de componentes e de procedência nos contratos com empresas brasileiras [@decreto10222].
+
+## 🛠️ No Campo
+
+**1. Troque a chave estática do pipeline por federação hoje.** É a mudança de maior retorno do capítulo. Restrinja o papel por repositório, ramo e ambiente nas condições da política de confiança.
+
+**2. Separe o fluxo de validação do fluxo de implantação.** Fluxo que roda código de terceiro não recebe segredo. Sem exceção.
+
+**3. Use executores efêmeros.** Criados e destruídos a cada execução, sem cache compartilhado entre projetos.
+
+**4. Fixe as dependências do pipeline por resumo** — ações, plugins e imagens de construção — e espelhe internamente o que for crítico.
+
+**5. Tire o arquivo de estado do repositório.** Armazenamento remoto, cifrado, com travamento, versionado e com acesso restrito ao time que opera aquele ambiente.
+
+**6. Rode varredura de infraestrutura como código no pedido de mesclagem**, com achado comentado na linha. Comece com poucas regras de alto valor: acesso público, cifragem desligada, registro desligado, curinga em política [@trivy].
+
+**7. Aplique política como código sobre o plano de execução**, não sobre o arquivo-fonte. É o plano que revela o que vai acontecer de fato.
+
+**8. Embuta o padrão seguro nos módulos internos.** É o controle que funciona sem que ninguém precise lembrar dele.
+
+**9. Detecte desvio continuamente** e trate cada divergência como um pequeno incidente: alguém mudou produção fora do processo, e é preciso saber quem e por quê.
+
+**10. Proteja os ramos de verdade.** Revisão obrigatória, sem contorno para administradores, commits assinados, e aprovação de duas pessoas nas mudanças de permissão, rede de borda e chaves.
+
+**11. Nada de aplicar em produção pelo console.** Acesso administrativo humano vira quebra de vidro com alerta e revisão posterior.
+
+**12. Gere e verifique procedência.** Assine o artefato na construção e recuse na admissão o que não tiver assinatura e procedência válidas.
+
+**13. Separe ambientes por conta ou assinatura**, cada uma com papel de implantação próprio. Etiqueta não é fronteira.
+
+**14. Registre e monitore o pipeline como produção**: quem disparou, o que foi implantado, qual credencial foi usada, o que mudou. E alerte no que é anormal — implantação fora do horário, a partir de ramo inesperado, ou com mudança de permissões.
+
+**15. Ensaie a reconstrução.** Se o ambiente sumisse hoje, quanto tempo até subir do código? A resposta é, ao mesmo tempo, métrica de continuidade e de qualidade do seu código de infraestrutura.
+
+## Resumo
+
+- **O pipeline é o alvo de maior valor da organização**: tem credencial de produção, autoridade de publicação e, em geral, controles de acesso mais frouxos do que o ambiente que ele controla.
+- Infraestrutura como código torna a mudança **revisável, reproduzível e auditável** — e propaga o erro na mesma velocidade em que propaga o acerto. **Desvio** é falha de segurança, não desorganização.
+- **O arquivo de estado é alvo**: contém a topologia e, com frequência, valores sensíveis em texto claro. Remoto, cifrado, com travamento e acesso restrito — nunca no repositório.
+- Varredura de definições encontra bem o padrão inseguro declarado; o **plano de execução** é o alvo certo da política como código, porque já resolveu variáveis e módulos. E **módulo interno com padrão seguro embutido** vence qualquer política escrita.
+- Os quatro riscos do pipeline: **credencial estática** (a mais roubada da indústria), **fluxo com segredo rodando código não confiável**, **dependência do pipeline por etiqueta móvel** e **executor persistente compartilhado**. As respostas são federação por token curto, separação de fluxos, fixação por resumo e executor efêmero.
+- Integridade do que é entregue exige **origem verificável, procedência assinada e verificação no consumo** — e o ponto de aplicação natural é o controle de admissão do orquestrador.
+- Sem **segregação real** — aplicação só pelo pipeline, aprovação por terceiro, ambientes em contas separadas —, os controles técnicos convivem com um caminho manual que os contorna.
+- No Brasil, o histórico do repositório é evidência barata de diligência sob o art. 46 da LGPD; segregação de funções é exigência expressa no setor financeiro; e transformar "região aprovada" em regra de política como código é a forma mais confiável de cumprir o art. 33.
