@@ -1,3 +1,279 @@
 # Ciclo de desenvolvimento seguro e DevSecOps {#sec-cap042}
 
-*(em elaboracao)*
+Uma secretaria municipal de saúde contrata o desenvolvimento de um sistema de agendamento de consultas. O contrato prevê dez meses de trabalho, e no nono mês alguém lembra de incluir um teste de invasão antes da entrada em produção. O relatório chega com quarenta e três achados. Sete são críticos: qualquer usuário autenticado consegue ler o prontuário de qualquer paciente trocando um número na URL; o campo de busca aceita fragmentos de consulta ao banco; as senhas estão guardadas com um algoritmo de resumo sem sal.
+
+A equipe de desenvolvimento tem três semanas antes da data de inauguração, que já foi anunciada pelo prefeito. A correção do controle de acesso exige mudar o modelo de autorização, que atravessa cento e vinte endpoints. O resultado previsível: o sistema entra no ar com um remendo, os achados de menor gravidade viram "backlog" e o débito nunca é pago.
+
+O erro não foi técnico. Foi de sequenciamento. **Cada um daqueles sete achados críticos tem uma correção barata e óbvia — desde que aplicada no momento certo.** Guardar senha com derivação lenta custa uma linha se decidido no início e uma migração de base inteira se descoberto no fim. Verificar propriedade do recurso custa nada se está no padrão de projeto desde o primeiro endpoint, e custa uma refatoração se precisa ser retroencaixado em cento e vinte.
+
+Este capítulo é sobre esse sequenciamento: quais atividades de segurança entram em cada fase do desenvolvimento, e como o pipeline automatizado transforma boa intenção em controle que não depende de alguém lembrar.
+
+## Por que o custo cresce com a fase
+
+A observação de que defeitos ficam mais caros quanto mais tarde são encontrados é antiga na engenharia de software, e vale em dobro para defeitos de segurança — por três razões concretas.
+
+**A superfície de mudança cresce.** Um requisito de autorização decidido no desenho vira uma abstração usada por todo mundo. O mesmo requisito descoberto na homologação vira uma alteração em cada ponto que já foi escrito sem ele.
+
+**A janela de decisão fecha.** Perto da data de entrega, a pergunta deixa de ser "qual é a correção certa?" e passa a ser "o que dá para fazer sem atrasar?". A resposta a essa segunda pergunta quase nunca é a correção certa.
+
+**O defeito pode já estar em produção.** Falha de criptografia encontrada no desenho é uma escolha de biblioteca. Encontrada depois de dois anos de operação, é uma migração de dados com janela, plano de reversão e comunicação a titulares (@sec-cap041).
+
+Existe uma consequência menos óbvia e mais importante: **a maior parte dos riscos de segurança em software não é de implementação, é de desenho** — falhas de controle de acesso, de fluxo de autenticação, de confiança entre serviços. Nenhuma ferramenta que analisa código encontra a ausência de uma verificação que nunca foi especificada. Por isso, das atividades listadas neste capítulo, a de maior retorno é a que acontece antes da primeira linha escrita.
+
+::: {#fig-ssdlc-fases}
+```{.tikz}
+%%| filename: ssdlc-fases
+%%| alt: Atividades de segurança distribuídas pelas fases do ciclo de desenvolvimento, dos requisitos à operação, com indicação do custo crescente de correção
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fase/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=3pt,
+                 minimum width=2.3cm, minimum height=0.9cm, font=\scriptsize},
+    ativ/.style={draw, thick, rounded corners=2pt, align=center, inner sep=3pt,
+                 minimum width=2.3cm, minimum height=1.5cm, font=\tiny, fill=white}}
+
+  \node[fase, draw=manualblue,  fill=manualblue!12]   (f1) at (0,0)    {\textbf{requisitos}};
+  \node[fase, draw=manualblue,  fill=manualblue!12]   (f2) at (2.6,0)  {\textbf{desenho}};
+  \node[fase, draw=manualgreen, fill=manualgreen!12]  (f3) at (5.2,0)  {\textbf{código}};
+  \node[fase, draw=manualgreen, fill=manualgreen!12]  (f4) at (7.8,0)  {\textbf{build}};
+  \node[fase, draw=manualyellow,fill=manualyellow!16] (f5) at (10.4,0) {\textbf{teste}};
+  \node[fase, draw=manualred,   fill=manualred!12]    (f6) at (13.0,0) {\textbf{operação}};
+
+  \foreach \a/\b in {f1/f2, f2/f3, f3/f4, f4/f5, f5/f6} {
+    \draw[->, >=stealth, thick, manualgray] (\a) -- (\b);}
+
+  \node[ativ, draw=manualblue]   at (0,-1.6)    {requisitos de\\segurança\\[2pt]critérios de\\aceite testáveis};
+  \node[ativ, draw=manualblue]   at (2.6,-1.6)  {\textbf{modelagem}\\\textbf{de ameaças}\\[2pt]padrões de\\autorização};
+  \node[ativ, draw=manualgreen]  at (5.2,-1.6)  {revisão de\\código\\[2pt]análise\\estática};
+  \node[ativ, draw=manualgreen]  at (7.8,-1.6)  {análise de\\dependências\\[2pt]SBOM e\\assinatura};
+  \node[ativ, draw=manualyellow] at (10.4,-1.6) {análise\\dinâmica\\[2pt]teste de\\invasão};
+  \node[ativ, draw=manualred]    at (13.0,-1.6) {monitoração\\e WAF\\[2pt]canal de\\divulgação};
+
+  \draw[->, >=stealth, very thick, manualred] (-1.3,1.35) -- (14.3,1.35)
+    node[midway, above, font=\scriptsize, manualred]
+    {\textbf{custo de corrigir o mesmo defeito} --- cresce a cada fase atravessada};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=13.2cm] at (6.5,-3.4)
+    {A atividade de maior retorno é a mais barata e a que mais se pula: \textbf{modelagem
+     de ameaças no desenho}. Ferramenta nenhuma encontra a ausência de uma verificação
+     que nunca foi especificada.};
+\end{tikzpicture}
+```
+Atividades de segurança por fase do ciclo. O custo crescente é a razão de o esforço se concentrar à esquerda.
+:::
+
+## Requisitos: escrever o que dá para testar
+
+"O sistema deve ser seguro" não é requisito, é desejo. Requisito de segurança é uma afirmação verificável, escrita no mesmo formato dos requisitos funcionais, com critério de aceite que alguém consegue executar.
+
+A diferença na prática:
+
+| Desejo | Requisito verificável |
+|---|---|
+| O sistema deve proteger as senhas | Senhas armazenadas com Argon2id, mínimo de 19 MiB e 2 iterações; nenhuma senha aparece em log ou em resposta de API |
+| O acesso deve ser controlado | Toda requisição a `/pacientes/{id}` verifica que o profissional autenticado tem vínculo ativo com a unidade do paciente; teste automatizado cobre o caso negativo |
+| Deve haver registro de auditoria | Criação, leitura, alteração e exclusão de prontuário geram evento com identificador do usuário, do registro, origem e carimbo de tempo, retido por cinco anos |
+
+Duas fontes ajudam a montar essa lista sem inventar do zero. O **ASVS** [@owaspasvs] é um catálogo de requisitos verificáveis organizado em três níveis de rigor — o nível 1 para aplicações de baixo risco, o 2 para a maioria dos sistemas com dados de pessoas, o 3 para o que envolve saúde, finanças ou vida. Os **Proactive Controls** [@owaspproactive] traduzem o mesmo material na linguagem de quem escreve código.
+
+Para um sistema com dados de saúde, o nível 2 do ASVS é o piso defensável. O catálogo vale menos como checklist de auditoria e mais como cardápio: a equipe escolhe os controles aplicáveis na abertura do projeto e eles viram histórias no mesmo backlog do resto.
+
+## Desenho: modelagem de ameaças é onde o dinheiro está
+
+A modelagem de ameaças foi tratada em profundidade no @sec-cap005. Aqui interessa o encaixe no processo: **é a única atividade que encontra falha de desenho, e falha de desenho é a categoria mais cara e mais frequente entre os riscos críticos.**
+
+Na prática de uma equipe pequena, a sessão dura noventa minutos por funcionalidade relevante, e cabem quatro perguntas [@shostack2014]:
+
+1. **O que estamos construindo?** Um diagrama de fluxo de dados no quadro branco, com as fronteiras de confiança marcadas — onde o dado sai de um domínio de controle e entra em outro.
+2. **O que pode dar errado?** STRIDE aplicado a cada fluxo que atravessa fronteira.
+3. **O que vamos fazer a respeito?** Cada ameaça vira uma decisão: mitigar (com item no backlog), transferir, aceitar formalmente ou eliminar a funcionalidade.
+4. **Fizemos um bom trabalho?** Revisão do modelo quando a arquitetura muda.
+
+O gatilho para repetir a sessão não é o calendário; é a mudança que altera fronteiras de confiança — novo perfil de usuário, nova integração externa, novo armazenamento de dado sensível, exposição de um serviço antes interno.
+
+Dois padrões de projeto merecem decisão explícita nessa fase, porque retroencaixá-los é exatamente o que custa caro:
+
+**Autorização centralizada.** A verificação de permissão acontece em um ponto único — um interceptador, um middleware, uma camada de política — e não espalhada em cada controlador. Sem isso, a segurança do sistema é o menor denominador entre cento e vinte implementações independentes, e o esquecimento em uma delas é questão de tempo (@sec-cap022).
+
+**Camada de acesso a dados sem concatenação.** Se a única forma de falar com o banco é uma interface que parametriza, injeção de SQL deixa de ser possível por construção, e não por disciplina.
+
+## Código e build: o pipeline como ponto de controle
+
+"DevSecOps" descreve uma ideia simples: as verificações de segurança acontecem no mesmo pipeline automatizado que já constrói, testa e implanta — na mesma cadência e com o mesmo peso dos testes funcionais. O que muda não é a técnica; é quem executa e quando.
+
+O modelo antigo tinha um portão humano no fim: a equipe de segurança revisava a versão candidata e liberava. Esse modelo quebra quando a entrega passa de trimestral para diária, e a resposta usual — dispensar a revisão "porque a mudança é pequena" — é o pior dos dois mundos.
+
+O modelo automatizado distribui a verificação:
+
+**No commit e no merge request.** Análise estática do código alterado, detecção de segredos, verificação de dependências. Retorno em minutos, na interface onde a pessoa já está trabalhando. É aqui que a correção é mais barata, porque o contexto ainda está na cabeça de quem escreveu.
+
+**No build.** Análise de composição do software contra a árvore completa de dependências, geração de SBOM, assinatura do artefato.
+
+**Após a implantação em ambiente de teste.** Análise dinâmica contra a aplicação em execução, testes automatizados sobre os fluxos de autenticação e autorização.
+
+**Em produção.** Monitoração, registro e um canal para receber relatos de vulnerabilidade vindos de fora.
+
+O detalhamento de cada ferramenta é assunto do @sec-cap049. O que importa aqui é a política que as governa.
+
+::: {#fig-pipeline-devsecops}
+```{.tikz}
+%%| filename: pipeline-devsecops
+%%| alt: Pipeline de integração contínua com verificações de segurança por etapa, indicando quais quebram o build e quais apenas registram achado
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=3pt,
+               minimum width=2.5cm, minimum height=0.85cm, font=\scriptsize},
+    ck/.style={draw, thick, rounded corners=2pt, align=center, inner sep=3pt,
+               minimum width=2.5cm, minimum height=1.5cm, font=\tiny, fill=white}}
+
+  \node[et, draw=manualgray, fill=manualgray!12] (e1) at (0,0)    {commit};
+  \node[et, draw=manualgray, fill=manualgray!12] (e2) at (3.0,0)  {merge request};
+  \node[et, draw=manualgray, fill=manualgray!12] (e3) at (6.0,0)  {build};
+  \node[et, draw=manualgray, fill=manualgray!12] (e4) at (9.0,0)  {teste};
+  \node[et, draw=manualgray, fill=manualgray!12] (e5) at (12.0,0) {produção};
+
+  \foreach \a/\b in {e1/e2, e2/e3, e3/e4, e4/e5} {
+    \draw[->, >=stealth, thick, manualgray] (\a) -- (\b);}
+
+  \node[ck, draw=manualred]    at (0,-1.6)    {\textbf{QUEBRA}\\[2pt]segredo no\\código\\[2pt]achado crítico\\confirmado};
+  \node[ck, draw=manualred]    at (3.0,-1.6)  {\textbf{QUEBRA}\\[2pt]dependência\\com falha sob\\exploração\\ativa};
+  \node[ck, draw=manualyellow] at (6.0,-1.6)  {\textbf{AVISA}\\[2pt]gera SBOM\\assina o\\artefato};
+  \node[ck, draw=manualyellow] at (9.0,-1.6)  {\textbf{AVISA}\\[2pt]análise\\dinâmica\\abre ticket\\com prazo};
+  \node[ck, draw=manualgreen]  at (12.0,-1.6) {\textbf{OBSERVA}\\[2pt]monitoração\\e WAF\\[2pt]canal de\\divulgação};
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (6.0,-3.6)
+    {\textbf{A regra que decide se o programa funciona:} quebra o build apenas o que
+     é determinístico e de alta confiança. Todo o resto vira ticket com prazo, no
+     mesmo backlog do produto. \textbf{Portão que dá alarme falso é portão que a
+     equipe aprende a contornar} --- e a partir daí não protege mais nada.};
+\end{tikzpicture}
+```
+Verificações distribuídas pelo pipeline. A escolha entre bloquear e avisar é a decisão política mais importante do programa.
+:::
+
+## A regra dos portões: bloquear pouco, bloquear bem
+
+Este é o ponto onde a maioria dos programas de DevSecOps morre, e vale enunciá-lo com clareza: **um portão que produz alarme falso é um portão que será contornado.**
+
+A sequência é sempre a mesma. Liga-se a ferramenta na severidade máxima, ela devolve seiscentos achados na primeira execução, metade são falsos positivos, o build fica vermelho por três dias, alguém cria a variável `SKIP_SECURITY_SCAN=true` para destravar a entrega, e ela nunca mais é removida. Seis meses depois, o relatório de conformidade afirma que há análise estática no pipeline. Tecnicamente verdadeiro, e completamente inútil.
+
+O critério que funciona:
+
+**Quebra o build** apenas o que é determinístico, de alta confiança e acionável agora: segredo comitado no repositório, dependência com vulnerabilidade sob exploração ativa (@sec-cap039), achado crítico de uma regra com histórico de precisão comprovado no próprio código da equipe.
+
+**Vira ticket com prazo** todo o resto, com o prazo variando por severidade e o ticket entrando no mesmo backlog do trabalho normal — não numa planilha paralela que só a segurança lê.
+
+**É silenciado, com registro do motivo**, o que a equipe avaliou e concluiu não se aplicar. Silenciar é legítimo; silenciar sem registrar equivale a não ter rodado a ferramenta.
+
+E há uma etapa de implantação que não se pula: **começar em modo de aviso**. Roda-se a ferramenta por algumas semanas sem bloquear nada, ajusta-se o conjunto de regras à realidade do código, elimina-se o ruído — e só então liga-se o bloqueio, sobre um conjunto pequeno de regras em que todo mundo confia. O caminho inverso, ligar tudo e ir afrouxando, nunca chega ao fim, porque o afrouxamento acontece sob pressão de entrega e não segue critério nenhum [@owaspdevsecops].
+
+## Campeões de segurança: como escalar sem contratar
+
+Nenhuma organização tem gente de segurança suficiente para acompanhar cada equipe de desenvolvimento. A resposta que funciona é o modelo de **campeões**: em cada equipe, uma pessoa desenvolvedora — não da segurança — assume o papel adicional de ponto focal. Ela conduz a modelagem de ameaças do time, faz a triagem inicial dos achados, revisa o código nas partes sensíveis e leva ao time central o que exige especialista.
+
+O que faz o modelo funcionar, e sem o que ele vira título honorífico: tempo alocado explicitamente (algo como dez por cento), formação específica paga pela organização, canal direto com o time de segurança e reconhecimento formal na avaliação de desempenho. Sem os quatro, o campeão é a pessoa que ganhou mais trabalho sem ganhar nada, e o programa dura um trimestre. Os modelos de maturidade que descrevem programas reais — SAMM e BSIMM — colocam esse papel entre as práticas mais consistentemente presentes nas organizações que sustentam o programa por anos [@owaspsamm; @bsimm].
+
+## Métricas que dizem alguma coisa
+
+A métrica óbvia — número de vulnerabilidades encontradas — é ruim, porque cai tanto quando o código melhora quanto quando ninguém procura. As que informam decisão:
+
+- **Tempo médio de correção por severidade.** Mede a capacidade real de resposta, não o volume de achados.
+- **Proporção de achados encontrados antes da produção.** Deslocar essa fração para a esquerda é o objetivo inteiro do programa.
+- **Densidade de vulnerabilidades reintroduzidas.** A mesma classe voltando indica problema de padrão de projeto, não de atenção individual.
+- **Cobertura da modelagem de ameaças.** Quantas funcionalidades novas relevantes passaram por sessão.
+- **Idade da dívida de segurança em aberto**, por severidade — o número que envelhece silenciosamente enquanto todos os outros parecem bons.
+
+Vale registrar o que a pesquisa sobre desempenho de entrega mostra, e que contraria a intuição de muita gente: equipes que entregam com mais frequência tendem a ter **menos** incidentes, não mais [@forsgren2018]. Lote pequeno significa mudança pequena, reversão fácil e correção que chega em horas. A escolha entre velocidade e segurança é, na maior parte dos casos, falsa.
+
+## Erros que se repetem
+
+- **Teste de invasão como único controle**, agendado três semanas antes da entrada em produção, quando nada mais pode ser corrigido.
+- **Ferramenta ligada na severidade máxima no primeiro dia**, gerando ruído até alguém desligar.
+- **Achados de segurança em backlog separado**, que nunca compete por prioridade com o backlog do produto.
+- **Modelagem de ameaças pulada** porque "a funcionalidade é pequena" — sendo que ela mudou uma fronteira de confiança.
+- **Ambiente de homologação com dados reais de produção**, criando um segundo sistema com os mesmos dados e um décimo dos controles.
+- **Requisito de segurança escrito como desejo**, sem critério de aceite, e por isso não testável e não entregável.
+- **Segurança tratada como fase**, e não como propriedade distribuída — o que garante que ela será a fase cortada quando o prazo apertar.
+
+## ⚖️ Brasil em Foco
+
+**O art. 46 da LGPD é o que transforma desenvolvimento seguro em obrigação legal, não em boa prática.** O dispositivo exige que agentes de tratamento adotem medidas técnicas e administrativas aptas a proteger dados pessoais, e o art. 50 institui as regras de boas práticas e governança. A leitura relevante para quem desenvolve: **a obrigação recai sobre o controlador, e ele responde por falha de aplicação desenvolvida por terceiro**. Contratar uma fábrica de software não transfere a responsabilidade — o que distribui obrigações é o contrato entre controlador e operador, e ele precisa dizer explicitamente o que se exige [@lgpd2018].
+
+**Privacy by design é texto de lei no Brasil.** O art. 46, §2º determina que as medidas de segurança sejam observadas "desde a fase de concepção do produto ou do serviço até a sua execução". É a exigência de segurança e privacidade desde o desenho, com força normativa. Na prática, significa que a modelagem de ameaças e o levantamento de requisitos de proteção de dados no início do projeto não são refinamento de processo: são cumprimento de uma obrigação específica, e sua ausência é demonstrável em fiscalização.
+
+**Contratos públicos de software podem — e devem — exigir os controles.** A Lei 14.133/2021, de licitações e contratos, permite estabelecer requisitos técnicos no termo de referência. Cláusulas exequíveis: entrega de SBOM a cada versão; correção de vulnerabilidades críticas em prazo contratual definido; obrigação de comunicar incidente ao contratante em até 24 horas; direito do contratante de realizar teste de invasão; e — a mais eficaz de todas — **retenção de parcela do pagamento vinculada ao aceite de segurança**, não apenas ao aceite funcional. Sem cláusula com consequência financeira, requisito de segurança é decorativo.
+
+**O relatório de impacto tem encaixe natural no desenho.** O art. 38 permite à ANPD requisitar relatório de impacto à proteção de dados pessoais. Produzi-lo na fase de desenho, junto com a modelagem de ameaças, custa uma fração do que custa reconstruí-lo depois por engenharia reversa da aplicação pronta — e o documento fica muito melhor, porque descreve decisões que foram efetivamente tomadas, e não racionalizações posteriores [@anpd2023guia].
+
+**Setor financeiro tem exigência explícita sobre desenvolvimento.** A Resolução BCB 4.893/2021 trata da política de segurança cibernética das instituições autorizadas pelo Banco Central e alcança o desenvolvimento de sistemas e a contratação de serviços relevantes de processamento e armazenamento de dados. Para quem constrói software de pagamentos ou para instituições reguladas, o programa de desenvolvimento seguro é item auditado — e o PCI-DSS v4 dedica todo o seu Requisito 6 ao desenvolvimento e à manutenção de sistemas seguros [@bcb4893; @pcidss4].
+
+**A Lei 14.155/2021 mudou o contexto de risco da aplicação brasileira.** Ela agravou as penas de furto e estelionato praticados por meio eletrônico, refletindo o volume de fraude que passou a circular por sistemas web e aplicativos depois do Pix. Para quem desenvolve, isso significa que os fluxos de cadastro, recuperação de conta, alteração de dados bancários e transferência são hoje o alvo prioritário — e merecem tratamento de risco proporcional já no desenho, não depois do primeiro prejuízo [@lei14155].
+
+## 🛠️ No Campo
+
+**1. Comece pelo inventário de aplicações.** Não dá para proteger o que não se sabe que existe. Levante toda aplicação exposta, com responsável nomeado, tecnologia, dados que trata e data da última avaliação. Sistemas legados sem dono são a origem da maioria dos incidentes de aplicação.
+
+**2. Escolha um nível do ASVS por aplicação e escreva os requisitos.** Nível 1 para vitrine institucional, nível 2 para qualquer coisa com dado pessoal, nível 3 para saúde, financeiro e sistemas que afetam a vida das pessoas. Os requisitos escolhidos viram histórias no backlog do produto, com critério de aceite testável.
+
+**3. Institua a sessão de modelagem de ameaças com gatilho, não com calendário.** Noventa minutos, quadro branco, as quatro perguntas. O gatilho é: funcionalidade nova que trate dado sensível, nova integração externa, mudança em autenticação ou autorização, exposição de serviço antes interno.
+
+**4. Ligue a detecção de segredos primeiro.** É a ferramenta com melhor relação entre precisão e valor: quase não tem falso positivo e o achado é sempre acionável.
+
+```bash
+# varredura do histórico completo antes de ligar o bloqueio
+gitleaks detect --source . --report-format json --report-path gitleaks.json
+
+# a partir daí, verificação do que está para ser comitado
+gitleaks protect --staged --verbose
+```
+
+Achou segredo no histórico? **Rotacione a credencial primeiro.** Reescrever o histórico sem rotacionar é teatro — a chave já foi clonada por quem tinha acesso ao repositório.
+
+**5. Adicione análise estática em modo de aviso por três semanas.** Ajuste o conjunto de regras, silencie o ruído com justificativa registrada, e só então bloqueie — sobre o subconjunto pequeno de regras em que a equipe confia.
+
+**6. Automatize a atualização de dependências.** A maior parte da dívida de segurança de uma aplicação moderna está em código que ninguém da equipe escreveu:
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+```
+
+Sem uma suíte de testes que dê confiança para aceitar essas atualizações, elas se acumulam abertas e não servem para nada. **Cobertura de testes é pré-requisito de higiene de dependências**, e esse é um dos argumentos mais fortes para investir nela.
+
+**7. Separe ambientes de verdade, e nunca use dado real em homologação.** Homologação com base copiada da produção é um segundo sistema com os mesmos dados, um décimo dos controles e dez vezes mais gente com acesso. Use dados sintéticos ou anonimizados — e sob a LGPD, dado só é anonimizado se a reversão for inviável; mascarar o CPF mantendo os últimos dígitos e a data de nascimento não anonimiza nada.
+
+**8. Publique uma política de divulgação de vulnerabilidades.** Um arquivo `security.txt` e um endereço monitorado bastam para começar. Sem canal, quem encontrar a falha vai reportar no lugar errado — ou não vai reportar:
+
+```
+# https://exemplo.gov.br/.well-known/security.txt
+Contact: mailto:seguranca@exemplo.gov.br
+Expires: 2027-01-01T00:00:00.000Z
+Preferred-Languages: pt-BR, en
+Policy: https://exemplo.gov.br/politica-divulgacao
+```
+
+**9. Instrumente o mínimo de registro na aplicação desde o começo.** Autenticação (sucesso e falha), mudança de permissão, acesso a dado sensível, operação administrativa e falha de validação de entrada. Sem isso, o dia do incidente vira exercício de adivinhação (@sec-cap037).
+
+**10. Nomeie campeões e dê tempo a eles.** Uma pessoa por equipe, com fração de tempo formalizada, formação paga e reconhecimento na avaliação. Sem os três, o papel é honorífico e some no primeiro trimestre apertado.
+
+**11. Meça deslocamento, não volume.** Acompanhe a proporção de achados encontrados antes da produção e o tempo médio de correção por severidade. Contagem de vulnerabilidades encontradas cai quando ninguém procura e sobe quando a equipe melhora as ferramentas — não serve para decidir nada.
+
+**12. Coloque segurança no contrato quando o desenvolvimento é terceirizado.** SBOM por versão, prazo de correção por severidade, comunicação de incidente em 24 horas, direito de auditoria e teste de invasão, e parcela do pagamento vinculada ao aceite de segurança. É a única parte deste capítulo que funciona sem a cooperação de quem escreve o código.
+
+## Resumo
+
+- **O custo de corrigir um defeito de segurança cresce a cada fase que ele atravessa**, por três motivos concretos: a superfície de mudança aumenta, a janela de decisão fecha sob pressão de prazo, e o defeito pode já estar em produção com dado real exposto.
+- **A maior parte do risco crítico é de desenho, não de implementação.** Nenhuma ferramenta encontra a ausência de uma verificação que nunca foi especificada — por isso a modelagem de ameaças é a atividade de maior retorno, e é a que mais se pula.
+- Requisito de segurança é afirmação **verificável com critério de aceite**, não desejo. O ASVS fornece o catálogo, com três níveis de rigor conforme o risco da aplicação.
+- Dois padrões decididos no desenho eliminam classes inteiras de falha: **autorização centralizada** e **camada de acesso a dados que parametriza por construção**.
+- DevSecOps distribui as verificações pelo pipeline, e sua decisão política mais importante é o critério de portão: **quebra o build apenas o determinístico e de alta confiança; todo o resto vira ticket com prazo**. Portão com alarme falso é portão contornado, e programa que nasce bloqueando tudo morre em três dias.
+- **Campeões de segurança escalam o programa sem contratar**, desde que tenham tempo alocado, formação paga e reconhecimento formal — sem isso, o papel é decorativo.
+- Meça **deslocamento e tempo de correção**, não volume de achados; e note que entregar com mais frequência, em lotes menores, tende a reduzir incidentes, não a aumentá-los.
+- No Brasil, o art. 46, §2º da LGPD torna a segurança "desde a concepção" obrigação legal expressa; a responsabilidade permanece com o controlador mesmo quando o software é desenvolvido por terceiro; e em contrato público a cláusula que efetivamente funciona é a que vincula pagamento ao aceite de segurança.
