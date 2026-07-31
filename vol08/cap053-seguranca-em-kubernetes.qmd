@@ -1,3 +1,236 @@
 # Segurança em Kubernetes {#sec-cap053}
 
-*(em elaboracao)*
+Em 2018, pesquisadores encontraram um painel administrativo do Kubernetes de uma grande montadora de automóveis exposto na internet, sem exigir autenticação. Dentro dele, credenciais de nuvem em variáveis de ambiente. Os atacantes que chegaram antes não roubaram propriedade intelectual: instalaram mineradores de criptomoeda, configurados para consumo modesto e sem endereço de mineração conhecido, justamente para não chamar atenção.
+
+O caso virou didático por causa da desproporção: nenhuma falha de software foi explorada. Um componente de administração ficou acessível sem autenticação, e isso bastou — porque **quem fala com o plano de controle do orquestrador governa tudo o que ele orquestra**.
+
+Kubernetes concentra, em um único ponto, decisões que antes estavam espalhadas por dezenas de sistemas: o que roda, com qual imagem, com quais privilégios, com acesso a quais segredos, em qual rede. Essa concentração é a razão de ele existir e a razão de a segurança dele merecer um capítulo. O capítulo anterior tratou da caixa; este trata de quem decide o que entra na caixa.
+
+## O servidor de API é a joia da coroa
+
+Tudo no Kubernetes passa por um componente: o **servidor de API**. Os componentes internos, os nós, os operadores humanos e as ferramentas de implantação falam com ele, e ele é a única coisa que escreve no armazenamento de estado do agrupamento. Comprometê-lo é comprometer tudo; qualquer análise de segurança começa por ele [@nsakubernetes; @k8sdocs].
+
+Cada requisição atravessa quatro etapas, e entender essa sequência organiza praticamente todo o restante do assunto:
+
+**Autenticação.** Quem está chamando? Certificado de cliente, token de conta de serviço, ou — o arranjo recomendado para pessoas — um provedor de identidade externo via OIDC (@sec-cap025). Note que **o Kubernetes não tem cadastro de usuários humanos**: ele confia em um emissor externo, o que é uma escolha de projeto e não uma limitação.
+
+**Autorização.** Esse principal pode fazer essa ação nesse recurso, nesse espaço de nomes? É o controle de acesso baseado em papéis do @sec-cap022, com quatro objetos: papel e vínculo de papel (escopo de um espaço de nomes), papel de agrupamento e vínculo de papel de agrupamento (escopo global).
+
+**Controle de admissão.** A requisição é permitida — mas o objeto deveria mesmo ser criado assim? Aqui entram os controladores que **modificam** o objeto (injetando configuração padrão) e os que **validam** e podem recusar. É o ponto onde a política vira aplicação efetiva.
+
+**Persistência.** O objeto é gravado no armazenamento de estado.
+
+Duas consequências merecem destaque. Primeira: **o armazenamento de estado contém todos os segredos do agrupamento**, e por padrão eles são gravados apenas codificados em base64 — o que não é cifragem. Acesso direto a esse banco, ou a um backup dele, é acesso a tudo. Segunda: o controle de admissão é o único lugar onde se pode dizer "recuso este objeto", e é por isso que ele é o ponto de aplicação de todas as políticas do capítulo anterior.
+
+::: {#fig-caminho-requisicao-k8s}
+```{.tikz}
+%%| filename: caminho-requisicao-k8s
+%%| alt: Caminho de uma requisição no servidor de API do Kubernetes passando por autenticação, autorização, admissão modificadora e validadora até a persistência no armazenamento de estado
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, very thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=2.1cm, minimum height=1.0cm},
+    nt/.style={font=\tiny, align=center, text width=2.3cm, text=manualgray}}
+
+  \node[et, draw=manualblue, fill=manualblue!14] (o) at (-0.2,2.6)
+    {\textbf{origem}\\ pessoa, pipeline\\ ou conta de\\ serviço};
+  \node[et, draw=manualyellow, fill=manualyellow!16] (au) at (2.3,2.6)
+    {\textbf{autenticação}\\ quem é?};
+  \node[et, draw=manualyellow, fill=manualyellow!16] (az) at (4.8,2.6)
+    {\textbf{autorização}\\ RBAC: pode?};
+  \node[et, draw=manualgreen, fill=manualgreen!16] (am) at (7.3,2.6)
+    {\textbf{admissão}\\ modifica e\\ \textbf{valida}};
+  \node[et, draw=manualred, fill=manualred!14] (et) at (9.8,2.6)
+    {\textbf{etcd}\\ estado e\\ \textbf{segredos}};
+
+  \foreach \a/\b in {o/au, au/az, az/am, am/et}
+    {\draw[->, >=stealth, very thick, manualblue] (\a) -- (\b);}
+
+  \node[nt] at (2.3,1.35) {OIDC para pessoas; token de conta de serviço para carga};
+  \node[nt] at (4.8,1.35) {papel e vínculo, por espaço de nomes ou global};
+  \node[nt, text=manualgreen] at (7.3,1.35) {\textbf{único ponto que recusa} o objeto: política como código};
+  \node[nt, text=manualred] at (9.8,1.35) {\textbf{cifrar em repouso} e proteger o backup};
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (4.8,-0.3)
+    {\textbf{Segredo do Kubernetes é base64, não criptografia.} Quem lê o
+     armazenamento de estado --- ou um backup dele --- lê todos os segredos do
+     agrupamento em texto claro. Cifragem em repouso com chave externa e restrição
+     de acesso ao banco de estado são os dois controles que separam ``temos
+     segredos'' de ``temos segredos protegidos''.};
+\end{tikzpicture}
+```
+O caminho de toda requisição. As quatro etapas organizam todo o restante da segurança do agrupamento.
+:::
+
+## Papéis: o que costuma estar errado
+
+O controle de acesso baseado em papéis do Kubernetes é simples de escrever e fácil de errar em excesso. Os padrões problemáticos são poucos e reconhecíveis:
+
+**Vínculo do papel de administrador do agrupamento** para pessoas ou pipelines que precisariam de muito menos. É a origem de metade dos problemas.
+
+**Curingas.** Um papel com `verbs: ["*"]` sobre `resources: ["*"]` é administrador com nome diferente, exatamente como no @sec-cap051.
+
+**A conta de serviço padrão com token montado automaticamente.** Todo pod, se nada for dito, recebe um token da conta de serviço padrão do espaço de nomes montado no sistema de arquivos. Se essa conta tiver qualquer permissão relevante, uma falha na aplicação vira acesso ao servidor de API. **Desligue a montagem automática por padrão** e conceda contas de serviço específicas, com permissões específicas, apenas a quem precisa falar com a API — que costuma ser a minoria das cargas.
+
+**Verbos que escalam.** Alguns são mais poderosos do que parecem: quem pode criar pods em um espaço de nomes pode montar qualquer segredo daquele espaço; quem pode criar um pod com uma conta de serviço mais privilegiada herda os privilégios dela; e o acesso a `exec` em um pod é acesso a tudo o que aquele pod tem. `escalate` e `bind` permitem, por construção, conceder mais do que se possui.
+
+**Segredos legíveis por todo o espaço de nomes.** Permissão de leitura de segredos concedida de forma ampla anula boa parte do trabalho de gestão de segredos do @sec-cap055.
+
+A régua prática: **espaço de nomes é a unidade de isolamento lógica**, e permissões globais devem ser exceção justificada. Vale a mesma advertência do capítulo de IAM — construa a permissão a partir do uso real, com auditoria dos verbos efetivamente chamados, em vez de escrever no papel e reverter para o curinga na primeira falha.
+
+## Padrões de segurança de pod e admissão
+
+O que o capítulo anterior descreveu como "opções que desligam o isolamento" precisa ser proibido em algum lugar. Esse lugar é a admissão.
+
+O Kubernetes traz hoje três perfis normalizados, aplicáveis por espaço de nomes com uma etiqueta [@k8spss]:
+
+- **Privilegiado**: sem restrição. Reservado a componentes de infraestrutura que comprovadamente precisam.
+- **Base**: bloqueia o pior — modo privilegiado, espaços de nomes do host, montagem de caminhos sensíveis do host, adição de capacidades perigosas.
+- **Restrito**: o endurecido. Exige execução como não raiz, proíbe elevação de privilégio, exige descarte de todas as capacidades e perfil de filtro de chamadas de sistema ativo.
+
+Cada perfil pode operar em três modos: **aplicar** (recusa), **auditar** (registra) e **avisar** (devolve aviso ao usuário). A estratégia que funciona é a mesma linha de base do @sec-cap049: ligue em modo de auditoria e aviso, meça quanto quebraria, corrija as cargas, e só então mude para aplicar. Ligar direto em modo de aplicação em um agrupamento existente quebra produção e queima a política.
+
+Para o que os perfis normalizados não cobrem, entra **política como código** com controladores de admissão dedicados: exigir que a imagem venha de um registro específico e esteja assinada, proibir referência por etiqueta, obrigar limites de recurso, exigir etiquetas de propriedade, impedir serviços do tipo balanceador voltados para a internet em espaços de nomes internos [@opagatekeeper]. Duas recomendações operacionais valem para qualquer motor de política: mantenha as regras versionadas no repositório, como qualquer código, e **defina o comportamento em caso de falha do controlador** — um controlador validador indisponível pode bloquear todo o agrupamento, e essa decisão precisa ser consciente.
+
+## Rede: o padrão é tudo conversa com tudo
+
+Um detalhe que surpreende quem vem de rede tradicional: **por padrão, qualquer pod do agrupamento alcança qualquer outro pod**, em qualquer espaço de nomes. Não há segmentação implícita. A segmentação do @sec-cap028 precisa ser declarada.
+
+O instrumento é a política de rede, e o uso correto tem três passos:
+
+**Negação padrão por espaço de nomes**, para tráfego de entrada e — o que quase sempre é esquecido — **de saída**. A política de saída é a que limita a movimentação lateral e a exfiltração; sem ela, um pod comprometido fala com a internet inteira e com todo o agrupamento.
+
+**Permissões explícitas** entre os pares que realmente se comunicam, por seletor de etiqueta.
+
+**Bloqueio do serviço de metadados do provedor** a partir dos pods. Sem isso, todo o cenário do @sec-cap051 se repete dentro do agrupamento: uma falsificação de requisição em qualquer pod alcança as credenciais do nó — que, por serem do nó, costumam ser mais amplas do que as da aplicação.
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nega-tudo-padrao
+  namespace: pagamentos
+spec:
+  podSelector: {}            # vale para todos os pods do espaço de nomes
+  policyTypes: [Ingress, Egress]
+  # sem regras: nega entrada e saída, exceto o que outras políticas permitirem
+```
+
+::: {#fig-rede-k8s}
+```{.tikz}
+%%| filename: rede-k8s
+%%| alt: Contraste entre o comportamento padrão do Kubernetes, em que todos os pods se alcançam, e o resultado da negação padrão com permissões explícitas e bloqueio do serviço de metadados
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    pd/.style={draw=manualblue, fill=manualblue!14, thick, circle, font=\tiny,
+               inner sep=1.5pt, minimum size=0.95cm, align=center},
+    md/.style={draw=manualred, fill=manualred!14, thick, rounded corners=2pt,
+               font=\tiny, inner sep=3pt, align=center, minimum width=1.7cm}}
+
+  \node[font=\scriptsize, manualred] at (-3.4,3.5) {\textbf{Padrão: tudo alcança tudo}};
+  \node[pd] (a1) at (-4.8,2.4) {web};
+  \node[pd] (a2) at (-2.0,2.4) {pagto};
+  \node[pd] (a3) at (-4.8,0.8) {banco};
+  \node[pd] (a4) at (-2.0,0.8) {teste};
+  \foreach \a/\b in {a1/a2, a1/a3, a1/a4, a2/a3, a2/a4, a3/a4}
+    {\draw[<->, manualred, thin] (\a) -- (\b);}
+  \node[md] (m1) at (-3.4,-0.5) {metadados do nó};
+  \draw[->, >=stealth, manualred, thick] (a4) -- (m1);
+  \draw[->, >=stealth, manualred, thick] (a1) -- (m1);
+
+  \node[font=\scriptsize, manualgreen] at (3.4,3.5) {\textbf{Negação padrão + regras explícitas}};
+  \node[pd] (b1) at (2.0,2.4) {web};
+  \node[pd] (b2) at (4.8,2.4) {pagto};
+  \node[pd] (b3) at (2.0,0.8) {banco};
+  \node[pd] (b4) at (4.8,0.8) {teste};
+  \draw[->, >=stealth, manualgreen, very thick] (b1) -- (b2);
+  \draw[->, >=stealth, manualgreen, very thick] (b2) -- (b3);
+  \node[md, draw=manualgray, fill=manualgray!12] (m2) at (3.4,-0.5) {metadados do nó};
+  \draw[-, manualred, very thick] (b4) -- (m2);
+  \draw[-, manualred, very thick] (3.9,-0.05) -- (4.3,-0.45);
+  \node[manualgray, font=\tiny, align=center] at (6.6,0.8) {isolado:\\ sem regra,\\ sem tráfego};
+
+  \node[draw=manualgreen, fill=manualgreen!12, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (0,-2.0)
+    {\textbf{A política de saída é a que quase todo mundo esquece --- e é a que
+     limita movimentação lateral e exfiltração.} Negar entrada apenas protege o pod;
+     negar saída também é o que impede que um pod comprometido converse com o
+     agrupamento inteiro, com a internet e com o serviço de metadados do nó.};
+\end{tikzpicture}
+```
+Antes e depois da negação padrão. Sem política declarada, não existe segmentação alguma.
+:::
+
+Uma advertência importante: **política de rede só funciona se o plugin de rede a implementar**. Alguns plugins ignoram o objeto silenciosamente — a política é aceita pela API e não faz nada. Testar é obrigatório: suba um pod, tente alcançar o que deveria estar bloqueado, confirme a falha.
+
+Para exigências mais fortes — autenticação mútua entre serviços, autorização por identidade de carga de trabalho, cifragem de todo o tráfego interno — a camada seguinte é a malha de serviços, que aplica os princípios do @sec-cap027 dentro do agrupamento [@nistsp800204].
+
+## Multilocação, nós e o resto da superfície
+
+**Espaço de nomes não é fronteira de segurança forte.** Ele separa nomes e serve de escopo para permissões e cotas, mas todos os pods continuam compartilhando os mesmos nós e o mesmo kernel. Para separar equipes que confiam pouco umas nas outras, some ao espaço de nomes: política de rede com negação padrão, cotas de recurso, perfil restrito e — quando o risco justificar — **agrupamentos ou conjuntos de nós separados**. Locação hostil de verdade pede agrupamento separado.
+
+**O nó é uma máquina, e vale o @sec-cap036.** Além do hardening comum, três pontos são específicos: o agente do nó precisa exigir autenticação e autorização (uma porta de agente aberta e anônima é comprometimento direto do nó); o nó deve rodar sistema operacional mínimo, voltado a contêineres; e o papel de nuvem anexado ao nó deve ser mínimo, porque é ele que um pod comprometido alcança pelo serviço de metadados.
+
+**Componentes de administração não vão para a internet.** O painel administrativo do caso que abriu o capítulo, e qualquer outro serviço de gestão, ficam atrás de rede privada e autenticação — nunca expostos por um balanceador público "temporariamente".
+
+**Registro de auditoria do servidor de API.** Sem ele, não há investigação possível: é o registro que diz quem criou o quê, quando e a partir de onde. Configure a política de auditoria para registrar as ações relevantes, envie para fora do agrupamento e retenha por prazo compatível com o tempo real de detecção — a mesma lição do @sec-cap050.
+
+**Complementos e operadores são código privilegiado.** Instalar um gráfico de terceiro que pede permissões de agrupamento é entregar o agrupamento. Revise o que cada complemento solicita, com o mesmo rigor de qualquer dependência.
+
+## ⚖️ Brasil em Foco
+
+**Segredo em base64 não é medida técnica de proteção sob o art. 46 da LGPD.** Se o agrupamento manipula dados pessoais, e as credenciais de acesso ao banco estão no armazenamento de estado sem cifragem, a organização terá dificuldade de sustentar que adotou medidas aptas a proteger o dado. Ligar cifragem em repouso com chave externa, ou usar um cofre externo (@sec-cap055), é a diferença entre uma configuração defensável e uma que não é [@lgpd2018].
+
+**O registro de auditoria é o que viabiliza o prazo da ANPD.** A Resolução CD/ANPD nº 15/2024 exige comunicação de incidente relevante em três dias úteis, com descrição dos dados afetados. Em um agrupamento sem auditoria do servidor de API, é impossível dizer quais segredos foram lidos ou quais pods foram criados — e a comunicação precisa ser feita na hipótese mais ampla. O custo de ligar auditoria é trivial; o custo de não a ter aparece no pior momento possível [@anpd2024res15].
+
+**Uso indevido de recursos computacionais é a monetização mais comum no Brasil.** O caso da abertura é o padrão: agrupamento exposto vira minerador. O CERT.br acompanha essa categoria de incidente, e para provedores e empresas brasileiras o primeiro sintoma costuma ser a fatura ou a degradação de desempenho. Do ponto de vista legal, o acesso não autorizado ao ambiente configura o crime da Lei nº 12.737/2012, e o consumo indevido de recursos gera prejuízo mensurável para efeitos de reparação [@cert2024praticas; @lei12737].
+
+**Setor financeiro: segregação e rastreabilidade dentro do agrupamento.** As normas de segurança cibernética e de contratação de nuvem aplicáveis a instituições financeiras e de pagamento exigem segregação de funções e rastreabilidade de acessos privilegiados. Em Kubernetes, isso se traduz em itens concretos e verificáveis: nenhum vínculo de administrador de agrupamento para pessoas, acesso a produção por identidade federada com múltiplo fator, auditoria retida fora do agrupamento e política de admissão versionada [@bcb4893; @bcb85].
+
+**Administração pública e o guia de referência.** Órgãos federais sob a Instrução Normativa GSI/PR nº 5/2021 precisam demonstrar controles equivalentes ao adotar orquestração em nuvem. O guia de endurecimento de Kubernetes publicado pela NSA e pela CISA virou, na prática, a referência técnica citada em especificações de contratação também no Brasil — vale usá-lo como base do padrão interno [@ingsi5; @nsakubernetes].
+
+**A lista da OWASP para Kubernetes é o atalho de priorização.** Ela ordena os riscos mais frequentes — carga com privilégio, permissões amplas, ausência de política de rede, segredo mal gerenciado, componentes desatualizados — e serve bem como pauta de uma primeira avaliação interna em português com a equipe de infraestrutura [@owaspk8stop10].
+
+## 🛠️ No Campo
+
+**1. Feche o servidor de API.** Sem acesso anônimo, sem exposição pública desnecessária, autenticação de pessoas por provedor de identidade corporativo com múltiplo fator. Nenhuma credencial estática de administrador circulando.
+
+**2. Elimine os vínculos de administrador de agrupamento** que existem "porque era mais fácil". Levante quem tem, questione cada um, substitua por papéis por espaço de nomes.
+
+**3. Desligue a montagem automática do token da conta de serviço** e conceda contas específicas apenas às cargas que realmente falam com a API.
+
+**4. Trate estes verbos como privilegiados:** criar pod, `exec`, ler segredo, `escalate`, `bind`, e qualquer permissão sobre contas de serviço.
+
+**5. Ligue os perfis de segurança de pod em auditoria e aviso primeiro.** Meça o que quebraria, corrija, e só então aplique — restrito onde der, base como piso absoluto.
+
+**6. Coloque um controlador de admissão de política.** Comece por três regras: imagem de registro confiável e por resumo, proibição de privilégio, limites de recurso obrigatórios. Versione as regras no repositório.
+
+**7. Aplique negação padrão de rede em todo espaço de nomes**, entrada **e saída**, e depois abra o necessário. Teste que a negação realmente funciona — o plugin pode estar ignorando as políticas.
+
+**8. Bloqueie o acesso dos pods ao serviço de metadados do provedor.** É o elo que transforma uma falha de aplicação em credencial de nuvem.
+
+**9. Cifre o armazenamento de estado em repouso** com chave externa, restrinja o acesso ao banco de estado e proteja os backups dele com o mesmo cuidado do original.
+
+**10. Ligue a auditoria do servidor de API**, envie para fora do agrupamento e retenha. Sem isso, não há resposta a incidente.
+
+**11. Endureça os nós** com sistema operacional mínimo para contêineres, agente do nó autenticado e papel de nuvem mínimo.
+
+**12. Nada de painel administrativo exposto.** Vale para o painel, para as métricas e para qualquer interface de gestão.
+
+**13. Revise o que cada complemento pede** antes de instalar. Permissão de agrupamento em um gráfico de terceiro é entrega do agrupamento.
+
+**14. Mantenha o agrupamento atualizado.** O ciclo de versões é rápido e o suporte de cada versão é curto; agrupamento em versão sem suporte acumula falhas conhecidas sem correção disponível.
+
+**15. Use agrupamentos separados quando a locação for hostil.** Espaço de nomes é isolamento lógico, não fronteira de segurança forte.
+
+## Resumo
+
+- **O servidor de API é a joia da coroa**: tudo passa por ele, e comprometê-lo é comprometer o agrupamento inteiro. Toda requisição atravessa autenticação, autorização, admissão e persistência — e essas quatro etapas organizam toda a segurança do assunto.
+- **Segredo do Kubernetes é base64, não criptografia.** Quem lê o armazenamento de estado, ou um backup dele, lê tudo. Cifragem em repouso com chave externa e proteção do banco de estado são obrigatórias.
+- Nos papéis, os erros são reconhecíveis: **vínculo de administrador de agrupamento**, curingas, **token da conta de serviço padrão montado automaticamente** e verbos que escalam — criar pod, `exec`, ler segredo, `escalate`, `bind`.
+- **A admissão é o único ponto que recusa.** Perfis de segurança de pod cobrem o essencial e devem ser ligados primeiro em auditoria e aviso; política como código cobre o resto — registro confiável, imagem assinada, referência por resumo, limites obrigatórios.
+- Na rede, **o padrão é tudo conversar com tudo**. Negação padrão de entrada **e de saída** por espaço de nomes, permissões explícitas por etiqueta e **bloqueio do serviço de metadados** — testando que o plugin realmente aplica as políticas.
+- **Espaço de nomes não é fronteira forte.** Locação hostil pede nós ou agrupamentos separados; o nó é uma máquina e merece o hardening de sempre, com o agravante do papel de nuvem anexado a ele.
+- Sem **auditoria do servidor de API** enviada para fora do agrupamento, não existe investigação de incidente — só hipótese.
+- No Brasil, segredo em base64 dificilmente sustenta o art. 46 da LGPD; o prazo de três dias úteis da ANPD depende de auditoria anterior ao incidente; e agrupamento exposto virando minerador é o padrão de incidente local mais registrado.
