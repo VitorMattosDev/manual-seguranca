@@ -63,7 +63,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 6 — Endpoints e Sistemas Operacionais
 
-- [ ] **cap 036** - Hardening de servidores Linux - `vol06/cap036-hardening-de-servidores-linux.qmd`
+- [x] **cap 036** - Hardening de servidores Linux - `vol06/cap036-hardening-de-servidores-linux.qmd`
 - [ ] **cap 037** - Hardening de Windows e Active Directory - `vol06/cap037-hardening-de-windows-e-active-directory.qmd`
 - [ ] **cap 038** - Antivírus, EDR e XDR - `vol06/cap038-antivirus-edr-e-xdr.qmd`
 - [ ] **cap 039** - Gestão de vulnerabilidades e ciclo de patches - `vol06/cap039-gestao-de-vulnerabilidades-e-ciclo-de-patches.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (35 concluidos).
+**Total:** 107 capitulos em 16 volumes (36 concluidos).
 

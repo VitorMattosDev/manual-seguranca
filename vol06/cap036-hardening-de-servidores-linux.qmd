@@ -1,3 +1,321 @@
 # Hardening de servidores Linux {#sec-cap036}
 
-*(em elaboracao)*
+Um provedor regional instala um servidor novo para hospedar o sistema de gestão de clientes. A distribuição é atual, o firewall de borda está bem configurado (@sec-cap029), a rede é segmentada (@sec-cap028) e o TLS tem nota máxima no teste público (@sec-cap020). Três meses depois, o servidor aparece numa lista de máquinas comprometidas: alguém entrou por uma senha fraca de um usuário de aplicação que nunca deveria ter shell, escalou privilégio por um binário com bit de setuid herdado de um pacote esquecido, e permaneceu quatro semanas sem que nenhum registro fosse consultado — porque não havia registro configurado para consultar.
+
+Nada disso é falha de rede. É falha de **postura do sistema operacional**, a camada que sobra depois que o perímetro fez o trabalho dele. Hardening é o conjunto de decisões que reduz o que existe para ser atacado e o que um atacante consegue fazer depois de entrar — e a segunda metade dessa frase é a que costuma ser ignorada.
+
+Este capítulo trata do servidor Linux como ele existe na prática: instalado por um script de provisionamento, mantido por uma equipe pequena, rodando serviços que ninguém tem tempo de auditar linha a linha.
+
+## A pergunta que organiza tudo: o que está rodando e por quê
+
+Hardening começa por inventário, não por configuração. **Não se protege o que não se sabe que existe.** Um servidor instalado com perfil padrão traz dezenas de serviços, pacotes e unidades que ninguém pediu, e cada um deles é código com privilégio e, potencialmente, um ouvinte na rede.
+
+A superfície de ataque se decompõe em quatro conjuntos, e vale enumerá-los explicitamente:
+
+**Portas em escuta.** Todo processo que aceita conexão é uma porta de entrada. O critério é direto: se não há razão documentada para o serviço aceitar conexão daquela interface, ele não deveria estar escutando nela. A diferença entre um banco de dados ouvindo em `0.0.0.0` e ouvindo em `127.0.0.1` já foi a diferença entre um incidente e um não-incidente em incontáveis casos.
+
+**Pacotes instalados.** Cada pacote é código que entra no ciclo de patches (@sec-cap039) e no cálculo de risco. Compiladores, clientes de rede, utilitários de depuração e servidores web instalados "por conveniência" formam a caixa de ferramentas que o atacante encontra pronta ao chegar.
+
+**Contas e credenciais.** Contas de serviço com shell válido, chaves SSH antigas em `authorized_keys`, senhas em arquivos de configuração legíveis por todos, credenciais de banco em variáveis de ambiente que aparecem em `/proc`.
+
+**Privilégios ambientais.** Binários com setuid, capacidades de kernel concedidas, regras de sudo permissivas, montagens sem restrição, módulos de kernel carregáveis. Este é o conjunto que determina **o que acontece depois** do acesso inicial — e é o menos revisado dos quatro.
+
+::: {#fig-superficie-linux}
+```{.tikz}
+%%| filename: superficie-linux
+%%| alt: Diagrama das quatro dimensões da superfície de ataque de um servidor Linux, separando o que permite a entrada do que decide o alcance do comprometimento
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, very thick, rounded corners=3pt, align=left, inner sep=5pt,
+               minimum width=5.0cm, minimum height=1.5cm, font=\scriptsize, anchor=west},
+    rot/.style={font=\tiny, align=center}}
+
+  \node[cx, draw=manualred, fill=manualred!10] (p) at (0,3.1)
+    {\textbf{Portas em escuta}\\[1pt]\tiny serviços que aceitam conexão\\\tiny \emph{critério:} interface justificada};
+  \node[cx, draw=manualred, fill=manualred!10] (k) at (0,1.3)
+    {\textbf{Pacotes instalados}\\[1pt]\tiny código presente no sistema\\\tiny \emph{critério:} instalação mínima};
+
+  \node[cx, draw=manualyellow, fill=manualyellow!14] (c) at (6.6,3.1)
+    {\textbf{Contas e credenciais}\\[1pt]\tiny shells, chaves, segredos em disco\\\tiny \emph{critério:} sem shell sem motivo};
+  \node[cx, draw=manualyellow, fill=manualyellow!14] (v) at (6.6,1.3)
+    {\textbf{Privilégios ambientais}\\[1pt]\tiny setuid, capacidades, sudo, módulos\\\tiny \emph{critério:} menor privilégio real};
+
+  \draw[->, >=stealth, very thick, manualred]  (2.5,5.0) -- (2.5,4.15)
+     node[midway, above, rot, manualred]{\textbf{permitem a ENTRADA}};
+  \draw[->, >=stealth, very thick, manualyellow!70!black] (9.1,5.0) -- (9.1,4.15)
+     node[midway, above, rot, manualyellow!70!black]{\textbf{decidem o ALCANCE}};
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.0cm] at (5.8,-0.7)
+    {\textbf{A assimetria de atenção é o problema.} Quase todo esforço de hardening
+     vai para a coluna da esquerda --- fechar portas, remover pacotes ---, que é
+     visível e fácil de auditar. A coluna da direita é a que transforma um acesso
+     de baixo privilégio em comprometimento total do host, e raramente é revisada
+     depois da instalação.};
+\end{tikzpicture}
+```
+As quatro dimensões da superfície de um servidor: duas permitem entrar, duas decidem até onde se vai.
+:::
+
+## Instalação mínima e a disciplina de não adicionar
+
+O servidor mais seguro é o que não tem o pacote vulnerável instalado. Isso parece óbvio e é sistematicamente violado, porque adicionar é fácil e remover dá medo.
+
+Duas práticas resolvem a maior parte:
+
+**Partir de uma imagem base mínima e versionada.** Uma imagem construída uma vez, endurecida, testada e usada como origem de todos os servidores. Quando surge um ajuste, ele entra na imagem, não em cada máquina. Sem isso, cada servidor vira um artefato único cuja configuração ninguém consegue reproduzir — e a configuração que ninguém consegue reproduzir é a que ninguém consegue auditar.
+
+**Tratar o servidor como descartável.** Se recriar a máquina do zero é operação de rotina automatizada, corrigir uma configuração derivada vira reconstruir, e o desvio de configuração deixa de acumular. Esse é o argumento prático mais forte a favor de provisionamento automatizado, e ele é de segurança antes de ser de eficiência.
+
+Sobre os serviços: a regra é desabilitar, não apenas parar. Um serviço parado volta no próximo reinício. E a diferença entre desabilitar e mascarar importa: um serviço mascarado não sobe nem por dependência de outro.
+
+## Contas, SSH e o caminho de acesso
+
+O SSH é a porta de entrada legítima e, por isso, o alvo permanente. As decisões que mais importam:
+
+**Chaves em vez de senhas.** Autenticação por chave pública elimina de uma vez a força bruta e o vazamento por reúso de senha. `PasswordAuthentication no` é a linha mais valiosa do `sshd_config` — desde que a gestão de chaves exista de fato, com inventário de quem tem qual chave e um processo de revogação. Chave sem processo de revogação é senha que nunca expira [@openssh2024].
+
+**Nada de login direto de root.** O acesso administrativo passa por conta nominal e depois eleva, o que preserva a atribuição de responsabilidade (@sec-cap003): "alguém entrou como root" não é um registro útil.
+
+**Restringir quem pode entrar.** `AllowGroups sysadmin` é melhor que a ausência de restrição, porque a lista de quem pode entrar passa a ser explícita e revisável.
+
+**Segundo fator para acesso administrativo.** MFA no SSH (@sec-cap024) muda a economia do roubo de credencial. Em servidores de produção acessíveis remotamente, é o controle com melhor relação custo-benefício.
+
+**Não expor o SSH à internet inteira.** Restringir a origem — bastião, VPN (@sec-cap030) ou lista de endereços — reduz a superfície mais do que qualquer ajuste no daemon. Mudar a porta padrão elimina ruído de varredura automatizada, mas não é controle de segurança: um atacante direcionado encontra a porta em segundos.
+
+Sobre **sudo**: a regra que concede tudo a um grupo administrativo é honesta — dá tudo a quem está nele. O que engana é a regra "restrita" que concede um binário capaz de executar outros. Permitir `sudo vi`, `sudo find`, `sudo tar` ou `sudo systemctl` sem restrição de argumento é conceder root por caminho indireto, porque esses programas executam comandos arbitrários. A pergunta certa ao escrever uma regra de sudo não é "o que este comando faz", e sim **"o que este comando consegue executar"**.
+
+## Confinamento: o que acontece depois da entrada
+
+Aqui está a metade negligenciada do hardening. Assumindo que o serviço web será comprometido — porque essa é a premissa correta de projeto —, o que o processo comprometido consegue alcançar?
+
+**Controle de acesso obrigatório.** SELinux e AppArmor implementam MAC (@sec-cap022): a política define o que cada processo pode acessar, independentemente das permissões de arquivo e do usuário. Um processo do servidor web confinado não lê `/etc/shadow` mesmo rodando como root, porque a política nega. A prática difundida de desligar o SELinux por causa de um erro de permissão troca um problema de dez minutos por uma exposição permanente — e o caminho correto é ler a negação registrada, gerar a exceção pontual e seguir [@selinux2024; @apparmor2024].
+
+**Sandboxing de unidades systemd.** É o ganho mais barato e menos usado do Linux moderno. Um punhado de diretivas na unidade do serviço remove capacidades inteiras: sistema de arquivos somente leitura, `/home` invisível, sem novos privilégios, sem carregamento de módulos, sem dispositivos brutos. O comando `systemd-analyze security` atribui uma nota de exposição a cada unidade e mostra exatamente o que falta — é auditoria pronta, sem ferramenta adicional [@systemd2024].
+
+**Capacidades em vez de setuid.** Um binário que precisa apenas abrir porta baixa recebe a capacidade correspondente, não o bit de setuid que entrega root inteiro. O inventário periódico de binários setuid é uma das checagens mais produtivas que existem, porque o que aparece nele raramente é o que se esperava.
+
+**Isolamento por namespace e por host.** Contêineres ajudam, mas não substituem o resto — tema do Volume 8. Serviços de risco muito distinto não deveriam dividir o mesmo host, e essa continua sendo a fronteira mais confiável.
+
+::: {#fig-camadas-confinamento}
+```{.tikz}
+%%| filename: camadas-confinamento
+%%| alt: Camadas de confinamento de um processo em Linux, das permissões de arquivo até controle de acesso obrigatório e separação de host, indicando o que cada camada realmente impede
+\begin{tikzpicture}[font=\footnotesize, y=1.1cm]
+  \tikzset{
+    ca/.style={draw, very thick, rounded corners=3pt, align=left, inner sep=5pt,
+               minimum width=7.0cm, minimum height=0.82cm, font=\scriptsize, anchor=west},
+    et/.style={font=\tiny, anchor=west, align=left, text width=3.4cm}}
+
+  \node[ca, draw=manualgray, fill=manualgray!12] at (0,4)
+    {\textbf{Permissões de arquivo (DAC)} \tiny --- dono, grupo, modo};
+  \node[et, manualgray] at (7.4,4) {não impede o processo de fazer o que o \emph{usuário} pode};
+
+  \node[ca, draw=manualgreen, fill=manualgreen!10] at (0,3)
+    {\textbf{Capacidades} \tiny --- fatiam o poder de root};
+  \node[et, manualgreen] at (7.4,3) {porta baixa sem entregar o resto};
+
+  \node[ca, draw=manualblue, fill=manualblue!10] at (0,2)
+    {\textbf{Sandbox systemd} \tiny --- \texttt{ProtectSystem}, \texttt{PrivateTmp}};
+  \node[et, manualblue] at (7.4,2) {remove caminhos inteiros de abuso};
+
+  \node[ca, draw=manualyellow, fill=manualyellow!14] at (0,1)
+    {\textbf{MAC: SELinux / AppArmor}};
+  \node[et, manualyellow!70!black] at (7.4,1) {nega mesmo rodando como root};
+
+  \node[ca, draw=manualred, fill=manualred!10] at (0,0)
+    {\textbf{Separação de host} \tiny --- risco distinto, máquina distinta};
+  \node[et, manualred] at (7.4,0) {a fronteira mais confiável};
+
+  \draw[->, >=stealth, very thick, manualgray] (-0.5,4.35) -- (-0.5,-0.35)
+    node[midway, left, rotate=90, anchor=south, font=\tiny]
+      {mais fraco $\rightarrow$ mais forte};
+
+  \node[draw=manualgreen, fill=manualgreen!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=10.4cm] at (5.2,-1.6)
+    {\textbf{As permissões de arquivo, sozinhas, não confinam nada.} Elas
+     descrevem o que o \emph{usuário} pode --- e um processo comprometido roda
+     exatamente com essa identidade. Confinamento real começa nas camadas que o
+     próprio processo não consegue afrouxar.};
+\end{tikzpicture}
+```
+Camadas de confinamento: cada uma responde à pergunta "e depois que ele entrar?".
+:::
+
+## Registro e integridade: a diferença entre saber e supor
+
+Um servidor endurecido que não registra nada é um servidor sobre o qual não se pode afirmar nada. Os elementos mínimos:
+
+**Envio dos registros para fora do host.** Registro local é apagável por quem obteve root — e apagar rastro é uma das primeiras ações de quem sabe o que está fazendo. Enviar para um coletor remoto, com o servidor de destino sem acesso de volta, é o que preserva a evidência. Este é o pré-requisito de tudo que o Volume 12 vai construir.
+
+**Auditoria de sistema.** O `auditd` registra chamadas de sistema e acessos a arquivos sensíveis, e é o que permite responder "quem alterou este arquivo, quando, a partir de qual processo". Um conjunto pequeno de regras — alterações em `/etc/passwd` e `/etc/shadow`, uso de comandos de escalada, carregamento de módulos, modificação de configuração de serviços — cobre a maior parte dos casos sem inundar o disco [@auditd2024].
+
+**Verificação de integridade.** Comparar o estado do sistema de arquivos com uma linha de base assinada detecta binário substituído e arquivo de configuração alterado. Só funciona se a linha de base for gerada em estado confiável e guardada fora do host.
+
+**Sincronização de tempo.** Sem relógios sincronizados, correlacionar registros de várias máquinas é impossível. É um detalhe operacional trivial que arruína investigações inteiras quando falha.
+
+## Kernel, boot e rede local
+
+Alguns ajustes de baixo custo e efeito real:
+
+- **Parâmetros de rede**: desabilitar encaminhamento em host que não é roteador, ignorar redirecionamentos ICMP, ativar filtragem de caminho reverso, registrar pacotes com origem impossível. São defesas contra o que o @sec-cap008 descreveu na camada de rede, aplicadas no host.
+- **Módulos de kernel desnecessários**: sistemas de arquivos exóticos e protocolos legados que ninguém usa continuam carregáveis por padrão e já foram vetor de escalada. Colocá-los na lista de bloqueio é uma linha por módulo.
+- **Boot verificado**: Secure Boot com módulos assinados e senha no gerenciador de boot fecham o caminho de quem tem acesso físico ou console virtual — assunto que o @sec-cap041 retoma junto com criptografia de disco.
+- **Proteções de memória**: aleatorização do espaço de endereços, bit de não-execução e endurecimento do alocador vêm ligados nas distribuições atuais. Verificar que continuam ligados custa um comando.
+
+## Automação e verificação contínua
+
+Hardening manual não sobrevive ao tempo. Três compromissos o tornam durável:
+
+**Configuração como código.** Toda decisão de hardening expressa em ferramenta de provisionamento, versionada, revisada. O benefício de segurança não é a automação em si: é que a configuração vira **texto auditável e com histórico**, e a mudança não documentada vira exceção visível.
+
+**Referencial declarado.** Os CIS Benchmarks fornecem uma lista concreta por distribuição, com justificativa e verificação para cada item. Não é para aplicar em bloco — vários itens quebram cargas legítimas —, mas é a diferença entre "endurecemos o servidor" e "aplicamos o perfil X, com estas doze exceções documentadas e justificadas" [@cisbenchmarks; @nistsp800123].
+
+**Verificação periódica automatizada.** A configuração deriva: alguém abre uma porta para depurar e esquece, um pacote reinstala uma unidade, uma atualização repõe um valor padrão. Sem verificação recorrente, o servidor endurecido de janeiro é um servidor comum em julho.
+
+## Erros que se repetem
+
+- **Desligar o SELinux ou o AppArmor** ao primeiro erro de permissão, permanentemente.
+- **Regras de sudo com binários que executam outros comandos**, concedendo root por via indireta.
+- **Registro só local**, apagado junto com o rastro.
+- **Instalar "para depurar" e não remover** — compilador, cliente de banco, ferramenta de rede.
+- **Confiar no firewall de borda** para justificar serviço ouvindo em todas as interfaces.
+- **Chave SSH sem inventário nem revogação**, herdada de quem já saiu da empresa.
+- **Hardening de instalação sem verificação continuada**, que deriva em meses.
+
+## ⚖️ Brasil em Foco
+
+**O art. 46 da LGPD exige medidas técnicas aptas a proteger dados pessoais, e hardening é exatamente isso.** A lei não lista controles, mas a ANPD e a prática de fiscalização avaliam se as medidas são adequadas ao risco. Um servidor de banco de dados de clientes acessível pela internet com senha fraca e sem registro dificilmente sustenta o argumento de adequação — e a ausência de registros agrava, porque impede demonstrar a extensão do incidente na comunicação exigida pela Resolução 15/2024 [@lgpd2018; @anpd2024res15].
+
+**A guarda de registros de conexão do Marco Civil pressupõe integridade.** Provedores de conexão guardam registros por um ano e provedores de aplicação por seis meses (arts. 13 e 15 da Lei 12.965/2014). Registro que pode ser alterado por qualquer administrador, sem trilha, tem valor probatório frágil. Envio para coletor externo com acesso restrito e integridade verificável é o que dá substância à obrigação legal [@marcocivil2014].
+
+**Acesso não autorizado a servidor é crime tipificado.** A Lei 12.737/2012 (art. 154-A do Código Penal), com as alterações da Lei 14.155/2021, criminaliza a invasão de dispositivo informático — e a pena aumenta quando há obtenção de conteúdo de comunicações privadas ou de segredo comercial. Para a organização vitimada, os registros preservados são o que viabiliza a investigação; sem eles, o inquérito costuma parar antes de começar [@lei12737; @lei14155].
+
+**O CERT.br publica recomendações de administração segura alinhadas ao que este capítulo descreve** — instalação mínima, atualização contínua, autenticação forte e registro centralizado — e mantém o serviço de notificação que avisa organizações brasileiras sobre serviços expostos e máquinas comprometidas em suas faixas de endereçamento. Manter o contato técnico correto nos registros do endereçamento é o que faz esse aviso chegar a alguém [@cert2024praticas].
+
+**Para setores regulados, o hardening entra em obrigação formal.** A Resolução 740/2020 da Anatel trata de segurança cibernética nas redes de telecomunicações e, no setor financeiro, a Resolução BCB 4.893/2021 exige controles compatíveis com a criticidade dos sistemas. Em ambos os casos, a fiscalização pergunta por evidência documental: qual referencial foi adotado, quais exceções existem e quando foi a última verificação [@anatel740; @bcb4893].
+
+## 🛠️ No Campo
+
+**1. Inventarie o que escuta, antes de qualquer outra coisa.** A resposta costuma surpreender:
+
+```bash
+ss -tulpn | grep LISTEN
+systemctl list-units --type=service --state=running
+```
+
+Para cada linha: existe justificativa documentada? Precisa mesmo ouvir em `0.0.0.0`?
+
+**2. Desabilite e mascare o que não é necessário.** Mascarar impede que volte por dependência:
+
+```bash
+systemctl disable --now avahi-daemon cups rpcbind
+systemctl mask avahi-daemon
+```
+
+**3. Endureça o SSH.** As quatro linhas que mais importam:
+
+```
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AllowGroups sysadmin
+```
+
+E restrinja a origem também no filtro local, não só no de borda:
+
+```bash
+nft add rule inet filter input tcp dport 22 ip saddr != 198.51.100.0/24 drop
+```
+
+**4. Avalie a exposição das suas unidades systemd.** Auditoria pronta, sem instalar nada:
+
+```bash
+systemd-analyze security
+systemd-analyze security nginx.service
+```
+
+Depois, endureça o serviço num arquivo de sobreposição:
+
+```ini
+[Service]
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+SystemCallFilter=@system-service
+ReadWritePaths=/var/lib/minhaapp /var/log/minhaapp
+```
+
+**5. Cace setuid e capacidades esquecidos.** Compare com a lista esperada, não com a memória:
+
+```bash
+find / -xdev -perm -4000 -type f -printf '%M %u %p\n' 2>/dev/null
+getcap -r / 2>/dev/null
+```
+
+**6. Revise cada regra de sudo perguntando "o que ela consegue executar".** As armadilhas clássicas:
+
+```
+# PERIGOSO — todas concedem shell de root por caminho indireto
+operador ALL=(ALL) NOPASSWD: /usr/bin/vi
+operador ALL=(ALL) NOPASSWD: /usr/bin/find
+operador ALL=(ALL) NOPASSWD: /usr/bin/systemctl
+```
+
+**7. Mantenha o MAC ligado e trate a negação, não o mecanismo.** Diante de um erro de permissão:
+
+```bash
+getenforce                       # deve responder Enforcing
+ausearch -m AVC -ts recent       # o que foi negado, exatamente
+audit2allow -a -M excecao_app    # gera a exceção pontual; revise antes de aplicar
+```
+
+**8. Envie os registros para fora do host.** Sem isso, não há evidência confiável:
+
+```
+# /etc/rsyslog.d/90-remoto.conf — TLS e fila em disco para não perder no reinício
+action(type="omfwd" target="logs.exemplo.local" port="6514"
+       protocol="tcp" StreamDriverMode="1" StreamDriverAuthMode="x509/name"
+       queue.type="LinkedList" queue.filename="fila_remota" action.resumeRetryCount="-1")
+```
+
+**9. Regras de auditoria enxutas cobrem o essencial:**
+
+```
+-w /etc/passwd -p wa -k identidade
+-w /etc/shadow -p wa -k identidade
+-w /etc/sudoers -p wa -k escalada
+-w /etc/sudoers.d/ -p wa -k escalada
+-a always,exit -F arch=b64 -S init_module,finit_module -k modulos
+```
+
+**10. Ajuste os parâmetros de rede e de kernel:**
+
+```bash
+sysctl -w net.ipv4.ip_forward=0
+sysctl -w net.ipv4.conf.all.accept_redirects=0
+sysctl -w net.ipv4.conf.all.rp_filter=1
+sysctl -w net.ipv4.conf.all.log_martians=1
+sysctl -w kernel.randomize_va_space=2
+sysctl -w kernel.dmesg_restrict=1
+```
+
+**11. Adote um referencial e documente as exceções.** Rode a verificação automatizada do CIS Benchmark ou equivalente e mantenha um arquivo versionado com cada item não aplicado e o motivo. Essa lista de exceções é o que a auditoria pede — e é também o que impede que a exceção temporária vire permanente por esquecimento.
+
+**12. Verifique periodicamente, não só na instalação.** Uma execução semanal do verificador, com o resultado comparado ao da execução anterior, transforma desvio de configuração em alerta em vez de descoberta pós-incidente.
+
+## Resumo
+
+- **Hardening começa por inventário, não por configuração**: portas em escuta, pacotes instalados, contas e credenciais, privilégios ambientais. As duas primeiras dimensões permitem a entrada; as duas últimas decidem o alcance do comprometimento — e são as menos revisadas.
+- A instalação mínima é a defesa mais barata: **o pacote ausente não tem vulnerabilidade**. Imagem base versionada e servidor descartável impedem que cada máquina vire um artefato irreproduzível.
+- No SSH, o que mais importa é **chave em vez de senha, sem login de root, grupo de acesso explícito, MFA para administração e origem restrita**. Mudar a porta reduz ruído, não risco.
+- Em sudo, a pergunta certa não é o que o comando faz, e sim **o que ele consegue executar**: editores, `find`, `tar` e `systemctl` sem restrição de argumento concedem root por caminho indireto.
+- **Confinamento é a metade negligenciada.** MAC (SELinux/AppArmor) nega mesmo para root; o sandbox de unidades systemd remove caminhos inteiros de abuso com poucas diretivas e traz auditoria pronta no `systemd-analyze security`; capacidades substituem setuid.
+- **Registro local é apagável por quem obteve root.** Coletor externo, auditoria de sistema com regras enxutas, verificação de integridade contra linha de base confiável e relógios sincronizados são o que permite afirmar algo depois do incidente.
+- Hardening manual não sobrevive ao tempo: **configuração como código, referencial declarado com exceções documentadas e verificação periódica automatizada** é o que impede a deriva.
+- No Brasil, o art. 46 da LGPD cobra medidas técnicas adequadas ao risco; a guarda de registros do Marco Civil pressupõe integridade; invasão de dispositivo é crime da Lei 12.737/2012 e a investigação depende dos registros preservados; e organizações reguladas devem evidenciar referencial, exceções e data da última verificação.
