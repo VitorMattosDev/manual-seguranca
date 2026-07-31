@@ -1,3 +1,250 @@
 # Metodologias e definição de escopo: PTES, OSSTMM e NIST SP 800-115 {#sec-cap056}
 
-*(em elaboracao)*
+Um provedor regional contrata um teste de invasão externo. O acordo é uma troca de mensagens: "podem testar nossa infraestrutura, o IP é esse". Na quarta-feira à tarde, a plataforma de faturamento sai do ar por três horas. O testador havia encontrado um serviço de gerenciamento exposto e, ao enumerar suas funções, disparou uma reinicialização de processo que derrubou a fila de cobrança. Ninguém sabia quem avisar. O diretor jurídico do provedor descobriu o teste pelo relatório de indisponibilidade.
+
+Não houve má-fé de nenhum lado. Houve ausência de método. O testador não tinha regras de engajamento, o cliente não tinha janela definida, e a autorização — que é o único elemento que separa juridicamente um teste de invasão de um crime — existia como uma frase em um aplicativo de mensagens.
+
+Este volume trata da perspectiva ofensiva, e ele começa por aqui porque **a competência técnica é a parte fácil**. O que distingue um profissional de alguém que apenas sabe rodar ferramentas é o que vem antes do primeiro pacote e o que vem depois do último: escopo escrito, metodologia repetível, evidência preservada e comunicação que produz correção. O @sec-cap007 estabeleceu a fronteira ética e legal; este capítulo transforma essa fronteira em documento operacional.
+
+## O que um teste de invasão é — e o que ele não é
+
+A confusão de nomenclatura custa dinheiro e produz expectativa frustrada. Vale separar quatro coisas frequentemente vendidas como a mesma.
+
+**Varredura de vulnerabilidades** é automatizada, ampla e rasa. Um scanner enumera serviços, compara versões com uma base de assinaturas e produz uma lista. Não confirma explorabilidade, não encadeia falhas e não entende contexto de negócio. É insumo do programa de gestão de vulnerabilidades do @sec-cap039, e deve rodar continuamente. Não é teste de invasão.
+
+**Teste de invasão** é conduzido por pessoas, com objetivo definido, e vai até a **demonstração de impacto**. A diferença essencial não é a ferramenta: é que o testador confirma a falha, encadeia várias delas e responde à pergunta que o scanner não responde — "o que um adversário consegue fazer com isso?".
+
+**Exercício de red team** não busca cobertura: busca um objetivo (chegar ao banco de dados de clientes, movimentar um pagamento, obter privilégio de administrador de domínio) emulando um adversário específico, geralmente sem aviso à equipe de defesa e com atenção deliberada a não ser detectado. Mede a **capacidade de detecção e resposta**, não a quantidade de falhas. É caro e só faz sentido em organizações que já têm o básico resolvido — red team contra ambiente sem inventário e sem correção de vulnerabilidade conhecida produz um relatório caro dizendo o que uma varredura barata já dizia.
+
+**Auditoria de conformidade** verifica aderência a um conjunto de requisitos. Responde "o controle existe e está documentado?", não "o controle resiste?". As duas perguntas são legítimas e diferentes.
+
+Há ainda o **teste guiado por inteligência de ameaças**, no qual o conhecimento sobre adversários reais do setor define os cenários a emular — modelo consolidado nos exercícios regulados do setor financeiro europeu e que vem influenciando a prática brasileira. É a ponte entre o teste técnico e o exercício de red team [@tiber2018].
+
+## Por que metodologia importa
+
+Sem método, o resultado de um teste é uma função da memória e do humor de quem testou. Método entrega quatro coisas:
+
+**Repetibilidade.** Dois profissionais competentes, no mesmo escopo, devem chegar a resultados comparáveis. Sem isso não existe medição de evolução entre um teste e o seguinte.
+
+**Cobertura demonstrável.** O relatório precisa dizer não só o que foi encontrado, mas **o que foi verificado e não apresentou falha**. "Não encontramos injeção de SQL" só tem valor se houver rastro de que a busca foi feita e como.
+
+**Defensabilidade.** Quando um incidente ocorre depois do teste, a pergunta será se aquela área estava no escopo e como foi verificada. Método é o que permite responder.
+
+**Gestão de risco do próprio teste.** Fases explícitas com critérios de entrada e saída evitam a ação impensada — que é exatamente a que derrubou o faturamento do provedor da abertura.
+
+## As metodologias que importam
+
+Nenhuma delas é lei, e usar uma não impede usar as outras. Na prática, equipes maduras compõem.
+
+**PTES** (*Penetration Testing Execution Standard*) é a mais usada como espinha dorsal de um engajamento por organizar o trabalho em sete fases com realimentação: pré-engajamento, coleta de inteligência, modelagem de ameaças, análise de vulnerabilidades, exploração, pós-exploração e relatório [@ptes2014]. Sua contribuição mais valiosa é dar peso ao **pré-engajamento** — a fase que a pressa costuma pular e a única que protege as duas partes.
+
+**NIST SP 800-115** é o guia técnico para avaliações de segurança da informação. Mais enxuto que o PTES (planejamento, execução, pós-execução) e mais forte no que interessa a quem precisa justificar o processo: manuseio de dados sensíveis coletados, cuidado com sistemas críticos, coordenação com as equipes operacionais e uso dos resultados no plano de correção [@nistsp800115]. É a referência natural quando o cliente é órgão público ou empresa regulada, porque conversa com o vocabulário de gestão de risco tratado no Volume 1.
+
+**OSSTMM** (*Open Source Security Testing Methodology Manual*) tem a proposta mais ambiciosa: transformar teste de segurança em medição. Define canais de teste (humano, físico, sem fio, telecomunicações e redes de dados), controles operacionais e uma métrica de superfície de ataque — o *rav* — que expressa numericamente o quanto a exposição excede a proteção [@osstmm3]. Sua adoção integral é rara, mas dois conceitos valem para qualquer teste: **teste é medição, não opinião**, e **os canais humano e físico fazem parte da superfície**, tema do Volume 10.
+
+**OWASP WSTG** não é uma metodologia de engajamento, e sim o catálogo de referência do que testar em aplicações web, organizado por categorias com procedimento por teste [@owaspwstg]. É o companheiro obrigatório do @sec-cap062.
+
+**MITRE ATT&CK** também não é metodologia de teste: é a taxonomia de táticas e técnicas adversárias que permite ao ofensivo e ao defensivo falarem a mesma língua [@mitreattack]. Mapear cada ação do teste a uma técnica transforma o relatório em insumo direto para a engenharia de detecção — assunto do Volume 12.
+
+::: {#fig-fases-pentest}
+```{.tikz}
+%%| filename: fases-pentest
+%%| alt: Fluxo das fases de um teste de invasão segundo o PTES, com realimentação da pós-exploração para a modelagem de ameaças e o reteste ao final
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fase/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                 inner sep=4pt, minimum width=2.6cm, minimum height=1.0cm}}
+
+  \node[fase, draw=manualblue, fill=manualblue!16, very thick] (f1) at (-4.3,2.6)
+    {\textbf{1. Pré-engajamento}\\ escopo, autorização,\\ regras de engajamento};
+  \node[fase, draw=manualgray, fill=manualgray!12] (f2) at (-1.1,2.6)
+    {\textbf{2. Inteligência}\\ reconhecimento\\ passivo e OSINT};
+  \node[fase, draw=manualgray, fill=manualgray!12] (f3) at (2.1,2.6)
+    {\textbf{3. Modelagem}\\ de ameaças\\ e priorização};
+  \node[fase, draw=manualgray, fill=manualgray!12] (f4) at (5.3,2.6)
+    {\textbf{4. Análise de}\\ vulnerabilidades\\ varredura e validação};
+
+  \node[fase, draw=manualred, fill=manualred!14] (f5) at (5.3,0.5)
+    {\textbf{5. Exploração}\\ confirmar o acesso,\\ sem dano colateral};
+  \node[fase, draw=manualred, fill=manualred!14] (f6) at (2.1,0.5)
+    {\textbf{6. Pós-exploração}\\ impacto real,\\ alcance, evidência};
+  \node[fase, draw=manualgreen, fill=manualgreen!16, very thick] (f7) at (-1.1,0.5)
+    {\textbf{7. Relatório}\\ achado, risco,\\ correção};
+  \node[fase, draw=manualgreen, fill=manualgreen!12] (f8) at (-4.3,0.5)
+    {\textbf{8. Reteste}\\ verificação da\\ correção};
+
+  \foreach \a/\b in {f1/f2, f2/f3, f3/f4}
+    {\draw[->, >=stealth, thick, manualblue] (\a) -- (\b);}
+  \draw[->, >=stealth, thick, manualblue] (f4) -- (f5);
+  \foreach \a/\b in {f5/f6, f6/f7, f7/f8}
+    {\draw[->, >=stealth, thick, manualblue] (\a) -- (\b);}
+
+  \draw[->, >=stealth, thick, manualred, dashed] (f6.north)
+    to[out=110, in=-70] node[midway, right, font=\tiny, manualred, xshift=1pt]
+    {realimenta} (f3.south);
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.6cm] at (0.4,-1.5)
+    {\textbf{A fase 1 é a que a pressa pula e a única que protege as duas partes.}
+     Sem autorização escrita, janela definida, alvos delimitados e contato de
+     emergência, tudo o que vem depois é risco jurídico para o testador e risco
+     operacional para o cliente. A fase 8 é a que o orçamento corta --- e sem ela
+     não se sabe se alguma coisa foi de fato corrigida.};
+\end{tikzpicture}
+```
+As fases de um teste de invasão. O ciclo não é linear: cada novo acesso obtido realimenta a modelagem e abre alvos que não eram visíveis no início.
+:::
+
+## Modalidades: o que o testador sabe e o que a defesa sabe
+
+Duas dimensões independentes definem o desenho do teste, e confundi-las gera contratação errada.
+
+**Conhecimento prévio do testador.** Na **caixa preta**, o testador recebe apenas o alvo e descobre o resto. Simula melhor o adversário externo, mas gasta boa parte do orçamento em descoberta — e o que ele não achar em duas semanas, um adversário com seis meses acha. Na **caixa branca**, recebe documentação, código, credenciais e diagramas. Produz muito mais cobertura por real gasto e encontra classes de falha que a caixa preta não alcança. Na **caixa cinza**, recebe acesso de usuário comum e conhecimento parcial — o desenho mais comum e geralmente o de melhor retorno, porque a maioria dos incidentes reais começa com alguma credencial válida.
+
+O ponto que costuma passar despercebido: **caixa preta não é mais rigorosa, é apenas mais cara por achado**. Ela responde "o que se acha rápido de fora"; a caixa branca responde "o que existe". Só a segunda pergunta melhora o produto.
+
+**Conhecimento da equipe de defesa.** No teste **anunciado**, a equipe sabe e pode acompanhar. É o adequado quando o objetivo é encontrar falhas: ninguém perde tempo tratando o testador como incidente. No **não anunciado**, só a alta direção e um contato restrito sabem — o objetivo passa a incluir a medição da detecção. Exige regras de escalonamento muito claras e um mecanismo de identificação imediata do testador, sob pena de mobilizar uma resposta a incidentes cara e desnecessária.
+
+Sobre a posição: teste **externo** parte da internet e mede a superfície pública; **interno** parte de dentro e responde à pergunta mais relevante para a maioria das organizações — "o que acontece depois que uma estação é comprometida?". Como o Volume 6 mostrou, essa é a pergunta que importa, porque o comprometimento inicial de um endpoint é o cenário mais provável.
+
+## O escopo é um documento, não uma conversa
+
+O escopo é o coração jurídico e operacional do engajamento. Precisa estar escrito, assinado por quem tem poder para autorizar, e disponível para o testador durante a execução. Os elementos mínimos:
+
+**Alvos, por enumeração explícita.** Faixas de endereços, nomes de domínio, aplicações, contas. "Toda a infraestrutura" não é escopo — é convite a acidente. Nomes com curinga merecem atenção redobrada: um domínio de terceiro nível pode apontar para um serviço de terceiro que a organização não tem autoridade para autorizar.
+
+**Exclusões explícitas.** Sistemas de controle industrial, equipamentos médicos, sistemas legados frágeis, plataformas de terceiros. Exclusão não é fraqueza do teste: é reconhecimento de que demonstrar indisponibilidade em um sistema crítico não vale o que custa.
+
+**Janela de execução.** Datas, horários e fusos. Também o que **não** pode ocorrer em determinado período — fechamento contábil, campanha de vendas, migração planejada.
+
+**Técnicas autorizadas e proibidas.** Negação de serviço, força bruta em produção, engenharia social, teste físico, exploração de falhas com risco de corrupção de dados: cada um precisa de resposta explícita. O padrão de mercado é que negação de serviço e engenharia social estejam **fora**, salvo contratação específica.
+
+**Regras de engajamento.** O que fazer ao obter acesso privilegiado, até onde ir na pós-exploração, o que fazer ao encontrar dados pessoais ou vestígios de comprometimento anterior, quando parar e ligar. Este último ponto merece regra escrita: **se o testador encontrar indício de invasão preexistente, a ação correta é parar e acionar imediatamente o contato do cliente** — a partir dali o assunto é resposta a incidente, não teste.
+
+**Autorização formal.** Documento assinado por quem tem poder para tanto, com identificação dos testadores, dos endereços de origem e do período. É a peça que o testador precisa ter em mãos e que, se um terceiro questionar a atividade, sustenta a legalidade. Quando o alvo está hospedado em provedor de nuvem ou datacenter terceirizado, **a autorização do contratante pode não bastar**: os termos do provedor podem exigir notificação prévia.
+
+**Contatos e escalonamento.** Nomes, telefones e um canal alternativo que funcione fora do ambiente testado — se o teste derrubar o serviço de e-mail, o aviso não pode depender dele.
+
+**Manuseio de dados e evidências.** Como as evidências serão armazenadas e cifradas, por quanto tempo, quando serão destruídas, e o compromisso de **coletar o mínimo necessário para demonstrar o achado**. Extrair a base de clientes inteira para "provar" o acesso é criar um vazamento com boa intenção: a demonstração correta é a contagem de registros e algumas linhas com dados mascarados.
+
+::: {#fig-escopo-camadas}
+```{.tikz}
+%%| filename: escopo-camadas
+%%| alt: Estrutura do documento de escopo com alvos autorizados, exclusões explícitas, regras de engajamento, elementos operacionais e a autorização formal como base jurídica
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=5.2cm, minimum height=1.6cm}}
+
+  \node[cx, draw=manualgreen, fill=manualgreen!12] (a) at (-3.1,2.5)
+    {\textbf{Autorizado}\\
+     faixas e domínios enumerados;\\
+     janela com data, hora e fuso;\\
+     origens do testador declaradas;\\
+     técnicas permitidas nomeadas};
+  \node[cx, draw=manualred, fill=manualred!12] (b) at (3.1,2.5)
+    {\textbf{Excluído}\\
+     controle industrial e médico;\\
+     legados frágeis identificados;\\
+     serviços de terceiros;\\
+     negação de serviço e força bruta};
+
+  \node[cx, draw=manualyellow, fill=manualyellow!16] (c) at (-3.1,0.4)
+    {\textbf{Regras de engajamento}\\
+     limite da pós-exploração;\\
+     conduta ao achar dado pessoal;\\
+     \textbf{parar e acionar} se houver\\
+     invasão preexistente};
+  \node[cx, draw=manualblue, fill=manualblue!14] (d) at (3.1,0.4)
+    {\textbf{Operacional}\\
+     contatos e canal alternativo;\\
+     guarda e destruição de evidência;\\
+     coleta mínima suficiente;\\
+     critérios de parada};
+
+  \node[draw=manualblue, fill=manualblue!16, very thick, rounded corners=3pt,
+        align=center, inner sep=6pt, font=\scriptsize, text width=11.2cm] at (0,-1.6)
+    {\textbf{AUTORIZAÇÃO FORMAL ASSINADA}\\[2pt]
+     por quem tem poder para autorizar --- e, quando o alvo está em provedor
+     terceiro, somada à permissão desse provedor. É o que separa juridicamente o
+     teste da conduta tipificada no art. 154-A do Código Penal.};
+
+  \draw[->, >=stealth, thick, manualblue] (-3.1,-0.5) -- (-1.6,-1.0);
+  \draw[->, >=stealth, thick, manualblue] (3.1,-0.5) -- (1.6,-1.0);
+\end{tikzpicture}
+```
+O documento de escopo. Sem a base assinada, nada do que está acima tem valor jurídico.
+:::
+
+## Critérios de parada e gestão do risco do teste
+
+Todo teste precisa de gatilhos escritos de interrupção:
+
+- **Indisponibilidade causada pelo teste**: parar, avisar imediatamente, registrar a ação exata que a provocou.
+- **Achado crítico com exploração ativa por terceiros**: parar e escalar. Vira incidente.
+- **Acesso a dados pessoais sensíveis além do necessário**: interromper a coleta, registrar o alcance, comunicar.
+- **Saída do escopo por encadeamento**: acontece com frequência — a exploração leva a um servidor que não estava na lista. A regra é parar naquele ponto e pedir extensão por escrito, nunca prosseguir e explicar depois.
+- **Fim da janela**: encerra-se o acesso, removem-se os artefatos, documenta-se o que foi deixado.
+
+Sobre artefatos: qualquer coisa criada durante o teste — conta, arquivo, tarefa agendada, chave de acesso — precisa constar de um **inventário de limpeza**, com confirmação de remoção registrada no relatório. Artefato esquecido de teste é porta aberta com o nome do testador nela.
+
+## ⚖️ Brasil em Foco
+
+**Não existe no Brasil regulamentação da profissão de testador de invasão, e isso muda tudo.** Não há registro, licença ou credencial que confira permissão para testar. A **autorização contratual do titular do sistema é a única fonte de licitude**, e ela é limitada ao que o contratante tem poder para autorizar. Testar sistema de terceiro, ainda que hospede dados do cliente, exige autorização daquele terceiro [@lei12737].
+
+**O art. 154-A do Código Penal, inserido pela Lei 12.737/2012 e agravado pela Lei 14.155/2021, é a norma central.** Ele tipifica invadir dispositivo informático alheio para obter, adulterar ou destruir dados, ou instalar vulnerabilidade para obter vantagem ilícita — com pena aumentada quando há obtenção de conteúdo de comunicações privadas ou segredo comercial. O elemento que afasta a tipicidade no teste profissional é o **consentimento do titular**, e consentimento se demonstra com documento, não com lembrança de conversa. Escopo escrito não é burocracia: é a prova [@lei12737; @lei14155].
+
+**A LGPD alcança o testador como operador.** Ao acessar dados pessoais durante o teste, a empresa contratada trata dados por conta do controlador e responde por segurança, sigilo e eliminação ao fim do tratamento (arts. 39, 42 e 46). Na prática, o contrato precisa incluir cláusula de tratamento com finalidade restrita, prazo de guarda de evidência, obrigação de minimização e compromisso de exclusão comprovada. Extrair base inteira "para provar" é tratamento excessivo, contrário ao art. 6º, III [@lgpd2018].
+
+**Achado que revela incidente ativo aciona prazos.** Se o teste encontrar evidência de comprometimento real com dados pessoais envolvidos, a Resolução CD/ANPD nº 15/2024 estabelece prazo de três dias úteis para comunicação à autoridade e aos titulares quando houver risco relevante. O contrato deve prever que essa hipótese interrompe o teste e transfere a condução para o processo de resposta a incidentes do cliente [@anpd2024res15].
+
+**Contratação pública tem regras próprias.** Sob a Lei 14.133/2021, o teste costuma ser contratado como serviço técnico especializado, com termo de referência que descreve escopo, metodologia, perfil da equipe e produtos. Referenciar NIST SP 800-115 e OWASP WSTG no termo é prática consolidada, porque dá critério objetivo de aceitação. A Instrução Normativa GSI/PR nº 5 e a Estratégia Nacional de Segurança Cibernética reforçam a exigência de avaliações periódicas em órgãos federais [@lei14133; @ingsi5; @decreto10222; @nistsp800115].
+
+**Setores regulados exigem teste explicitamente.** A Resolução BCB nº 85 exige avaliação periódica de vulnerabilidades e testes, com registro de resultados e plano de ação. O PCI-DSS v4 é ainda mais específico: teste de invasão interno e externo ao menos anual e após mudança significativa, com metodologia documentada e retenção de evidências (Requisito 11.4) [@bcb85; @pcidss4].
+
+**Interceptação de comunicação tem regime próprio e mais severo.** Captura de tráfego em rede corporativa pode alcançar comunicações de empregados e de terceiros. A Lei 9.296/1996 e o Marco Civil (arts. 7º e 10) restringem fortemente esse acesso. Teste que envolva captura precisa de previsão explícita no escopo, aviso interno adequado e limitação técnica do que é armazenado [@lei9296; @marcocivil2014].
+
+**Provedor de conexão e de aplicação carrega dever de guarda de registros.** Marco Civil, arts. 13 e 15: um teste que altere ou apague registros de acesso interfere em obrigação legal do cliente. Isso precisa estar entre as ações vedadas no escopo [@marcocivil2014].
+
+## 🛠️ No Campo
+
+**1. Nunca comece sem autorização assinada em mãos.** Documento com alvos, janela, origens do testador e nome de quem assinou. Se o cliente considerar isso excesso, esse já é o primeiro achado.
+
+**2. Verifique a cadeia de autorização.** Quem assinou pode autorizar aquele ativo? O ativo é do cliente ou de um provedor? Serviço em nuvem e datacenter terceirizado podem exigir notificação própria.
+
+**3. Enumere alvos, não descreva.** Faixas, domínios e aplicações listados. "Tudo que for da empresa" não é escopo.
+
+**4. Exclua explicitamente o que é frágil.** Controle industrial, equipamento médico, legado sem janela de manutenção. Excluir é gestão de risco, não covardia.
+
+**5. Deixe negação de serviço e engenharia social fora, salvo contratação específica** — e, se entrarem, com regras separadas e mais restritas.
+
+**6. Escreva os critérios de parada antes.** Indisponibilidade, indício de invasão preexistente, dado pessoal sensível, saída de escopo por encadeamento. Sob pressão ninguém improvisa bem.
+
+**7. Estabeleça dois canais de contato**, um deles fora da infraestrutura testada. Um teste que derruba o e-mail não pode depender do e-mail.
+
+**8. Combine a antecedência do aviso.** Em teste anunciado, avise a equipe de defesa e o provedor de rede. Em não anunciado, defina quem sabe e como o testador se identifica se a resposta a incidentes for acionada.
+
+**9. Registre tudo com carimbo de tempo**: comando, origem, alvo, horário, resultado. Serve ao relatório, à correlação com os logs do cliente e à sua própria defesa se algo der errado no dia.
+
+**10. Colete o mínimo.** Contagem de registros e amostra mascarada demonstram o mesmo que a base inteira, sem criar um vazamento novo.
+
+**11. Mantenha inventário de artefatos** — conta, arquivo, tarefa, chave — e confirme a remoção no relatório.
+
+**12. Mapeie cada ação a uma técnica do ATT&CK.** O custo é baixo e o relatório passa a servir diretamente à engenharia de detecção.
+
+**13. Use PTES como espinha dorsal, NIST SP 800-115 para o rigor processual e OWASP WSTG como catálogo do que testar em web.** Combinar é o normal.
+
+**14. Contrate o reteste no mesmo instrumento.** Teste sem verificação de correção mede a organização uma vez e não melhora nada.
+
+**15. Peça caixa cinza ou branca quando o objetivo for melhorar o produto.** Caixa preta responde "o que se acha rápido de fora": custa mais por achado e cobre menos.
+
+## Resumo
+
+- **Autorização escrita é a única fonte de licitude** de um teste de invasão no Brasil: não há regulamentação profissional que confira permissão, e o consentimento do titular precisa ser demonstrável em documento.
+- Varredura, teste de invasão, red team e auditoria respondem a perguntas diferentes. Contratar um esperando o outro é a causa mais comum de frustração.
+- Metodologia entrega **repetibilidade, cobertura demonstrável, defensabilidade e controle do risco do próprio teste** — inclusive o registro do que foi verificado e não apresentou falha.
+- **PTES** organiza o engajamento em fases com realimentação; **NIST SP 800-115** dá o rigor processual e o cuidado com dados; **OSSTMM** trata teste como medição e inclui os canais humano e físico; **OWASP WSTG** é o catálogo do que testar em web; **ATT&CK** é a língua comum com a defesa.
+- Caixa preta não é mais rigorosa que caixa branca — é **mais cara por achado e cobre menos**. Caixa cinza costuma dar o melhor retorno.
+- O escopo é documento: alvos enumerados, exclusões, janela, técnicas autorizadas, regras de engajamento, contatos alternativos, manuseio de evidência e critérios de parada.
+- **Encontrou indício de invasão preexistente, para.** Dali em diante é resposta a incidente, com prazos regulatórios próprios.
+- No Brasil, o art. 154-A do Código Penal, a LGPD (o testador é operador), o Marco Civil, a Lei 9.296, a Resolução BCB nº 85 e o PCI-DSS moldam simultaneamente o que se pode fazer e o que se é obrigado a fazer.

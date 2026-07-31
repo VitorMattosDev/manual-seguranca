@@ -1,3 +1,167 @@
 # Análise de vulnerabilidades {#sec-cap059}
 
-*(em elaboracao)*
+Um relatório de varredura automatizada chega com 1.847 achados. Trezentos e doze são classificados como críticos. O gestor de infraestrutura olha o número, sente o estômago afundar e faz a única coisa que a pilha de 312 itens permite fazer: nada. Paralisia por excesso é uma forma de indisponibilidade — a lista tão grande que não se sabe por onde começar é operacionalmente idêntica a não ter lista nenhuma.
+
+Três semanas depois, um teste de invasão entra no ambiente por **um** desses 312. Não o mais grave pela pontuação. O explorável: um servidor de aplicação com uma falha conhecida, exposto à internet, sem autenticação na frente e com acesso à base de clientes atrás. A pontuação dele era 8.1. Havia dezenas de 9.8 na lista, todos em sistemas internos atrás de três camadas de rede, sem exposição e sem caminho de exploração prático.
+
+Esse é o assunto do capítulo. A varredura do @sec-cap058 produz achados; a análise de vulnerabilidades os transforma em **decisão**. E a competência central aqui não é rodar o scanner — qualquer um roda. É separar o que é explorável do que é ruído, e priorizar pelo risco real em vez da pontuação nominal.
+
+## Vulnerabilidade não é exploração
+
+Três conceitos são frequentemente confundidos, e a confusão custa caro na priorização.
+
+Uma **vulnerabilidade** é uma fraqueza — uma falha de código, uma configuração incorreta, uma versão desatualizada. Uma **exploração** é a demonstração de que a fraqueza pode ser usada para produzir um efeito indevido. Um **risco** é a combinação da probabilidade de a exploração acontecer com o impacto que ela causaria (o @sec-cap006 formalizou isso).
+
+A distinção é o coração da fase. A varredura encontra vulnerabilidades por assinatura: compara a versão detectada com uma base de falhas conhecidas e reporta correspondências. Ela **não sabe** se a falha é explorável naquele contexto — se o componente vulnerável é realmente alcançável, se a configuração específica ativa a falha, se há uma mitigação compensatória na frente. É por isso que 312 críticos não são 312 problemas: muitos são fraquezas sem caminho de exploração prático, e alguns são simplesmente falsos.
+
+## As fontes de verdade
+
+A análise se apoia em três bases públicas que todo profissional precisa saber ler.
+
+**O catálogo de vulnerabilidades conhecidas** dá a cada falha divulgada um identificador único (o esquema CVE) e uma descrição. É o vocabulário comum: quando o scanner reporta um identificador, é nesse catálogo que se lê o que ele significa [@mitrecve].
+
+**O sistema de pontuação de severidade** (o CVSS) traduz as características técnicas de uma falha em um número de 0 a 10 [@cvss40]. É útil e é perigoso, pelo mesmo motivo: o número é fácil de usar e fácil de usar errado. A pontuação-base do CVSS mede a **severidade intrínseca** da falha — o quão grave ela é em abstrato, assumindo que seja explorada. Ela **não** mede a probabilidade de exploração nem o contexto do ambiente. Tratar a pontuação-base como se fosse o risco é o erro que produz os 312 críticos paralisantes. O CVSS tem grupos temporal e ambiental exatamente para corrigir isso, e quase ninguém os usa.
+
+**A probabilidade de exploração** (o modelo EPSS) preenche a lacuna que o CVSS deixa: estima, para cada falha, a probabilidade de ela ser explorada no mundo real no futuro próximo, com base em dados observados [@epss2024]. É a diferença entre "esta falha é grave se explorada" (CVSS) e "esta falha provavelmente será explorada" (EPSS). As duas perguntas são diferentes, e priorizar exige as duas.
+
+Há uma quarta fonte que domina todas as outras quando disponível: **o catálogo de vulnerabilidades sabidamente exploradas** (o modelo do KEV). É a lista das falhas para as quais há evidência de exploração ativa no mundo real [@cisakev]. Uma falha nessa lista não é uma probabilidade — é um fato. Ela pula a fila inteira, independentemente da pontuação.
+
+::: {#fig-priorizacao-vuln}
+```{.tikz}
+%%| filename: priorizacao-vuln
+%%| alt: Matriz de priorização de vulnerabilidades cruzando severidade CVSS com probabilidade de exploração, destacando a exploração ativa conhecida como prioridade máxima
+\begin{tikzpicture}[font=\footnotesize]
+  % eixos
+  \draw[->, >=stealth, thick] (-0.2,0) -- (7.2,0)
+    node[right, font=\scriptsize] {probabilidade de exploração};
+  \draw[->, >=stealth, thick] (0,-0.2) -- (0,5.0)
+    node[above, font=\scriptsize] {severidade (impacto)};
+
+  % quadrantes
+  \fill[manualred!14]    (3.5,2.5) rectangle (7.0,4.6);
+  \fill[manualyellow!16] (0,2.5)   rectangle (3.5,4.6);
+  \fill[manualyellow!12] (3.5,0)   rectangle (7.0,2.5);
+  \fill[manualgray!12]   (0,0)     rectangle (3.5,2.5);
+  \draw (0,2.5) -- (7.0,2.5);
+  \draw (3.5,0) -- (3.5,4.6);
+
+  \node[align=center, font=\tiny, manualred, text width=3.0cm] at (5.25,3.55)
+    {\textbf{CORRIGIR JÁ}\\ grave \emph{e} provável};
+  \node[align=center, font=\tiny, text width=3.0cm] at (1.75,3.55)
+    {\textbf{planejar}\\ grave, pouco provável --- \\ reavaliar se mudar};
+  \node[align=center, font=\tiny, text width=3.0cm] at (5.25,1.25)
+    {\textbf{corrigir em rotina}\\ provável, baixo impacto};
+  \node[align=center, font=\tiny, text width=3.0cm] at (1.75,1.25)
+    {\textbf{aceitar/monitorar}\\ baixo em ambos};
+
+  % KEV override
+  \node[draw=manualred, fill=manualred!22, very thick, rounded corners=3pt,
+        align=center, font=\tiny, inner sep=4pt, text width=3.4cm] (kev) at (5.25,5.5)
+    {\textbf{EXPLORAÇÃO ATIVA CONHECIDA}\\ não é probabilidade, é fato --- fura toda a fila};
+  \draw[->, >=stealth, very thick, manualred] (kev) -- (5.25,4.62);
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.4cm] at (3.5,-1.5)
+    {\textbf{A pontuação-base do CVSS é só o eixo vertical.} Usá-la sozinha coloca no
+     topo falhas gravíssimas que ninguém explora, e enterra falhas medianas sob
+     exploração ativa. Priorizar exige os dois eixos --- e o contexto do ambiente
+     (exposição, alcance, mitigação na frente) reposiciona qualquer ponto.};
+\end{tikzpicture}
+```
+A priorização real cruza severidade com probabilidade — e a exploração ativa conhecida fura toda a fila.
+:::
+
+## O que a varredura não vê
+
+Um scanner é bom no que é catalogável por assinatura e cego no resto. Saber onde ele é cego evita a falsa confiança de um relatório "limpo".
+
+**Falhas de lógica de negócio.** Um fluxo de compra que permite preço negativo, uma transferência que não valida o saldo, uma promoção acumulável indevidamente. Nada disso é uma versão desatualizada; é a aplicação funcionando exatamente como foi escrita, de um jeito que não deveria. Scanner não entende regra de negócio.
+
+**Falhas de controle de acesso.** O objeto de outro usuário acessível trocando um identificador na URL (o IDOR do @sec-cap047), a função administrativa alcançável por um usuário comum. O scanner não sabe quem *deveria* poder fazer o quê — só quem descreveu a intenção sabe.
+
+**Encadeamento.** Três fraquezas medianas que, sozinhas, seriam de baixa prioridade, mas combinadas dão acesso total. O scanner pontua cada uma isoladamente e nunca vê a cadeia. É o trabalho humano por excelência, e o assunto do @sec-cap060.
+
+**Configurações incorretas contextuais.** Uma permissão ampla demais que é aceitável em um ambiente e catastrófica em outro. O julgamento depende do contexto, que o scanner não tem.
+
+Por isso a varredura é insumo, não conclusão. Um relatório automatizado sem achados críticos significa "nenhuma falha conhecida por assinatura foi detectada" — não "o sistema é seguro". A confusão entre essas duas frases é uma das causas mais comuns de surpresa em incidente.
+
+## Validação: separar sinal de ruído
+
+O scanner reporta; o analista confirma. Esta é a etapa que distingue a análise de vulnerabilidades da mera varredura, e ela tem três resultados possíveis para cada achado.
+
+**Confirmado e explorável.** A falha existe, é alcançável e há caminho de exploração no contexto. Vai para a fila de priorização com peso máximo — e, se estiver no escopo, para a fase de exploração.
+
+**Confirmado mas não explorável no contexto.** A versão vulnerável está lá, mas o componente afetado não é alcançável, ou há uma mitigação na frente, ou a configuração específica não ativa a falha. Continua sendo dívida técnica que merece correção — a mitigação pode cair —, mas não é a emergência que a pontuação sugeria.
+
+**Falso positivo.** A detecção errou: versão mal identificada, correção retroportada que o número da versão não reflete, assinatura genérica demais. Documentar o falso positivo é tão importante quanto documentar o achado real, porque ele volta na próxima varredura e consome atenção de novo se não estiver registrado.
+
+A validação é o que permite entregar ao cliente uma lista de **doze coisas que importam** em vez de 1.847 que assustam. E a redução não é perda de rigor: é a aplicação do rigor. O relatório do @sec-cap063 vive ou morre nessa triagem.
+
+## Contextualizar é reordenar
+
+A pontuação nominal de uma falha é a mesma em qualquer lugar. O risco dela não. Contextualizar é o ato de reordenar a lista pelo risco real do ambiente específico, e ele considera:
+
+**Exposição.** A mesma falha vale coisas radicalmente diferentes num servidor voltado para a internet e num sistema interno atrás de três camadas de rede. Exposição é, quase sempre, o fator que mais reordena a lista — e foi o que colocou o 8.1 explorável da abertura à frente dos 9.8 inalcançáveis.
+
+**Alcance.** O que está atrás da falha? Um servidor com acesso à base de clientes é um alvo; o mesmo servidor isolado, sem acesso a nada de valor, é uma nota de rodapé. A segmentação do @sec-cap028 é o que muda essa conta.
+
+**Mitigações compensatórias.** Um filtro de aplicação na frente, uma autenticação forte, um monitoramento que detectaria a exploração — cada um reduz o risco efetivo sem eliminar a falha, e precisa entrar na conta.
+
+**Valor do ativo.** Nem todo sistema vale o mesmo. A falha no sistema que processa pagamento não é a falha no mural de recados interno, ainda que a pontuação técnica coincida.
+
+O produto dessa contextualização é a ponte para o capítulo seguinte: uma lista curta, ordenada por risco real, de alvos que valem a tentativa de exploração — e a justificativa de por que os outros ficaram de fora.
+
+## ⚖️ Brasil em Foco
+
+**A análise de vulnerabilidades é a espinha de um programa de conformidade, não uma etapa do teste.** A LGPD, no art. 46, exige medidas técnicas aptas a proteger dados pessoais, e a jurisprudência administrativa da ANPD tem valorizado a existência de um processo contínuo de identificação e correção de falhas. Um programa que gera 312 críticos e não trata nenhum não demonstra medida adequada — demonstra o contrário. O que a autoridade avalia não é a ausência de vulnerabilidades (impossível), e sim a existência de um processo que as prioriza e corrige com critério [@lgpd2018].
+
+**Varredura periódica é obrigação explícita em setores regulados.** O PCI-DSS v4 (Requisitos 11.2 e 11.3) exige varredura interna e externa trimestral, com correção das falhas de maior severidade e nova varredura para comprovar; a varredura externa precisa ser feita por fornecedor aprovado. A Resolução BCB nº 85 impõe avaliação periódica de vulnerabilidades com plano de ação registrado. Para esses setores, a análise não é opcional e a evidência é auditada [@pcidss4; @bcb85].
+
+**O prazo de correção conversa com o prazo de incidente.** Uma falha conhecida e não corrigida que vira porta de entrada de um vazamento agrava a posição do controlador: fica difícil sustentar que se adotaram medidas adequadas quando a falha estava catalogada, pontuada e ignorada. A Resolução CD/ANPD nº 15/2024 exige descrever, na comunicação de incidente, as medidas de segurança adotadas — e "a falha estava na lista havia seis meses" é o oposto do que se quer relatar [@anpd2024res15; @lgpd2018].
+
+**O CERT.br mantém o canal nacional de divulgação e resposta.** A coordenação de tratamento de incidentes e a divulgação responsável de vulnerabilidades no Brasil passam pelo CERT.br, e há norma técnica internacional (ISO/IEC 29147 e 30111) que orienta divulgação e tratamento. Para quem encontra uma falha em produto de terceiro durante um teste, o caminho é a divulgação coordenada, não a publicação imediata — e o contrato do @sec-cap056 deve prever essa hipótese [@cert2024praticas; @iso29147; @iso30111].
+
+**Órgãos públicos têm dever reforçado de gestão de vulnerabilidades.** A Instrução Normativa GSI/PR nº 5 e a Estratégia Nacional de Segurança Cibernética estabelecem requisitos de identificação e correção contínua de vulnerabilidades na administração federal. Para o setor público, o programa de gestão de vulnerabilidades do @sec-cap039 deixou de ser recomendação e passou a ser exigência normativa [@ingsi5; @decreto10222].
+
+## 🛠️ No Campo
+
+**1. Nunca entregue a lista bruta do scanner.** 1.847 achados é ruído. Doze validados e contextualizados é decisão. A triagem é o serviço, não a varredura.
+
+**2. Priorize pelo risco, não pela pontuação.** Cruze severidade com probabilidade de exploração e ajuste pelo contexto. A pontuação-base do CVSS é um eixo, não a resposta.
+
+**3. Trate a exploração ativa conhecida como prioridade absoluta.** Falha com exploração confirmada no mundo real fura toda a fila, qualquer que seja a pontuação.
+
+**4. Contextualize por exposição primeiro.** A falha voltada para a internet quase sempre vale mais que a interna com pontuação maior. Exposição é o fator que mais reordena a lista.
+
+**5. Considere o alcance.** Pergunte o que está atrás da falha. Segmentação que limita o alcance muda a prioridade real, mesmo sem corrigir a falha.
+
+**6. Valide antes de reportar.** Confirmado e explorável, confirmado mas não explorável, ou falso positivo. Cada achado precisa de um desses três rótulos.
+
+**7. Documente os falsos positivos.** Eles voltam na próxima varredura. Sem registro, consomem a mesma atenção de novo.
+
+**8. Não confunda "sem críticos" com "seguro".** O scanner é cego para lógica de negócio, controle de acesso, encadeamento e configuração contextual. Relatório limpo é ausência de falha conhecida por assinatura, nada mais.
+
+**9. Procure o encadeamento.** Três medianas combinadas podem valer mais que uma crítica isolada. É o trabalho que o scanner nunca faz.
+
+**10. Estabeleça prazos de correção por severidade contextualizada**, e meça o cumprimento. Programa sem prazo é lista que só cresce.
+
+**11. Faça varredura autenticada quando possível.** Ver o sistema de dentro, com credencial, encontra o que a varredura externa não alcança e reduz o falso positivo.
+
+**12. Feche o ciclo com nova varredura.** Correção sem verificação é esperança. A revalidação é o que fecha o achado.
+
+**13. Alimente a priorização com a exposição real do @sec-cap057.** A gestão de superfície externa e a análise de vulnerabilidades são o mesmo programa visto de dois ângulos.
+
+**14. Divulgue falha de terceiro de forma coordenada.** Achou vulnerabilidade em produto de fornecedor? CERT.br e divulgação responsável, não publicação imediata.
+
+**15. Guarde a justificativa do que não foi priorizado.** "Não tratamos porque está isolado e sem alcance" é uma decisão defensável — desde que registrada.
+
+## Resumo
+
+- A varredura produz achados; a análise de vulnerabilidades os transforma em **decisão**. A competência central é separar o explorável do ruído e priorizar pelo risco real.
+- **Vulnerabilidade não é exploração não é risco:** fraqueza, demonstração de uso indevido e a combinação de probabilidade com impacto são coisas distintas. Confundi-las produz os "312 críticos" paralisantes.
+- As fontes de verdade: o catálogo de falhas conhecidas (vocabulário), o CVSS (severidade intrínseca, **não** probabilidade), o EPSS (probabilidade de exploração) e o catálogo de exploração ativa — que, quando presente, fura toda a fila.
+- Usar a pontuação-base do CVSS como se fosse o risco é o erro central: ela é só o eixo de impacto. Priorizar exige cruzá-la com a probabilidade e ajustar pelo contexto.
+- O scanner é cego para **lógica de negócio, controle de acesso, encadeamento e configuração contextual**. "Sem críticos" significa "nenhuma falha conhecida por assinatura", não "seguro".
+- A validação rotula cada achado como confirmado e explorável, confirmado mas não explorável, ou falso positivo — e é ela que reduz 1.847 assustadores a doze que importam.
+- **Contextualizar é reordenar** pelo risco do ambiente: exposição (o fator dominante), alcance, mitigações compensatórias e valor do ativo.
+- No Brasil, a análise contínua é a espinha de um programa de conformidade (art. 46 da LGPD), obrigação explícita no PCI-DSS e na Resolução BCB nº 85, e exigência normativa no setor público — e falha catalogada e ignorada agrava a posição do controlador num incidente.

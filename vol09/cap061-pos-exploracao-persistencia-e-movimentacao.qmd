@@ -1,3 +1,201 @@
 # Pós-exploração, persistência e movimentação lateral {#sec-cap061}
 
-*(em elaboracao)*
+O primeiro acesso quase nunca é o objetivo. Um adversário que compromete a estação de um funcionário de atendimento não conseguiu quase nada: aquela máquina não guarda a base de clientes, não move dinheiro, não controla o domínio. O valor está em outro lugar, e o comprometimento inicial é apenas o ponto de entrada. **O dano real de um incidente se decide no que acontece depois da porta — na capacidade do adversário de manter o acesso, entender onde está e caminhar até o que importa.**
+
+Esse intervalo entre a entrada e o objetivo é onde a defesa tem mais chances e costuma usá-las mal. O tempo médio entre o comprometimento inicial e o alcance do alvo crítico — o que os defensores chamam de tempo de permanência — é, em incidentes reais, frequentemente medido em dias ou semanas. É uma janela enorme de oportunidade de detecção, e a maioria das organizações a desperdiça porque concentra toda a atenção no perímetro e quase nenhuma no movimento interno.
+
+Este capítulo, como o anterior, é conceitual e defensivo. Descreve **o que** o adversário faz depois de entrar e **por que**, para que o defensor saiba onde olhar. Não traz procedimento operacional de ataque contra sistemas reais. O objetivo é que o leitor termine sabendo caçar exatamente estes comportamentos.
+
+## As três perguntas da pós-exploração
+
+Assim que obtém acesso, o adversário — e o testador que o emula dentro do escopo — responde a três perguntas, nesta ordem.
+
+**Onde eu estou?** Que máquina é esta, com que privilégio eu entrei, em que rede ela vive, o que ela alcança. É a orientação inicial, feita de preferência com as ferramentas que já existem no sistema, para não chamar atenção. Um adversário cuidadoso passa mais tempo entendendo o ambiente do que agindo nele.
+
+**Como eu continuo aqui?** O acesso inicial é frágil: a sessão cai, a máquina reinicia, a senha muda. Persistência é o conjunto de mecanismos para sobreviver a esses eventos. É também o comportamento mais detectável do adversário, porque persistir significa **modificar o sistema** — e modificação é o que o monitoramento de integridade percebe.
+
+**Para onde eu vou?** O alvo raramente é a primeira máquina. Movimentação lateral é o deslocamento do ponto de entrada até o objetivo, e escalonamento de privilégio é a obtenção do poder necessário para isso. É aqui que se decide o desfecho.
+
+::: {#fig-pos-exploracao}
+```{.tikz}
+%%| filename: pos-exploracao
+%%| alt: Ciclo da pós-exploração com orientação, escalonamento de privilégio, persistência e movimentação lateral, e as oportunidades de detecção em cada etapa
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=2.7cm, minimum height=1.0cm}}
+
+  \node[et, draw=manualred, fill=manualred!14, very thick] (entrada) at (-5.4,1.4)
+    {\textbf{Acesso inicial}\\ estação comum,\\ privilégio baixo};
+  \node[et, draw=manualblue, fill=manualblue!13] (orient) at (-2.2,2.6)
+    {\textbf{Orientação}\\ onde estou,\\ o que alcanço};
+  \node[et, draw=manualyellow, fill=manualyellow!16] (esc) at (1.0,2.6)
+    {\textbf{Escalonamento}\\ mais privilégio\\ nesta máquina};
+  \node[et, draw=manualyellow, fill=manualyellow!16] (pers) at (-2.2,0.2)
+    {\textbf{Persistência}\\ sobreviver a\\ reinício e troca};
+  \node[et, draw=manualyellow, fill=manualyellow!16] (lat) at (1.0,0.2)
+    {\textbf{Movimentação}\\ lateral\\ rumo ao alvo};
+  \node[et, draw=manualred, fill=manualred!16, very thick] (alvo) at (4.4,1.4)
+    {\textbf{OBJETIVO}\\ base, dinheiro,\\ domínio};
+
+  \draw[->, >=stealth, thick, manualgray] (entrada) -- (orient);
+  \draw[->, >=stealth, thick, manualgray] (orient) -- (esc);
+  \draw[->, >=stealth, thick, manualgray] (orient) -- (pers);
+  \draw[->, >=stealth, thick, manualgray] (esc) -- (lat);
+  \draw[->, >=stealth, thick, manualgray] (pers) -- (lat);
+  \draw[->, >=stealth, thick, manualred] (lat) -- (alvo);
+  \draw[->, >=stealth, thick, manualblue, dashed] (lat) to[out=150,in=-90] (orient);
+
+  \node[draw=manualgreen, fill=manualgreen!12, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.6cm] at (-0.4,-1.4)
+    {\textbf{Tempo de permanência: dias a semanas entre a entrada e o objetivo.} Cada
+     seta é uma oportunidade de detecção que a maioria das organizações desperdiça por
+     olhar só o perímetro. Persistência \emph{modifica} o sistema; movimentação lateral
+     \emph{usa credencial e rede} --- os dois deixam rastro para quem monitora o interior.};
+\end{tikzpicture}
+```
+O ciclo da pós-exploração. O intervalo entre a entrada e o objetivo é a maior janela de detecção de um incidente.
+:::
+
+## Escalonamento de privilégio
+
+Entrar com privilégio baixo é o normal. Escalonar é obter o poder que o objetivo exige, e há duas direções.
+
+**Escalonamento vertical** é ganhar mais privilégio na mesma máquina: de usuário comum a administrador. As causas são quase sempre higiene ausente, não magia — um serviço rodando com privilégio excessivo, uma permissão de arquivo frouxa, uma tarefa agendada gravável por qualquer um, uma falha de componente do sistema sem correção, uma credencial administrativa deixada em texto claro. O @sec-cap011 e os capítulos de hardening do Volume 6 descreveram exatamente as condições que fecham essas portas.
+
+**Escalonamento horizontal** é assumir a identidade de outro usuário de mesmo nível — útil quando o alvo é acessível por uma conta específica que não a comprometida. Frequentemente se apoia em reuso de credencial ou em token de sessão acessível.
+
+A contramedida de fundo é o **privilégio mínimo** do @sec-cap022, aplicado de verdade: serviços com a menor permissão possível, contas administrativas separadas das de uso diário, nenhuma credencial em texto claro, permissões de arquivo revisadas. Escalonamento é, na esmagadora maioria dos casos, a exploração de folga de privilégio que não precisava existir.
+
+## Persistência: o comportamento mais detectável
+
+Para sobreviver a reinícios e trocas de senha, o adversário instala mecanismos que reativam o acesso. Todos compartilham uma característica que é a melhor amiga do defensor: **persistir exige modificar o sistema de forma que fica registrada**.
+
+As formas conceituais são conhecidas: um programa configurado para iniciar junto com o sistema; uma tarefa agendada que reabre o canal periodicamente; uma conta nova ou uma credencial adicional anexada a uma conta existente; uma chave de acesso inserida onde autentica sem senha; a alteração de um componente legítimo para carregar código extra. Em ambientes de identidade federada e nuvem, a persistência moderna é ainda mais silenciosa: um token de longa duração emitido, uma aplicação registrada com permissão ampla, uma relação de confiança adicionada — persistência sem tocar em nenhum servidor, tema que o Volume 8 antecipou.
+
+O ponto defensivo é direto: **cada uma dessas ações é uma modificação observável**. Conta criada, tarefa agendada nova, chave de autenticação inserida, aplicação registrada, confiança adicionada — tudo isso é evento que um monitoramento adequado (Volume 12) captura. A persistência é, paradoxalmente, o momento em que o adversário mais se expõe. Organizações que monitoram criação de conta, alteração de mecanismos de inicialização e emissão de token de longa duração pegam o incidente exatamente aqui.
+
+## Movimentação lateral: a credencial é o veículo
+
+Chegar do ponto de entrada ao alvo raramente envolve novas explorações de software. Envolve, quase sempre, **credenciais válidas** — obtidas na máquina comprometida e reutilizadas para acessar a próxima. Este é o insight central da defesa moderna: a movimentação lateral é um problema de identidade antes de ser um problema de rede.
+
+O padrão conceitual é consistente. Na máquina comprometida, o adversário procura material de autenticação deixado em memória, em cache, em arquivo de configuração ou em disco: senhas, tokens de sessão, chaves, tíquetes de autenticação. Com esse material, autentica-se em outra máquina como um usuário legítimo — e, do ponto de vista do sistema de destino, **é** um acesso legítimo, com credencial válida, o que o torna difícil de distinguir de atividade normal. O tema aparece com força em ambientes de diretório corporativo, onde uma credencial administrativa reutilizada pode alcançar centenas de máquinas, e foi por isso que o @sec-cap013 e o @sec-cap037 insistiram tanto em contas administrativas separadas e em tiers de administração.
+
+As contramedidas formam um conjunto coerente, todas já introduzidas no livro:
+
+- **Segmentação** (@sec-cap028): a movimentação lateral só alcança o que a rede permite alcançar. Rede plana é a condição que a torna trivial.
+- **Contas administrativas em camadas**: a credencial de alto privilégio nunca toca a estação comum, então comprometer a estação não entrega o reino.
+- **Ausência de credencial reutilizável em cache**: reduzir o material de autenticação recuperável na máquina remove o combustível.
+- **Autenticação forte e por acesso** (a lógica Zero Trust do @sec-cap027): cada acesso é reverificado, e a credencial roubada não basta sozinha.
+- **Detecção de uso anômalo de credencial**: a mesma conta autenticando em máquinas que nunca visitou, em horário atípico, a partir de origem nova — o sinal que o Volume 12 aprende a caçar.
+
+::: {#fig-lateral-credencial}
+```{.tikz}
+%%| filename: lateral-credencial
+%%| alt: Movimentação lateral por reuso de credencial válida da máquina comprometida para a próxima, e as camadas de contenção que a interrompem
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    maq/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                inner sep=4pt, minimum width=2.2cm, minimum height=0.9cm}}
+
+  \node[maq, draw=manualred, fill=manualred!14] (m1) at (-5.0,1.8)
+    {\textbf{estação}\\ comprometida};
+  \node[maq, draw=manualgray, fill=manualgray!12] (m2) at (-1.6,1.8)
+    {servidor de\\ arquivos};
+  \node[maq, draw=manualgray, fill=manualgray!12] (m3) at (1.8,1.8)
+    {servidor de\\ aplicação};
+  \node[maq, draw=manualred, fill=manualred!16, very thick] (m4) at (5.2,1.8)
+    {\textbf{alvo}\\ base / domínio};
+
+  \draw[->, >=stealth, thick, manualred] (m1) -- (m2)
+    node[midway, above, font=\tiny, manualred] {credencial};
+  \draw[->, >=stealth, thick, manualred] (m2) -- (m3)
+    node[midway, above, font=\tiny, manualred] {reusada};
+  \draw[->, >=stealth, thick, manualred] (m3) -- (m4)
+    node[midway, above, font=\tiny, manualred] {válida};
+
+  \node[align=center, font=\tiny, text width=10.6cm, manualgray] at (0,0.8)
+    {do ponto de vista de cada destino, é um acesso \textbf{legítimo} --- credencial
+     válida, difícil de distinguir de atividade normal};
+
+  \foreach \x/\lbl in {-3.3/{segmentação}, 0.1/{conta em\\ camadas}, 3.5/{Zero Trust +\\ detecção}}
+    {\draw[dashed, very thick, manualgreen] (\x,-0.3) -- (\x,2.6);
+     \node[manualgreen, font=\tiny, align=center, fill=white, inner sep=1pt] at (\x,-0.55) {\lbl};}
+
+  \node[draw=manualgreen, fill=manualgreen!12, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.4cm] at (0,-1.7)
+    {\textbf{A movimentação lateral é um problema de identidade antes de ser de rede.}
+     O veículo é a credencial válida roubada da máquina anterior. As defesas atacam o
+     veículo: segmentar o alcance, manter a credencial de alto privilégio longe da
+     estação, reverificar cada acesso e caçar o uso anômalo de conta.};
+\end{tikzpicture}
+```
+A movimentação lateral por reuso de credencial e as camadas que a contêm. O adversário caminha com contas válidas, não com novas explorações.
+:::
+
+## Exfiltração e o objetivo final
+
+Alcançado o alvo, o adversário age conforme sua motivação — leva dados, cifra para resgate (o ransomware, tema do Volume 11), frauda uma transação. A exfiltração de dados costuma se disfarçar de tráfego normal: sai por canais que a organização usa o tempo todo, em volume dividido para não chamar atenção, muitas vezes cifrada. A defesa aqui é a detecção de padrão anômalo de saída e a prevenção de perda de dados, mas a verdade incômoda é que **quem chegou até aqui já venceu na maior parte**; a defesa eficaz age muito antes, nas etapas anteriores.
+
+No teste profissional, esta etapa é onde a disciplina de escopo do @sec-cap056 é mais crítica. Demonstrar que a exfiltração é possível **não** é exfiltrar. A prova correta é mostrar o caminho e uma amostra mínima e mascarada — nunca a extração real da base, que transformaria o teste no incidente que ele deveria prevenir.
+
+## O elo com a defesa: cada fase é uma chance
+
+A mensagem que atravessa o capítulo: o incidente não é um instante, é uma **campanha com etapas**, e cada etapa é uma oportunidade de detecção e contenção que a organização focada só no perímetro joga fora.
+
+Isso reformula o objetivo defensivo. Não se trata (só) de impedir a entrada — entrada acontece. Trata-se de **reduzir o que o adversário consegue fazer depois de entrar**: limitar o alcance com segmentação, encarecer o escalonamento com privilégio mínimo, tornar a persistência visível com monitoramento de integridade, quebrar a movimentação lateral com identidade em camadas e Zero Trust, e caçar ativamente os sinais em cada fase. É a lógica de "assumir o comprometimento" que o @sec-cap027 introduziu, e é a ponte direta para o threat hunting do Volume 12. O teste de invasão que percorre essas fases de forma controlada é o ensaio que revela quais oportunidades a organização está desperdiçando.
+
+## ⚖️ Brasil em Foco
+
+**Cada etapa da pós-exploração aprofunda a conduta do art. 154-A do Código Penal.** Manter acesso, escalar privilégio e mover-se lateralmente são, isoladamente, acessos não autorizados adicionais, e a persistência instalada aproxima-se da instalação de vulnerabilidade prevista no tipo. No teste profissional, tudo isso só é lícito dentro do escopo e da autorização; e a movimentação lateral que alcança sistema não previsto é a situação clássica de saída de escopo — parar e pedir extensão por escrito é a regra que mantém a atividade lícita [@lei12737; @lei14155].
+
+**Persistência e artefatos deixados são responsabilidade contratual e penal.** Uma conta criada, uma tarefa agendada ou uma chave inserida durante o teste e **esquecida** é uma porta que o testador abriu e não fechou — potencial responsabilidade civil se explorada por terceiro, e o oposto do dever de cuidado. O inventário de limpeza do @sec-cap056, com confirmação de remoção no relatório, é a proteção jurídica das duas partes [@lei12737].
+
+**A LGPD alcança a exfiltração demonstrativa.** Ao mover-se lateralmente e alcançar dados pessoais, o testador é operador e responde pelos princípios do art. 6º e pela segurança do art. 46. Exfiltrar de fato, ainda que "só para provar", é tratamento excessivo e pode configurar o próprio incidente de segurança, com o rito de comunicação da Resolução CD/ANPD nº 15/2024. A demonstração correta é o caminho e a amostra mínima mascarada [@lgpd2018; @anpd2024res15].
+
+**O tempo de permanência tem tradução regulatória direta.** A capacidade de reconstruir o que o adversário fez entre a entrada e o objetivo depende de registros de acesso e de autenticação — os mesmos que o Marco Civil (arts. 13 e 15) obriga provedores a guardar e que a resposta a incidentes exige. Organização sem esses registros não consegue nem cumprir o dever de informar com precisão o que foi afetado, nem sustentar que adotou medidas adequadas [@marcocivil2014; @anpd2024res15].
+
+**Setores regulados exigem controles que atacam exatamente estas fases.** A Resolução BCB nº 85 e o PCI-DSS v4 exigem segmentação, privilégio mínimo, gestão de contas privilegiadas e monitoramento — controles cujo propósito explícito é limitar movimentação lateral e escalonamento. Um teste que demonstre movimentação lateral trivial em ambiente regulado aponta descumprimento de requisito, não apenas fragilidade técnica [@bcb85; @pcidss4].
+
+## 🛠️ No Campo
+
+**1. Assuma o comprometimento e projete para o depois.** A pergunta não é só "como impedir a entrada", mas "o que o adversário consegue fazer depois de entrar". Essa mudança de foco reordena todo o investimento.
+
+**2. Segmente para conter o alcance.** Rede plana torna a movimentação lateral trivial. A segmentação é a contramedida de maior efeito contra a fase mais decisiva do incidente.
+
+**3. Ponha as credenciais administrativas em camadas.** A credencial de alto privilégio nunca deve tocar a estação comum. Comprometer a estação não pode entregar o domínio.
+
+**4. Aplique privilégio mínimo de verdade.** Serviço com a menor permissão, conta administrativa separada da de uso diário, nenhuma credencial em texto claro. Escalonamento é folga de privilégio explorada.
+
+**5. Reduza a credencial reutilizável em cache.** Menos material de autenticação recuperável na máquina significa menos combustível para a movimentação lateral.
+
+**6. Monitore as modificações que a persistência exige.** Criação de conta, novo mecanismo de inicialização, tarefa agendada nova, chave de autenticação inserida, aplicação registrada, confiança adicionada. É onde o adversário mais se expõe.
+
+**7. Vigie a persistência na nuvem e na identidade.** Token de longa duração, aplicação com permissão ampla, relação de confiança nova — persistência que não toca servidor nenhum e passa despercebida sem monitoramento específico.
+
+**8. Cace o uso anômalo de credencial.** Mesma conta em máquinas que nunca visitou, horário atípico, origem nova. É a assinatura da movimentação lateral por credencial válida.
+
+**9. Aplique a lógica Zero Trust ao acesso interno.** Reverificar cada acesso faz a credencial roubada não bastar sozinha — ataca o veículo da movimentação lateral.
+
+**10. Garanta registros de acesso e autenticação suficientes.** Sem eles não há reconstrução do tempo de permanência, nem cumprimento do dever de informar o que foi afetado.
+
+**11. Detecte exfiltração por anomalia de saída**, sabendo que quem chegou aqui já venceu na maior parte. A defesa eficaz age nas etapas anteriores.
+
+**12. No teste, nunca exfiltre de verdade.** Caminho demonstrado e amostra mínima mascarada provam o achado. Extração real é o incidente que o teste deveria prevenir.
+
+**13. Mantenha inventário de tudo que o teste criou** — conta, tarefa, chave, token — e confirme a remoção no relatório. Artefato esquecido é porta aberta com o seu nome.
+
+**14. Não saia do escopo por movimentação lateral.** Alcançou sistema não previsto? Pare, registre, peça extensão. É a fronteira da lei.
+
+**15. Trate cada fase como oportunidade de detecção e meça-a.** O teste que percorre orientação, escalonamento, persistência e movimentação lateral revela quais chances a organização está desperdiçando — e essa é a maior entrega defensiva do engajamento.
+
+## Resumo
+
+- O primeiro acesso quase nunca é o objetivo: **o dano se decide no que acontece depois da porta** — persistência, escalonamento e movimentação até o alvo.
+- O tempo de permanência entre a entrada e o objetivo é de dias a semanas — uma **janela enorme de detecção** que a organização focada no perímetro desperdiça.
+- O escalonamento de privilégio é quase sempre exploração de **folga de privilégio que não precisava existir**; a contramedida de fundo é o privilégio mínimo aplicado de verdade.
+- A persistência é o comportamento **mais detectável** do adversário, porque persistir exige modificar o sistema de forma registrada: conta criada, tarefa nova, chave inserida, token emitido, confiança adicionada.
+- **A movimentação lateral é um problema de identidade antes de rede:** o veículo é a credencial válida roubada da máquina anterior, e do ponto de vista do destino ela é um acesso legítimo.
+- As contramedidas formam um conjunto coerente: segmentação (limita alcance), contas administrativas em camadas (mantêm o alto privilégio longe da estação), redução de credencial em cache, Zero Trust (reverifica cada acesso) e detecção de uso anômalo.
+- **Exfiltrar não é o mesmo que demonstrar exfiltração:** no teste, a prova é o caminho e a amostra mínima mascarada, nunca a extração real.
+- O incidente é uma **campanha com etapas**, e cada etapa é uma chance de detectar e conter — a lógica de assumir o comprometimento e a ponte direta para o threat hunting dos volumes defensivos.

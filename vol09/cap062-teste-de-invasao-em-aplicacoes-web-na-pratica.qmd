@@ -1,3 +1,165 @@
 # Teste de invasão em aplicações web na prática {#sec-cap062}
 
-*(em elaboracao)*
+Uma aplicação web é o alvo mais comum de um teste de invasão, por um motivo simples: é a parte da organização que fica, por projeto, exposta à internet inteira. O firewall protege a rede, o hardening protege o servidor, mas a aplicação web **precisa** aceitar requisições de qualquer pessoa para funcionar. Ela é a porta que não pode ser trancada, só bem-feita.
+
+Este capítulo é a convergência prática do volume. O Volume 7 dissecou as classes de falha de aplicação — injeção, cross-site scripting, falhas de autenticação e de controle de acesso; os capítulos anteriores deste volume deram o método. Aqui as duas linhas se encontram: como conduzir um teste de aplicação web de ponta a ponta, com a mesma disciplina de escopo, evidência e comunicação, e usando o catálogo do OWASP WSTG como espinha dorsal do que verificar [@owaspwstg]. Segue a regra editorial do volume: conceito e método para defender, não receita de ataque contra sistemas reais.
+
+## Mapeamento: entender a aplicação antes de testá-la
+
+O erro do iniciante é começar a testar antes de entender. O profissional gasta a primeira parte do tempo **mapeando** — construindo um modelo de como a aplicação funciona —, porque é impossível testar bem o que não se compreende.
+
+O mapeamento responde a um conjunto de perguntas:
+
+**Qual é a superfície?** Todas as páginas, todos os pontos de entrada, todos os parâmetros. Isso inclui o que não está no menu: endpoints de API que a interface consome, funções administrativas, fluxos alternativos, versões antigas ainda acessíveis. A superfície real é sempre maior que a superfície visível.
+
+**Como funcionam a autenticação e a sessão?** Onde se entra, como a identidade é mantida entre requisições, como se sai, o que acontece com o token. Esta é a espinha de segurança de qualquer aplicação e o alvo do @sec-cap046.
+
+**Quais papéis existem e o que cada um pode fazer?** Usuário anônimo, usuário comum, usuário privilegiado, administrador. O mapa de quem-pode-o-quê é a base para testar controle de acesso, e quase sempre revela inconsistências só de ser desenhado.
+
+**Que tecnologias sustentam a aplicação?** Estrutura de desenvolvimento, servidor, banco, componentes de terceiros. Cada tecnologia traz seu repertório de falhas típicas e de configurações incorretas comuns.
+
+**Como os dados fluem?** Onde entram, como são processados, onde são armazenados, para onde vão. O fluxo de dados é o que revela onde a validação deveria estar — e, portanto, onde ela pode faltar.
+
+O produto do mapeamento é um modelo da aplicação que transforma o teste de tentativa aleatória em verificação sistemática, categoria por categoria do WSTG.
+
+## As categorias de teste que produzem os achados
+
+O WSTG organiza a verificação em categorias; na prática, um punhado delas concentra a maioria dos achados de impacto. Cada uma foi tratada em profundidade no Volume 7 — aqui o foco é o que verificar e como saber que se verificou.
+
+**Configuração e implantação.** Antes de qualquer falha de código: arquivos expostos que não deveriam existir na produção (backups, configuração, documentação de API, painéis), cabeçalhos de segurança ausentes, mensagens de erro que revelam a pilha, versões de teste acessíveis, credenciais padrão. É frequentemente onde estão os achados mais fáceis e mais graves, e o scanner do @sec-cap059 ajuda muito aqui.
+
+**Gestão de identidade e autenticação.** A convenção de usuário é adivinhável? O fluxo de redefinição de senha é seguro? Há bloqueio contra tentativas repetidas? O segundo fator pode ser contornado? A sessão expira? O token é imprevisível e invalidado na saída? São as perguntas do @sec-cap046, aplicadas uma a uma.
+
+**Autorização.** A categoria de maior retorno e a que o scanner não cobre. As verificações centrais: um usuário comum alcança função administrativa? O objeto de outro usuário é acessível trocando um identificador (o IDOR do @sec-cap047)? Há caminho para escalonar privilégio? A resposta correta é sempre a mesma — autorização verificada no servidor, para cada objeto e ação, com negação por padrão.
+
+**Validação de entrada.** O guarda-chuva da injeção (SQL, comandos, diretório) e do cross-site scripting. O teste confirma se dado do usuário pode virar instrução — a raiz comum do @sec-cap060 — e a defesa é a separação estrutural, não a filtragem.
+
+**Lógica de negócio.** A categoria que exige mais talento e menos ferramenta, porque depende de entender a intenção da aplicação. Um fluxo de compra que aceita quantidade negativa, um cupom acumulável indevidamente, uma etapa de um processo pulável, uma corrida entre duas requisições simultâneas. Nenhum scanner encontra isso; só quem entendeu o negócio encontra.
+
+**Manipulação do lado do cliente.** Lógica sensível que roda no navegador e pode ser alterada, dados confiados do lado do cliente, comunicação insegura entre componentes, o cross-site scripting baseado no navegador. O princípio do @sec-cap045: **nunca confiar no cliente**.
+
+::: {#fig-fluxo-web}
+```{.tikz}
+%%| filename: fluxo-web
+%%| alt: Fluxo de um teste de aplicação web do mapeamento às categorias de verificação do WSTG até a validação e o relatório, com o loop de reteste
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=2.5cm, minimum height=1.0cm},
+    cat/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                inner sep=3pt, minimum width=2.7cm, minimum height=0.62cm}}
+
+  \node[et, draw=manualblue, fill=manualblue!14, very thick] (map) at (-5.2,1.4)
+    {\textbf{Mapeamento}\\ superfície, papéis,\\ tecnologias, fluxo};
+
+  \node[cat, draw=manualyellow, fill=manualyellow!16] (c1) at (-1.4,3.3) {configuração e implantação};
+  \node[cat, draw=manualyellow, fill=manualyellow!16] (c2) at (-1.4,2.5) {identidade e autenticação};
+  \node[cat, draw=manualred,    fill=manualred!14]    (c3) at (-1.4,1.7) {\textbf{autorização} (IDOR, escalonamento)};
+  \node[cat, draw=manualyellow, fill=manualyellow!16] (c4) at (-1.4,0.9) {validação de entrada};
+  \node[cat, draw=manualred,    fill=manualred!14]    (c5) at (-1.4,0.1) {\textbf{lógica de negócio}};
+  \node[cat, draw=manualyellow, fill=manualyellow!16] (c6) at (-1.4,-0.7) {lado do cliente};
+
+  \node[et, draw=manualgray, fill=manualgray!13] (val) at (2.8,1.4)
+    {\textbf{Validação}\\ confirmar, medir\\ impacto, evidência};
+  \node[et, draw=manualgreen, fill=manualgreen!14, very thick] (rel) at (5.6,1.4)
+    {\textbf{Relatório}\\ achado, risco,\\ correção};
+
+  \draw[->, >=stealth, thick, manualblue] (map.east) -- (-2.85,1.4);
+  \foreach \c in {c1,c2,c3,c4,c5,c6}
+    {\draw[->, >=stealth, thick, manualgray] (\c.east) -- (val.west);}
+  \draw[->, >=stealth, thick, manualgreen] (val) -- (rel);
+  \draw[->, >=stealth, thick, manualblue, dashed] (rel.south) to[out=-90,in=-90]
+    node[midway, below, font=\tiny, manualblue] {reteste} (map.south);
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=4pt, font=\tiny, text width=11.8cm] at (0.4,-2.0)
+    {\textbf{As duas categorias em vermelho --- autorização e lógica de negócio --- são
+     as que o scanner não vê e as de maior retorno.} Dependem de entender papéis e
+     intenção da aplicação, e é por elas que o teste humano supera a varredura.};
+\end{tikzpicture}
+```
+O fluxo de um teste de aplicação web. O mapeamento vem primeiro; as categorias que o scanner não cobre são as que mais rendem.
+:::
+
+## As ferramentas, no lugar certo
+
+Ferramenta de teste web é auxiliar, não protagonista, e entender o papel de cada tipo evita a dependência que empobrece o teste.
+
+O **proxy de interceptação** é a ferramenta central: posiciona-se entre o navegador e a aplicação, permitindo ver e modificar cada requisição. É o microscópio do testador web — mostra o que realmente trafega, por baixo da interface. **O scanner automatizado** cobre a parte mecânica: rastreia a aplicação, testa padrões conhecidos, encontra o de sempre. É excelente para configuração e injeção óbvia, inútil para autorização e lógica de negócio. Ferramentas de **enumeração de conteúdo** descobrem caminhos não listados. E há utilitários para tarefas específicas — decodificação, análise de token, geração de carga.
+
+O ponto que separa o profissional: **as ferramentas encontram o catalogável; o humano encontra o que importa**. A autorização quebrada e a falha de lógica de negócio — os dois achados de maior valor — vêm do raciocínio sobre a aplicação, não do scanner. Testador que só roda ferramenta entrega o que a ferramenta entregaria sozinha, e o cliente não precisava dele para isso.
+
+## Validação, evidência e a disciplina de sempre
+
+As regras do volume valem integralmente na aplicação web, e algumas ganham nuance própria.
+
+**Objetivo mínimo.** Confirmar a injeção lendo a versão do banco encerra o achado; despejar a base é o vazamento com boa intenção do @sec-cap056. Provar o IDOR acessando **um** registro de teste combinado é suficiente; iterar sobre todos os clientes é criar o incidente.
+
+**Evidência reproduzível.** Cada achado precisa da requisição exata, da resposta, do carimbo de tempo e de um passo a passo que o desenvolvedor consiga repetir para confirmar e depois para validar a correção. Evidência que não reproduz é alegação, e o @sec-cap063 mostra por que isso derruba a credibilidade do relatório inteiro.
+
+**Cuidado com produção.** Testar aplicação em produção mexe em dados reais. Ações que criam, alteram ou apagam registros precisam de cautela redobrada e, idealmente, de ambiente de homologação equivalente. Quando o teste é em produção mesmo, o critério de parada do @sec-cap056 — indisponibilidade, dado sensível além do necessário — é a rede de proteção.
+
+**Dados pessoais.** Aplicação web quase sempre processa dados pessoais. Alcançá-los durante o teste aciona o dever de minimização: amostra mínima, mascarada, guarda cifrada, eliminação comprovada.
+
+## Do achado à correção: onde o teste vira valor
+
+Um teste de aplicação web só gera valor quando os achados viram correção, e a correção volta ao ciclo de desenvolvimento seguro do @sec-cap042. O testador competente não entrega só "existe IDOR no endpoint X"; entrega o **padrão** por trás do achado — "a autorização não é verificada no servidor para objetos deste tipo" — porque é o padrão, não a instância, que a equipe precisa corrigir de forma estrutural. Corrigir a instância deixa as outras vinte ocorrências do mesmo padrão intactas.
+
+Isso conecta o teste ao resto do programa de segurança de aplicações: o achado de teste alimenta a regra de análise estática do @sec-cap049, o padrão vira item de revisão de código, a categoria vira treinamento de desenvolvedor. O teste é o ponto mais tardio e mais caro de encontrar uma falha — seu maior valor é ensinar o programa a encontrar aquela classe mais cedo.
+
+## ⚖️ Brasil em Foco
+
+**Aplicação web é onde a maioria dos vazamentos de dados pessoais brasileiros acontece.** Injeção, controle de acesso quebrado e configuração incorreta expondo bases são a via recorrente dos incidentes reportados. Para o controlador, o art. 46 da LGPD exige medidas técnicas — e o teste de invasão de aplicação é uma das evidências mais diretas de que essas medidas foram verificadas. A ausência de teste, diante de um vazamento por falha conhecida e testável, enfraquece a defesa perante a ANPD [@lgpd2018].
+
+**Testar aplicação web em produção mexe com dados pessoais de terceiros.** Alcançar registros de clientes durante o teste é tratamento de dado pessoal pela empresa contratada, na qualidade de operadora (arts. 39 e 42). O contrato precisa prever finalidade restrita, minimização, guarda cifrada de evidência e eliminação comprovada. Iterar um IDOR sobre toda a base para "medir o impacto" é tratamento excessivo e pode configurar o próprio incidente [@lgpd2018; @anpd2024res15].
+
+**Aplicações de pagamento e de dados de cartão têm exigência específica.** O PCI-DSS v4 (Requisito 6.4) exige proteção de aplicações web voltadas ao público — por revisão, por teste ou por mecanismo automatizado de detecção de ataque — e teste de invasão de aplicação como parte do Requisito 11.4. Para quem processa cartão, o teste de aplicação não é opção: é controle auditado [@pcidss4].
+
+**O setor financeiro incorporou o teste de aplicação à norma.** A Resolução BCB nº 85 e a regulamentação de segurança cibernética exigem avaliação de vulnerabilidades e testes das aplicações que sustentam serviços financeiros, incluindo as do ecossistema de open finance e Pix, que expõem APIs por projeto. Aplicação exposta por desenho pede teste por desenho [@bcb85; @bcbopenfinance].
+
+**A fronteira penal continua sendo o escopo.** Testar aplicação web de terceiro sem autorização é acesso não autorizado (art. 154-A do Código Penal). O ponto sensível na web é a facilidade de sair do escopo: um endpoint que responde por outro domínio, uma integração com serviço de terceiro, uma API compartilhada. A regra é a de sempre — o escopo delimita, e o que não está nele exige nova autorização por escrito [@lei12737; @lei14155].
+
+**Programas de divulgação responsável e recompensa por falha crescem no Brasil, mas exigem base clara.** Empresas que operam programas de recompensa por vulnerabilidade dão autorização prévia dentro de regras publicadas — e é essa autorização que torna lícito o teste do pesquisador. Fora de um programa com regras claras ou de um contrato, não há licitude, por melhor que seja a intenção. A divulgação de falha encontrada sem autorização segue o rito coordenado do CERT.br [@cert2024praticas; @lei12737].
+
+## 🛠️ No Campo
+
+**1. Mapeie antes de testar.** Superfície completa, papéis, tecnologias, fluxo de dados. Não se testa bem o que não se entende, e o mapa transforma tentativa aleatória em verificação sistemática.
+
+**2. Use o WSTG como lista de verificação.** Categoria por categoria, com registro do que foi verificado — inclusive o que não apresentou falha. É a cobertura demonstrável do @sec-cap056.
+
+**3. Comece pela configuração e implantação.** Arquivo exposto, credencial padrão, painel acessível, cabeçalho ausente. Os achados mais fáceis e frequentemente mais graves estão aqui.
+
+**4. Concentre o esforço humano em autorização e lógica de negócio.** São as categorias que o scanner não vê e as de maior retorno. É por elas que você supera a ferramenta.
+
+**5. Teste IDOR trocando identificadores com contas diferentes.** Objeto de um usuário acessível por outro é a falha de controle de acesso mais comum e mais impactante.
+
+**6. Verifique autorização no servidor, para cada objeto e ação.** Entregue o padrão, não só a instância: "a autorização não é checada no servidor para este tipo de objeto".
+
+**7. Trate o cliente como hostil.** Lógica sensível não roda no navegador, dado do cliente não é confiado, e cada entrada é validada no servidor.
+
+**8. Posicione o proxy de interceptação como ferramenta central**, mas lembre que o achado de valor vem do raciocínio sobre a aplicação, não do scanner.
+
+**9. Confirme com objetivo mínimo.** Versão do banco para provar injeção; um registro de teste para provar IDOR. Nunca a base inteira.
+
+**10. Produza evidência reproduzível.** Requisição, resposta, carimbo de tempo, passo a passo que o desenvolvedor repete. Evidência que não reproduz é alegação.
+
+**11. Prefira homologação equivalente a produção** para ações que criam, alteram ou apagam. Se for produção, mantenha os critérios de parada à mão.
+
+**12. Minimize o contato com dados pessoais.** Amostra mínima, mascarada, guarda cifrada, eliminação comprovada. É exigência da LGPD, não zelo.
+
+**13. Não saia do escopo.** Endpoint de outro domínio, integração de terceiro, API compartilhada — pare e peça autorização por escrito.
+
+**14. Entregue o padrão para correção estrutural.** Corrigir a instância deixa as outras vinte ocorrências intactas. O valor está na classe.
+
+**15. Feche o ciclo alimentando o desenvolvimento seguro.** O achado vira regra de análise estática, item de revisão e treinamento. O teste é caro; seu maior valor é ensinar o programa a achar mais cedo.
+
+## Resumo
+
+- A aplicação web é o alvo mais comum porque é, **por projeto, exposta à internet inteira** — a porta que não pode ser trancada, só bem-feita. Este capítulo é a convergência do método do volume com as classes de falha do Volume 7.
+- **Mapear vem antes de testar:** superfície completa, autenticação e sessão, papéis e permissões, tecnologias e fluxo de dados. Sem o modelo, o teste é tentativa aleatória.
+- O WSTG dá a espinha do que verificar; um punhado de categorias concentra os achados: configuração, autenticação, **autorização**, validação de entrada, **lógica de negócio** e lado do cliente.
+- **Autorização e lógica de negócio são as categorias de maior retorno e as que o scanner não vê** — dependem de entender papéis e intenção, e é por elas que o teste humano supera a ferramenta.
+- Ferramentas são auxiliares: o proxy de interceptação é o microscópio, o scanner cobre o mecânico. O achado de valor vem do raciocínio, não da varredura.
+- As disciplinas do volume valem integralmente: objetivo mínimo (um registro, não a base), evidência reproduzível, cuidado com produção e minimização de dados pessoais.
+- O teste vira valor quando o achado entrega o **padrão**, não a instância — porque é o padrão que se corrige de forma estrutural, e ele realimenta o desenvolvimento seguro.
+- No Brasil, a aplicação web é a via recorrente de vazamento de dados pessoais; o teste é evidência de medida adequada perante a LGPD, controle auditado no PCI-DSS e exigência no setor financeiro; e a fronteira penal segue sendo o escopo, especialmente fácil de cruzar na web.

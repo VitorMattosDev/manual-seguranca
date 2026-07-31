@@ -1,3 +1,153 @@
 # Relatório técnico e comunicação de achados {#sec-cap063}
 
-*(em elaboracao)*
+Duas equipes fazem o mesmo teste no mesmo ambiente. A primeira encontra dezessete falhas, incluindo uma cadeia que leva ao domínio inteiro, e entrega um relatório de noventa páginas com capturas de tela, saídas de ferramenta e uma pontuação para cada item. Seis meses depois, quinze das dezessete continuam abertas. A segunda equipe encontra as mesmas falhas e entrega um relatório de trinta páginas. Seis meses depois, quatorze das dezessete estão corrigidas, e a organização mudou dois processos de desenvolvimento.
+
+A diferença não está na competência técnica — as duas encontraram o mesmo. Está no que aconteceu **depois** de encontrar. O teste de invasão não produz segurança; produz um relatório. E um relatório só produz segurança se for lido, compreendido e transformado em correção. **O entregável de um teste não é o acesso obtido: é a mudança que ele provoca no cliente.** Esse é o assunto que fecha o volume, e é o que separa o profissional do operador de ferramentas.
+
+## O relatório tem várias audiências
+
+O erro mais comum é escrever um único documento para um único leitor imaginário — em geral, outro testador. O relatório real tem audiências distintas, com perguntas distintas, e precisa responder a todas sem obrigar ninguém a ler o que não lhe serve.
+
+**A direção** quer saber: estamos expostos, quanto, e o que fazer a respeito. Não vai ler detalhe técnico, e não deveria precisar. Para essa audiência existe o **sumário executivo**: uma a duas páginas, sem jargão, respondendo qual é o risco de negócio, quão grave, e quais são as poucas ações prioritárias. Se o sumário exige conhecimento técnico para ser entendido, ele falhou.
+
+**A gestão de tecnologia** quer priorizar e planejar a correção: o que primeiro, quanto de esforço, que risco cada item representa se ficar aberto. Precisa dos achados com severidade contextualizada (a lógica do @sec-cap059) e recomendação clara.
+
+**A equipe técnica** vai corrigir, e precisa de tudo: onde exatamente, como reproduzir, por que acontece, como consertar de forma estrutural. É a audiência do detalhe, e é para ela que a evidência reproduzível existe.
+
+Um relatório bem construído serve as três em camadas: sumário executivo na frente, visão de risco no meio, detalhe técnico ao fundo. Cada leitor entra na profundidade que precisa e para onde faz sentido.
+
+::: {#fig-audiencias-relatorio}
+```{.tikz}
+%%| filename: audiencias-relatorio
+%%| alt: Estrutura em camadas do relatório de teste de invasão servindo direção, gestão de tecnologia e equipe técnica, cada uma com sua pergunta e profundidade
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    camada/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+                   inner sep=5pt, text width=11.6cm}}
+
+  \node[camada, draw=manualgreen, fill=manualgreen!13] (c1) at (0,2.7)
+    {\textbf{Sumário executivo} \hfill \textit{direção --- 1 a 2 páginas}\\
+     Estamos expostos? Quanto? O que fazer? --- \textbf{sem jargão}. Risco de negócio,
+     gravidade geral, poucas ações prioritárias.};
+  \node[camada, draw=manualyellow, fill=manualyellow!16] (c2) at (0,1.1)
+    {\textbf{Visão de risco e priorização} \hfill \textit{gestão de tecnologia}\\
+     Achados com severidade \emph{contextualizada}, ordem de correção, esforço estimado,
+     risco de cada item em aberto.};
+  \node[camada, draw=manualblue, fill=manualblue!14] (c3) at (0,-0.6)
+    {\textbf{Detalhe técnico por achado} \hfill \textit{equipe técnica}\\
+     Onde, como reproduzir, por que acontece, \textbf{como corrigir de forma estrutural},
+     evidência com carimbo de tempo. E o que foi verificado e \emph{não} apresentou falha.};
+
+  \draw[->, >=stealth, thick, manualgray] (0,2.0) -- (0,1.75);
+  \draw[->, >=stealth, thick, manualgray] (0,0.4) -- (0,0.05);
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=11.6cm] at (0,-2.1)
+    {\textbf{Cada leitor entra na profundidade de que precisa e para onde faz sentido.}
+     Um só documento, três audiências --- o relatório que exige que a direção leia
+     detalhe técnico, ou que enterra a ação sob a saída de ferramenta, não é lido.};
+\end{tikzpicture}
+```
+O relatório em camadas. A mesma verdade, contada na profundidade certa para cada leitor.
+:::
+
+## A anatomia de um bom achado
+
+O achado é a unidade do relatório, e sua qualidade determina se será corrigido. Um achado completo tem seis partes, e a ausência de qualquer uma custa correção.
+
+**Título claro e específico.** "Controle de acesso quebrado no endpoint de faturas permite ler faturas de outros clientes" comunica na primeira linha. "Vulnerabilidade de autorização" não comunica nada.
+
+**Severidade contextualizada, com justificativa.** Não a pontuação nominal, mas o risco real naquele ambiente (a lição do @sec-cap059): exposição, alcance, valor do ativo, mitigações presentes. E a justificativa do número — é ela que sustenta a priorização quando alguém questionar.
+
+**Descrição do que é e por que acontece.** A causa raiz, não só o sintoma. "A autorização não é verificada no servidor para objetos deste tipo" ensina; "é possível ver faturas alheias" apenas relata.
+
+**Evidência reproduzível.** O passo a passo que o desenvolvedor segue para ver a falha com os próprios olhos — e, depois, para confirmar que a correção funcionou. Requisição, resposta, carimbo de tempo. **Evidência que não reproduz é alegação**, e uma alegação não confirmável mina a credibilidade de todo o relatório.
+
+**Impacto no negócio.** O que essa falha significa em termos que a organização entende: exposição de dados de clientes, fraude possível, indisponibilidade, descumprimento regulatório. O impacto é o que move a priorização — a direção corrige o que entende como risco, não o que soa técnico.
+
+**Recomendação acionável e estrutural.** Como corrigir, de preferência atacando o padrão, não só a instância. E, quando possível, a correção que fecha a classe inteira, não só aquele endpoint. Recomendação genérica ("valide as entradas") não ajuda; recomendação específica e estrutural ("verifique a autorização no servidor para cada objeto, com negação por padrão, neste ponto do fluxo") corrige.
+
+O que **não** entra no achado: página após página de saída bruta de ferramenta, que dá volume e esconde o sinal. A evidência é a mínima que reproduz, não a máxima que a ferramenta cuspiu.
+
+## Severidade: a honestidade que sustenta a confiança
+
+A tentação de inflar severidade é real — um relatório cheio de "críticos" parece justificar melhor o custo do teste. É também a forma mais rápida de destruir a própria credibilidade e, pior, de piorar a segurança do cliente.
+
+Severidade inflada tem três efeitos ruins. **Corrói a confiança**: a equipe técnica que investiga um "crítico" e descobre um problema menor passa a duvidar de todos os outros, inclusive dos reais. **Distorce a priorização**: se tudo é crítico, nada é, e o cliente volta à paralisia dos 312 críticos do @sec-cap059. **Esconde o que importa**: o achado grave de verdade se perde no meio dos inflados.
+
+A honestidade de severidade inclui reportar o que **não** é grave e o que **não** foi encontrado. Um relatório que diz "verificamos injeção de SQL em todos os pontos de entrada e não encontramos" tem valor real — é a cobertura demonstrável que o @sec-cap056 exigiu. Um relatório que só lista o ruim, sem dizer o que foi verificado e passou, não permite saber se a ausência de um achado significa "está seguro" ou "não olhamos".
+
+## A comunicação viva: o relatório não é o único canal
+
+O documento final é o registro, não a comunicação inteira. A comunicação de um teste acontece em vários momentos, e concentrá-la só no relatório final é um erro que custa caro.
+
+**Durante o teste**, achados críticos não esperam o relatório. Uma falha grave e ativamente explorável — ou um sinal de comprometimento real — precisa de comunicação imediata, pelo canal alternativo combinado no @sec-cap056. Segurar um "crítico" por duas semanas para entregá-lo com pompa no relatório final é negligência.
+
+**Na entrega**, uma reunião de apresentação vale mais que o envio de um PDF. Ela permite calibrar a mensagem para cada audiência, responder dúvidas, negociar prioridades e — crucialmente — garantir que a equipe técnica entendeu como reproduzir. Relatório entregue sem conversa é relatório que vira anexo de e-mail não lido.
+
+**Depois**, o reteste. O teste sem verificação de correção mede a organização uma vez e não melhora nada (o @sec-cap056 já insistiu nisso). O reteste confirma o que foi corrigido, reabre o que não foi de fato resolvido e fecha o ciclo. E o relatório de reteste — o que estava aberto, o que fechou, o que continua — é frequentemente o documento mais útil de todos para a direção, porque mede progresso.
+
+## O relatório como insumo do programa de segurança
+
+O melhor uso de um relatório de teste não é ser lido e arquivado: é **alimentar o programa de segurança** para que a mesma classe de falha não reapareça. Isso conecta o volume ofensivo inteiro de volta à defesa.
+
+Cada achado carrega uma lição estrutural que transcende a instância. O IDOR não é só um endpoint a corrigir — é um sinal de que a verificação de autorização não é sistemática, o que vira item de revisão de código (@sec-cap042), regra de análise estática (@sec-cap049) e treinamento de desenvolvedor. A movimentação lateral trivial não é só uma rede a segmentar — é um sinal para o programa de detecção (Volume 12) sobre o que não estava sendo visto. Mapear cada achado à técnica correspondente do ATT&CK transforma o relatório ofensivo em insumo direto da engenharia de detecção do Volume 12.
+
+É assim que o teste de invasão paga por si mesmo: não pelas falhas que aponta uma vez, mas pela capacidade que instala na organização de encontrar aquela classe de falha sozinha, mais cedo e mais barato. O teste é o ponto mais caro e mais tardio de descobrir uma falha; seu valor duradouro é ensinar o programa a descobri-la antes.
+
+## ⚖️ Brasil em Foco
+
+**O relatório é documento sensível e precisa de tratamento à altura.** Ele contém o mapa das fraquezas do cliente — um guia de invasão se vazar. Sua guarda, transmissão e destruição são, elas próprias, tratamento de informação sensível, e o contrato do @sec-cap056 deve prever cifragem em trânsito e em repouso, controle de acesso, prazo de retenção e eliminação comprovada. Vazamento de relatório de pentest é dos piores incidentes possíveis, porque entrega o alvo pronto [@lgpd2018].
+
+**Achados que envolvem dados pessoais herdam as obrigações da LGPD.** Se o relatório descreve exposição de dados pessoais — e quase sempre descreve —, ele documenta um risco que o controlador passa a conhecer formalmente. A partir da entrega, a inércia diante de um achado grave é difícil de defender perante a ANPD: a organização sabia, foi avisada por escrito, e não agiu. O relatório é prova nos dois sentidos — de diligência, se a correção vier; de negligência, se não vier [@lgpd2018; @anpd2024res15].
+
+**A comunicação de achado que revela incidente real dispara prazo.** Se o teste encontrou evidência de comprometimento em curso com dados pessoais, a Resolução CD/ANPD nº 15/2024 estabelece o prazo de três dias úteis para comunicação à autoridade e aos titulares quando houver risco relevante. O relatório, nesse caso, é insumo da comunicação regulatória, e a linha do tempo registrada durante o teste (@sec-cap056) é o que permite descrevê-la com precisão em vez de estimativa [@anpd2024res15].
+
+**Setores regulados exigem o relatório como evidência auditável.** O PCI-DSS v4 (Requisito 11.4) exige retenção do relatório de teste de invasão e da evidência de correção; a Resolução BCB nº 85 exige registro dos resultados de avaliação de vulnerabilidades e do plano de ação. Para esses setores, o relatório não é entregável opcional: é peça de auditoria, e sua ausência ou incompletude é, ela mesma, um achado de conformidade [@pcidss4; @bcb85].
+
+**Contratação pública trata o relatório como produto contratual.** Sob a Lei 14.133/2021, o relatório é o produto que baliza o aceite e o pagamento do serviço técnico especializado. Termo de referência que exija estrutura clara — sumário executivo, achados com severidade justificada, recomendação e reteste — protege o órgão de receber um despejo de ferramenta sem valor de decisão [@lei14133].
+
+**Sigilo e propriedade do relatório precisam de cláusula.** A quem pertence o relatório, quem pode compartilhá-lo, por quanto tempo o testador o retém, e o compromisso de confidencialidade mútua são cláusulas necessárias. No Brasil, a ausência de acordo claro sobre isso já gerou disputa, e o momento de resolver é no contrato, antes do teste, não depois da entrega [@lei12737].
+
+## 🛠️ No Campo
+
+**1. Escreva o sumário executivo sem jargão.** Se a direção precisa de conhecimento técnico para entender se está exposta, o sumário falhou. Risco de negócio, gravidade, poucas ações.
+
+**2. Estruture o relatório em camadas.** Sumário na frente, risco no meio, detalhe ao fundo. Cada audiência entra na profundidade de que precisa.
+
+**3. Dê a cada achado um título que comunica na primeira linha.** "Faturas de outros clientes acessíveis trocando o identificador", não "falha de autorização".
+
+**4. Contextualize a severidade e justifique o número.** Risco real do ambiente, não pontuação nominal. A justificativa é o que sustenta a prioridade quando questionada.
+
+**5. Descreva a causa raiz, não o sintoma.** "A autorização não é verificada no servidor" ensina; "dá para ver dados alheios" só relata.
+
+**6. Torne cada achado reproduzível.** Passo a passo, requisição, resposta, carimbo de tempo. Evidência que não reproduz é alegação, e uma alegação frágil contamina o relatório inteiro.
+
+**7. Traduza cada achado em impacto de negócio.** A direção prioriza o que entende como risco — dados de clientes, fraude, multa —, não o que soa técnico.
+
+**8. Recomende de forma estrutural.** Ataque o padrão, não a instância. A correção que fecha a classe inteira vale vinte correções pontuais.
+
+**9. Não infle severidade.** Se tudo é crítico, nada é. Severidade inflada corrói a confiança, distorce a prioridade e esconde o achado que importa de verdade.
+
+**10. Reporte o que verificou e não encontrou.** "Testamos injeção em todos os pontos e não achamos" é cobertura demonstrável e valor real.
+
+**11. Corte a saída bruta de ferramenta.** Volume não é qualidade. A evidência é a mínima que reproduz, não a máxima que a ferramenta gerou.
+
+**12. Comunique o crítico na hora, não no relatório.** Falha ativamente explorável ou sinal de comprometimento real usa o canal alternativo imediatamente. Segurar para a entrega é negligência.
+
+**13. Apresente ao vivo.** Reunião calibra a mensagem por audiência, tira dúvidas e garante que a equipe técnica sabe reproduzir. PDF sem conversa vira anexo não lido.
+
+**14. Contrate e execute o reteste.** Teste sem verificação de correção mede uma vez e não melhora nada. O relatório de reteste é o que mais interessa à direção, porque mede progresso.
+
+**15. Trate o relatório como documento sensível e como insumo do programa.** Cifrado, com prazo e eliminação comprovada; e cada achado vira revisão de código, regra de análise estática, treinamento e detecção — para a classe não voltar.
+
+## Resumo
+
+- **O entregável de um teste não é o acesso obtido: é a mudança que ele provoca no cliente.** O teste não produz segurança; produz um relatório, e o relatório só produz segurança se for lido, compreendido e corrigido.
+- O relatório tem **três audiências**: direção (sumário sem jargão), gestão de tecnologia (risco e prioridade) e equipe técnica (detalhe reproduzível). Servi-las em camadas é o que faz o documento ser usado.
+- Um bom achado tem seis partes: título específico, **severidade contextualizada e justificada**, causa raiz, evidência reproduzível, impacto de negócio e recomendação estrutural. Saída bruta de ferramenta não é evidência.
+- **Evidência que não reproduz é alegação**, e uma alegação frágil mina a credibilidade de todo o relatório.
+- **Não inflar severidade** é questão de honestidade e de eficácia: se tudo é crítico, nada é, e o achado real se perde. Reportar o que foi verificado e não apresentou falha é parte da cobertura.
+- A comunicação é viva: **crítico se comunica na hora** pelo canal alternativo, a entrega se faz ao vivo, e o **reteste** é o que fecha o ciclo e mede progresso.
+- O maior valor do relatório é **alimentar o programa de segurança** — cada achado vira revisão de código, regra de análise estática, treinamento e detecção, para que a classe não reapareça. É assim que o teste, o ponto mais caro de achar uma falha, ensina a organização a achá-la mais cedo.
+- No Brasil, o relatório é documento sensível (vazá-lo entrega o alvo pronto), prova de diligência ou de negligência perante a ANPD, peça auditável no PCI-DSS e na Resolução BCB nº 85, e produto contratual na contratação pública — exigindo cláusulas claras de sigilo, guarda e propriedade.

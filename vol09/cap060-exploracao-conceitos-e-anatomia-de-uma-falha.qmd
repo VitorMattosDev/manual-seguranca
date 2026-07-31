@@ -1,3 +1,198 @@
 # Exploração: conceitos e anatomia de uma falha {#sec-cap060}
 
-*(em elaboracao)*
+Até aqui, o teste produziu conhecimento: um mapa da superfície, uma lista de serviços, uma fila de vulnerabilidades priorizadas. A exploração é o momento em que o conhecimento vira **demonstração**. Não é o clímax que a cultura popular imagina — nada de janelas de terminal em cascata e barras de progresso. É um ato de precisão cujo objetivo é responder a uma única pergunta, com evidência, e sem quebrar nada: *esta falha permite mesmo o que a análise supôs que permitiria?*
+
+Este é o capítulo mais sensível do volume, e por isso é o mais conceitual. **Não há aqui exploração armada, código de ataque pronto ou passo a passo contra sistema real.** Há o que importa para entender, detectar e mitigar: por que certas classes de falha existem, como um adversário raciocina sobre elas, o que a exploração bem-sucedida revela e — em cada caso — qual é a contramedida que a anula. O leitor que termina o capítulo entende exploração o suficiente para se defender dela. Quem procura uma receita para atacar terceiros está no livro errado.
+
+## O que exploração é, e o que ela não é
+
+Explorar é fazer um sistema executar uma ação que seu projeto não pretendia, aproveitando a distância entre o que o desenvolvedor **quis** dizer e o que a máquina **entendeu**. Toda vulnerabilidade explorável mora nessa distância.
+
+No teste profissional, a exploração tem três características que a separam da atividade criminosa e do estereótipo:
+
+**Objetivo mínimo.** A meta é provar a falha, não causar dano. Obter uma prova de acesso — a execução de um comando inócuo que retorne a identidade do usuário do processo, a leitura de um arquivo de marcação combinado com o cliente, a demonstração de que um registro pode ser lido — encerra a demonstração. Extrair a base inteira "para provar" é o erro do @sec-cap056: cria um vazamento com boa intenção.
+
+**Controle e reversibilidade.** A exploração precisa ser controlada. Técnicas com risco de corromper dados ou derrubar serviço só entram com autorização explícita e, mesmo assim, com plano de reversão. A regra do @sec-cap056 vale integralmente: se algo sair do previsto, parar e avisar.
+
+**Evidência, não troféu.** Cada exploração bem-sucedida gera evidência preservada para o relatório — comando, resposta, carimbo de tempo — e o mapeamento à técnica correspondente do ATT&CK, que transforma o achado em insumo de detecção para a engenharia de regras do Volume 12.
+
+O fracasso também é resultado. "Tentamos explorar a falha X pelo caminho Y e não foi possível porque a mitigação Z estava presente" é cobertura documentada e, muitas vezes, a melhor notícia do relatório.
+
+## A anatomia comum: a fronteira entre dado e instrução
+
+Uma quantidade desproporcional de falhas graves compartilha a mesma raiz conceitual: **em algum ponto, um dado controlado pelo atacante é interpretado como instrução**. O @sec-cap044 mostrou isso na injeção de SQL, o @sec-cap045 no cross-site scripting. A generalização vale para quase toda a família de exploração:
+
+- Na **injeção**, texto fornecido pelo usuário é concatenado a um comando (SQL, shell, consulta a diretório) e o interpretador executa a parte que era para ser só dado.
+- Na **corrupção de memória**, dados que ultrapassam o espaço reservado sobrescrevem estruturas de controle do programa, e o fluxo de execução passa a seguir o que o atacante escreveu.
+- Na **desserialização insegura**, um objeto reconstruído a partir de dados externos carrega instruções que o processo executa ao reconstruí-lo.
+- Na **injeção de template** ou de expressão, uma string que deveria ser exibida é avaliada pelo motor.
+
+O padrão é sempre o mesmo, e por isso a **contramedida** também tem uma forma comum: **separar dado de instrução de maneira estrutural, não por filtragem**. Consultas parametrizadas, que enviam o comando e os dados por canais separados; codificação de saída sensível ao contexto; validação por lista de permissão; fronteiras de memória verificadas pela linguagem ou pelo compilador. Filtrar o "conteúdo malicioso" é uma corrida armamentista que o defensor perde; remover a possibilidade de o dado virar instrução é o que encerra a classe inteira.
+
+::: {#fig-dado-instrucao}
+```{.tikz}
+%%| filename: dado-instrucao
+%%| alt: Diagrama contrastando a concatenação insegura, em que dado do atacante é interpretado como instrução, com a separação estrutural por parametrização que anula a classe de falha
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=2.3cm, minimum height=0.8cm}}
+
+  % inseguro
+  \node[font=\scriptsize, manualred] at (-3.6,3.7) {\textbf{Concatenação insegura}};
+  \node[bx, draw=manualgray, fill=manualgray!12] (i1) at (-3.6,2.9) {dado do usuário};
+  \node[bx, draw=manualred, fill=manualred!14, minimum width=3.6cm] (i2) at (-3.6,1.6)
+    {\textbf{comando + dado}\\ na mesma string};
+  \node[bx, draw=manualred, fill=manualred!16] (i3) at (-3.6,0.3) {interpretador};
+  \draw[->, >=stealth, thick, manualred] (i1) -- (i2);
+  \draw[->, >=stealth, thick, manualred] (i2) -- (i3);
+  \node[manualred, font=\tiny, align=center, text width=3.6cm] at (-3.6,-0.8)
+    {a máquina executa a parte que era\\ para ser \emph{só dado}};
+
+  % seguro
+  \node[font=\scriptsize, manualgreen] at (3.6,3.7) {\textbf{Separação estrutural}};
+  \node[bx, draw=manualgray, fill=manualgray!12] (s1) at (2.2,2.9) {dado do usuário};
+  \node[bx, draw=manualblue, fill=manualblue!14] (s0) at (5.0,2.9) {comando fixo};
+  \node[bx, draw=manualgreen, fill=manualgreen!14, minimum width=3.6cm] (s2) at (3.6,1.6)
+    {\textbf{canais separados}\\ dado nunca é código};
+  \node[bx, draw=manualgreen, fill=manualgreen!16] (s3) at (3.6,0.3) {interpretador};
+  \draw[->, >=stealth, thick, manualgreen] (s1) -- (s2);
+  \draw[->, >=stealth, thick, manualblue] (s0) -- (s2);
+  \draw[->, >=stealth, thick, manualgreen] (s2) -- (s3);
+  \node[manualgreen, font=\tiny, align=center, text width=3.8cm] at (3.6,-0.8)
+    {o dado é tratado como dado ---\\ a classe inteira deixa de existir};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (0,-2.1)
+    {\textbf{A raiz comum de injeção, corrupção de memória e desserialização é a
+     mesma:} dado controlado pelo atacante cruzado com o canal de instrução. Por isso
+     a defesa de fundo também é comum --- \textbf{separar estruturalmente}, não filtrar
+     conteúdo. Filtragem é corrida armamentista; separação encerra a classe.};
+\end{tikzpicture}
+```
+A raiz conceitual comum a boa parte da exploração — e a contramedida estrutural que a anula.
+:::
+
+## As grandes classes, e o que cada uma ensina
+
+Vale percorrer as famílias principais pelo ângulo de *por que existem* e *o que as anula*, sem receita de ataque.
+
+**Injeção.** Já tratada no Volume 7. A exploração confirma que a fronteira dado/instrução foi cruzada; a defesa é a parametrização e a validação estrutural. Continua sendo, década após década, uma das causas mais comuns de comprometimento — não por ser difícil de corrigir, mas por reaparecer em cada novo trecho de código que reconstrói a concatenação.
+
+**Corrupção de memória.** Falhas de gestão de memória em linguagens sem verificação automática de limites — estouro de buffer, uso após liberação, confusão de tipo. São a base histórica da exploração de sistemas e continuam relevantes em software de baixo nível, drivers e sistemas embarcados. A exploração moderna delas precisa vencer camadas de mitigação acumuladas ao longo de vinte anos: aleatorização do espaço de endereços, marcação de memória não executável, verificação de integridade de pilha, integridade de fluxo de controle. Essas mitigações são a história de sucesso defensivo mais importante da área — cada uma encareceu enormemente a exploração. A contramedida de fundo, porém, é anterior a todas elas: **linguagens com segurança de memória**, que removem a classe inteira em vez de encarecê-la. É por isso que a migração para linguagens seguras é hoje uma recomendação de agências de segurança nacionais.
+
+**Falhas de autenticação e de sessão.** O @sec-cap046 as tratou. A exploração aqui raramente envolve "quebrar" criptografia; envolve aproveitar o que foi mal montado — sessão que não expira, token previsível, redefinição de senha com fluxo furado, ausência de segundo fator. A defesa é montar certo, usando os padrões do Volume 4.
+
+**Falhas de controle de acesso.** O @sec-cap047 as tratou, e são as que o scanner não vê (@sec-cap059). A exploração é frequentemente trivial — trocar um identificador, acessar uma função sem a permissão devida — e o impacto, alto. A defesa é verificar autorização no servidor, sempre, para cada objeto e cada ação, com negação por padrão.
+
+**Configuração incorreta.** Talvez a mais comum de todas na prática: serviço com credencial padrão, permissão ampla demais, painel administrativo exposto, armazenamento em nuvem aberto (o tema recorrente do Volume 8). Não há "exploração" sofisticada — há uma porta destrancada. A defesa é a linha de base segura e a verificação contínua de configuração.
+
+## O encadeamento: onde o humano supera a ferramenta
+
+O adversário real e o testador competente raramente vencem com uma falha só. Vencem **encadeando** falhas medianas até que a soma dê o que nenhuma daria sozinha. Este é o trabalho que o scanner nunca faz e a razão de o teste humano existir.
+
+Um encadeamento típico combina, por exemplo: uma exposição de informação que revela um caminho interno, com uma falha de controle de acesso que dá alcance a uma função restrita, com uma configuração incorreta que concede mais privilégio do que deveria. Cada elo, isolado, seria de baixa ou média prioridade. Juntos, são o comprometimento.
+
+A lição defensiva do encadeamento é a mais importante do capítulo e reforça o @sec-cap028: **profundidade de defesa não é redundância desperdiçada — é o que quebra a cadeia**. Cada camada que o encadeamento precisa atravessar é uma chance de pará-lo ou de detectá-lo. A organização que trata só as falhas "críticas" isoladas e ignora as "médias" está deixando intactos exatamente os elos que compõem as cadeias reais.
+
+::: {#fig-encadeamento}
+```{.tikz}
+%%| filename: encadeamento
+%%| alt: Cadeia de exploração combinando três falhas de baixa e média severidade que juntas resultam em comprometimento total, e as camadas de defesa que a interrompem
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    elo/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                inner sep=4pt, minimum width=2.7cm, minimum height=1.1cm}}
+
+  \node[elo, draw=manualyellow, fill=manualyellow!16] (e1) at (-4.6,2.2)
+    {\textbf{Elo 1 --- baixa}\\ exposição de informação\\ revela caminho interno};
+  \node[elo, draw=manualyellow, fill=manualyellow!16] (e2) at (-1.0,2.2)
+    {\textbf{Elo 2 --- média}\\ controle de acesso falho\\ alcança função restrita};
+  \node[elo, draw=manualyellow, fill=manualyellow!16] (e3) at (2.6,2.2)
+    {\textbf{Elo 3 --- média}\\ configuração concede\\ privilégio excessivo};
+  \node[elo, draw=manualred, fill=manualred!16, very thick] (r) at (5.6,2.2)
+    {\textbf{RESULTADO}\\ comprometimento\\ total};
+
+  \draw[->, >=stealth, thick, manualred] (e1) -- (e2);
+  \draw[->, >=stealth, thick, manualred] (e2) -- (e3);
+  \draw[->, >=stealth, thick, manualred] (e3) -- (r);
+
+  % camadas de defesa
+  \foreach \x/\lbl in {-2.8/{segmentação}, 0.8/{autorização\\ no servidor}, 4.1/{privilégio\\ mínimo}}
+    {\draw[dashed, very thick, manualgreen] (\x,0.9) -- (\x,3.5);
+     \node[manualgreen, font=\tiny, align=center, fill=white, inner sep=1pt] at (\x,0.7) {\lbl};}
+
+  \node[draw=manualgreen, fill=manualgreen!12, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (0.4,-0.6)
+    {\textbf{Nenhum elo, sozinho, seria emergência --- por isso a organização que só
+     trata ``críticos'' isolados deixa a cadeia intacta.} Cada linha verde é uma camada
+     que precisa ser atravessada: uma chance de parar a cadeia \emph{ou} de detectá-la.
+     Profundidade de defesa é exatamente o que transforma três médias inofensivas em
+     três barreiras.};
+\end{tikzpicture}
+```
+O encadeamento é o trabalho humano por excelência — e cada camada de defesa é uma chance de quebrar a cadeia.
+:::
+
+## O lado defensivo: a exploração como teste da detecção
+
+Toda exploração deixa rastro, e a pergunta defensiva mais valiosa que um teste responde não é "a falha existe?", mas "**nós teríamos percebido?**". Um teste anunciado é a oportunidade de calibrar a detecção do Volume 12 contra atividade real e controlada.
+
+Cada técnica de exploração corresponde a sinais observáveis: a injeção deixa padrões na requisição e no log da aplicação; a corrupção de memória frequentemente deixa o processo em estado anômalo ou o derruba; o acesso indevido a objetos deixa um rastro de autorização negada-depois-concedida; o encadeamento atravessa camadas que, monitoradas, acendem em sequência. Mapear cada ação do teste à técnica correspondente do ATT&CK e verificar, com a equipe de defesa, se o alerta disparou é o que transforma o teste ofensivo em melhoria defensiva concreta.
+
+É essa a razão de o teste de invasão e a engenharia de detecção serem duas faces do mesmo trabalho, e o motivo de este volume ofensivo desembocar, no livro, nos volumes defensivos.
+
+## ⚖️ Brasil em Foco
+
+**A exploração é a fronteira exata do art. 154-A do Código Penal.** Reconhecer e enumerar tangenciam o acesso; explorar é obter acesso não autorizado, adulterar ou destruir dados — o núcleo do tipo penal, agravado pela Lei 14.155/2021. No teste profissional, o que afasta a tipicidade é o consentimento documentado do titular, limitado ao escopo. Explorar um sistema fora do escopo, ainda que alcançado por encadeamento a partir de um alvo autorizado, é conduta típica: a regra do @sec-cap056 — parar e pedir extensão por escrito — é o que mantém o testador do lado certo da lei [@lei12737; @lei14155].
+
+**A minimização do dano na exploração é exigência jurídica, não só ética.** Ao obter acesso a dados pessoais durante a demonstração, o testador atua como operador e responde pelo art. 6º (finalidade, adequação, necessidade) e pelo art. 46 da LGPD. Extrair além do necessário para provar o achado é tratamento excessivo e pode, ele próprio, configurar o incidente que o teste deveria prevenir. A prova de conceito correta é a mínima suficiente [@lgpd2018].
+
+**Achado de exploração ativa por terceiros transforma o teste em incidente.** Se, ao explorar, o testador encontrar sinal de que um adversário real já está no ambiente, aplica-se o gatilho de parada do @sec-cap056: a condução passa para o processo de resposta a incidentes, e os prazos da Resolução CD/ANPD nº 15/2024 começam a correr caso haja dados pessoais envolvidos [@anpd2024res15].
+
+**A divulgação de falha em produto de terceiro segue rito coordenado.** Se a exploração revela vulnerabilidade em software de fornecedor, a conduta correta é a divulgação responsável — coordenada com o fabricante e, no Brasil, apoiada pelo CERT.br —, seguindo as normas ISO/IEC 29147 e 30111. Publicar exploração armada contra sistema de terceiro sem coordenação não é pesquisa: aproxima-se da disponibilização de meio para o crime do art. 154-A, §1º [@cert2024praticas; @iso29147; @iso30111; @lei12737].
+
+**A migração para linguagens com segurança de memória entrou na pauta regulatória global.** A recomendação de agências de segurança de que software crítico adote linguagens que eliminam classes inteiras de corrupção de memória é a tradução, em política pública, do princípio deste capítulo: remover a classe é superior a mitigá-la. Para fornecedores brasileiros que exportam ou atendem setores regulados, essa expectativa tende a se refletir em requisitos de contrato e de aquisição [@nistsp800218; @cisakev].
+
+## 🛠️ No Campo
+
+**1. Defina o objetivo mínimo de cada exploração antes de executá-la.** Prova de acesso encerra a demonstração; extração ampla é vazamento com boa intenção.
+
+**2. Nunca saia do escopo por encadeamento.** Alcançou um sistema que não estava na lista? Pare, registre, peça extensão por escrito. É a fronteira da lei, não apenas do contrato.
+
+**3. Prefira a defesa estrutural à filtragem.** Parametrização, codificação sensível ao contexto e validação por lista de permissão encerram classes; filtro de conteúdo é corrida que o defensor perde.
+
+**4. Trate as falhas médias, não só as críticas.** Os elos das cadeias reais são exatamente as médias que os programas ignoram. Encadeamento é o trabalho humano que o scanner não faz.
+
+**5. Invista em profundidade de defesa como quebra-cadeia.** Cada camada é uma chance de parar ou detectar o encadeamento. Não é redundância; é o mecanismo.
+
+**6. Priorize linguagens com segurança de memória em software novo e crítico.** Remover a classe de corrupção de memória é superior a acumular mitigações contra ela.
+
+**7. Mantenha as mitigações de memória ativas** onde a linguagem insegura é inevitável: aleatorização de endereços, memória não executável, integridade de fluxo de controle. Elas encarecem enormemente a exploração.
+
+**8. Elimine a configuração incorreta primeiro.** Credencial padrão, painel exposto e armazenamento aberto são portas destrancadas — o melhor retorno de esforço defensivo que existe.
+
+**9. Verifique autorização no servidor, para cada objeto e ação, com negação por padrão.** É o que anula a classe de controle de acesso que o scanner nunca enxerga.
+
+**10. Use o teste para medir a detecção, não só para achar falhas.** A pergunta que mais importa é "teríamos percebido?".
+
+**11. Mapeie cada exploração à técnica correspondente do ATT&CK** e valide com a defesa se o alerta disparou. É o que converte o teste ofensivo em melhoria defensiva.
+
+**12. Preserve evidência mínima e reversível.** Comando, resposta, carimbo de tempo. E um plano de reversão para qualquer técnica com risco de dano.
+
+**13. Documente o que não foi possível explorar e por quê.** "A mitigação Z bloqueou o caminho Y" é cobertura — e frequentemente a melhor notícia do relatório.
+
+**14. Divulgue falha de terceiro de forma coordenada.** CERT.br e o fabricante, seguindo ISO/IEC 29147 e 30111. Publicar exploração armada sem coordenação flerta com o tipo penal.
+
+**15. Encontrou sinal de invasão real? Vira incidente.** Pare a exploração, acione a resposta a incidentes do cliente, deixe os prazos regulatórios começarem a correr.
+
+## Resumo
+
+- A exploração transforma conhecimento em **demonstração**, com objetivo mínimo, controle, reversibilidade e evidência — não é o clímax do estereótipo, e o fracasso documentado também é resultado.
+- Uma quantidade desproporcional de falhas graves tem a **mesma raiz**: um dado controlado pelo atacante é interpretado como instrução. A contramedida comum é **separar dado de instrução estruturalmente**, não filtrar conteúdo.
+- As grandes classes — injeção, corrupção de memória, autenticação e sessão, controle de acesso, configuração incorreta — existem por razões distintas, mas cada uma tem uma contramedida de fundo conhecida, e várias se anulam removendo a classe em vez de mitigá-la.
+- As mitigações de memória acumuladas em vinte anos são a maior história de sucesso defensivo da área; ainda assim, **linguagens com segurança de memória** superam todas elas por remover a classe inteira.
+- **O encadeamento é o trabalho humano por excelência:** falhas medianas combinadas produzem o que nenhuma daria sozinha. Por isso tratar só os "críticos" isolados deixa as cadeias reais intactas.
+- **Profundidade de defesa não é redundância — é o que quebra a cadeia:** cada camada é uma chance de parar ou detectar o encadeamento.
+- A pergunta defensiva mais valiosa de um teste não é "a falha existe?", mas "**teríamos percebido?**". Mapear cada exploração ao ATT&CK e validar a detecção converte o teste ofensivo em melhoria defensiva.
+- No Brasil, a exploração é a fronteira exata do art. 154-A do Código Penal; a minimização do dano é exigência da LGPD; achado de invasão real vira incidente com prazos próprios; e a divulgação de falha de terceiro segue o rito coordenado do CERT.br.

@@ -1,3 +1,226 @@
 # Reconhecimento passivo e OSINT {#sec-cap057}
 
-*(em elaboracao)*
+Na primeira manhã de um teste externo, antes de enviar um único pacote ao cliente, o testador já tem uma planilha com 214 nomes de domínio. Cento e oitenta e três estavam na lista que a empresa forneceu. Os outros trinta e um vieram de registros públicos de certificados: um portal de campanha de marketing encerrada em 2021, dois ambientes de homologação com nomes autoexplicativos, um painel de administração de um sistema de chamados que a empresa jurava ter desligado, e o restante espalhado entre subdomínios de fornecedores que ninguém mais acompanhava.
+
+Nenhum desses trinta e um estava no inventário. Todos estavam na internet.
+
+Essa é a lição central do reconhecimento passivo: **a superfície de ataque de uma organização é maior do que o seu inventário, e a diferença entre as duas é onde os incidentes acontecem**. O adversário não precisa de acesso privilegiado para montar esse mapa — precisa de paciência e de fontes públicas. O defensor tem exatamente as mesmas fontes disponíveis, e quase nunca as usa.
+
+## A fronteira entre passivo e ativo
+
+A distinção é operacional, não acadêmica, e define o que é seguro fazer antes da janela autorizada.
+
+**Reconhecimento passivo** obtém informação **sem enviar tráfego ao alvo**. Consulta bases de terceiros, registros públicos, arquivos históricos e material já publicado. Não deixa rastro nos logs do alvo, não dispara alerta e não depende de autorização técnica do alvo — embora ainda esteja sujeito a limites legais quando envolve dados pessoais.
+
+**Reconhecimento ativo** interage diretamente: resolve nomes contra os servidores do alvo, abre conexões, requisita páginas. Aparece nos logs, pode disparar detecção e **só pode ocorrer dentro da janela e do escopo autorizados** (@sec-cap056).
+
+A fronteira é mais sutil do que parece. Consultar um registro de certificados é passivo. Resolver os nomes encontrados contra o servidor DNS autoritativo do alvo já é ativo. Acessar a página inicial de um subdomínio pelo navegador é ativo, ainda que pareça inofensivo. Já consultar um índice de terceiros que capturou aquela página semanas atrás é passivo.
+
+A regra prática que evita problema: **se o pacote sai da sua máquina em direção a um endereço do alvo, é ativo — e precisa estar autorizado**.
+
+## As fontes que produzem resultado
+
+O universo de fontes é grande, mas um punhado delas responde pela maior parte do valor.
+
+**Registros de nomes e de números.** Consultas ao WHOIS e ao RDAP revelam titular, contatos, datas e servidores autoritativos [@rdap2015]. Em domínios `.br`, a consulta ao registro nacional expõe o titular por CNPJ, o que permite descobrir **outros domínios da mesma organização** — inclusive marcas e projetos que ninguém associaria à empresa. O registro regional de números fecha o outro lado: qual bloco de endereços pertence a quem, e qual sistema autônomo o anuncia (@sec-cap033).
+
+**Registros de transparência de certificados.** É a fonte mais produtiva do repertório atual e a que gerou os trinta e um domínios da abertura. Toda emissão de certificado publicamente confiável é registrada em logs públicos e auditáveis (@sec-cap019) [@rfc6962]. Isso significa que **emitir um certificado para `homologacao-novo-erp.empresa.com.br` publica esse nome para o mundo**, mesmo que o serviço nunca tenha sido divulgado. Não há como optar por não participar: é o preço da transparência que torna a PKI auditável — um preço que vale a pena, mas que é preciso saber que existe.
+
+**Dados de DNS passivo.** Bases mantidas por terceiros acumulam respostas observadas ao longo de anos. Mostram para onde um nome apontava antes, o que ajuda a descobrir infraestrutura de origem escondida atrás de uma rede de distribuição de conteúdo, e a encontrar servidores desativados que voltaram a responder.
+
+**Indexadores de serviços expostos.** Existem serviços que varrem continuamente o espaço de endereçamento da internet e publicam o que encontram: banner, versão, certificado apresentado, tecnologias detectadas. Consultar esse índice é passivo — quem varreu foi o serviço, semanas atrás. Para o defensor, é a forma mais rápida de responder "o que da minha rede está exposto que eu não sei".
+
+**Repositórios de código.** Além do código em si, o histórico. Como o @sec-cap055 estabeleceu, segredo que entrou em repositório está comprometido; o reconhecimento passivo é o momento em que isso se materializa. Vale para repositórios da empresa e, com frequência maior, para **repositórios pessoais de funcionários** que copiaram um trecho de configuração para um projeto próprio.
+
+**Metadados de documentos publicados.** Arquivos de escritório e PDFs no site institucional carregam autor, versão de software, caminho de rede interno e às vezes nome de servidor de impressão. É uma fonte discreta que entrega convenção de nomes de usuário — e convenção de nome de usuário é metade do caminho para um ataque de credencial.
+
+**Arquivos históricos da web.** Versões antigas de páginas revelam endpoints removidos, comentários em HTML, chaves expostas por um mês em 2022 e a estrutura anterior do site. Remover uma página não remove a cópia arquivada.
+
+**Vazamentos de credenciais anteriores.** Bases de credenciais expostas em incidentes de terceiros permitem verificar se endereços corporativos aparecem em vazamentos. Como reuso de senha é regra, essa é a fonte com maior conversão em acesso — e a que o defensor deveria monitorar como rotina, algo que o @sec-cap023 já antecipou.
+
+**Pessoas.** Redes profissionais, currículos e vagas abertas descrevem a pilha tecnológica com precisão desconcertante: "experiência com o firewall X e o SIEM Y" em uma vaga informa ao adversário exatamente o que ele vai encontrar. Não é informação que se possa esconder, mas é informação que se deve saber que está pública.
+
+::: {#fig-fontes-osint}
+```{.tikz}
+%%| filename: fontes-osint
+%%| alt: Mapa de fontes de reconhecimento passivo agrupadas em infraestrutura, exposição, código e pessoas, convergindo para o mapa da superfície de ataque usado por atacante e defensor
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fonte/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                  inner sep=4pt, minimum width=2.8cm, minimum height=1.0cm}}
+
+  \node[fonte, draw=manualblue, fill=manualblue!14] (f1) at (-4.7,3.0)
+    {\textbf{Infraestrutura}\\ WHOIS/RDAP, registro .br,\\ ASN e blocos, DNS passivo};
+  \node[fonte, draw=manualyellow, fill=manualyellow!16] (f2) at (-1.6,3.0)
+    {\textbf{Exposição}\\ transparência de\\ certificados, indexadores};
+  \node[fonte, draw=manualred, fill=manualred!13] (f3) at (1.6,3.0)
+    {\textbf{Código e documentos}\\ repositórios e histórico,\\ metadados, arquivo web};
+  \node[fonte, draw=manualgreen, fill=manualgreen!13] (f4) at (4.7,3.0)
+    {\textbf{Pessoas}\\ vagas, redes profissionais,\\ vazamentos anteriores};
+
+  \node[draw=manualgray, fill=manualgray!14, thick, rounded corners=3pt, align=center,
+        font=\scriptsize, inner sep=5pt, text width=10.2cm] (mapa) at (0,1.1)
+    {\textbf{MAPA DA SUPERFÍCIE DE ATAQUE}\\[1pt]
+     {\tiny domínios e subdomínios --- blocos e hospedagens --- tecnologias e versões
+      --- fornecedores --- convenções de nome --- pessoas e papéis}};
+
+  \foreach \f in {f1, f2, f3, f4}
+    {\draw[->, >=stealth, thick, manualgray] (\f) -- (mapa);}
+
+  \node[draw=manualred, fill=manualred!12, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\tiny, text width=5.2cm] at (-3.2,-0.8)
+    {\textbf{Para o adversário}\\
+     o alvo de menor resistência: o ativo\\
+     esquecido, sem dono e sem correção};
+  \node[draw=manualgreen, fill=manualgreen!12, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\tiny, text width=5.2cm] at (3.2,-0.8)
+    {\textbf{Para o defensor}\\
+     as mesmas fontes, como rotina:\\
+     gestão de superfície de ataque externa};
+
+  \draw[->, >=stealth, thick, manualred]   (mapa.south) -- (-3.2,-0.25);
+  \draw[->, >=stealth, thick, manualgreen] (mapa.south) -- (3.2,-0.25);
+
+  \node[font=\scriptsize, align=center, text width=11.8cm] at (0,-2.0)
+    {\textbf{A assimetria não está no acesso às fontes --- elas são as mesmas para os
+     dois lados. Está em quem as consulta com regularidade.}};
+\end{tikzpicture}
+```
+As fontes de reconhecimento passivo e os dois usos possíveis do mesmo mapa.
+:::
+
+## De coleta a hipótese
+
+Coletar é a parte mecânica. O que separa reconhecimento útil de uma planilha grande é a etapa seguinte: transformar dado em **hipótese testável**.
+
+**Normalização e deduplicação.** Nomes chegam de cinco fontes com grafias diferentes; endereços aparecem repetidos; ativos de terceiros se misturam aos do cliente. Antes de qualquer análise, é preciso responder, item por item: **isto está no escopo?** Ativo de fornecedor que hospeda a marca do cliente não é do cliente, e testá-lo sem autorização própria é o erro do @sec-cap056.
+
+**Correlação.** Um certificado que cobre simultaneamente `api.empresa.com.br` e `api-interna.empresa.local` revela a existência de um domínio interno e sua convenção de nome. Um bloco de endereços com nomes reversos padronizados revela a topologia. Um repositório pessoal com um arquivo de configuração revela a arquitetura de um serviço.
+
+**Formação de hipóteses.** Cada correlação vira uma frase verificável na fase ativa:
+
+- "A convenção de usuário é `primeiro.ultimo`" — verificável no comportamento de autenticação, sem força bruta.
+- "O ambiente de homologação usa a mesma base de produção" — verificável pelo conjunto de funcionalidades e pelo comportamento das respostas.
+- "Existe um painel administrativo em um caminho previsível" — verificável com uma requisição.
+- "Este subdomínio aponta para um serviço de nuvem que não existe mais" — a hipótese de **tomada de subdomínio**, uma das falhas de maior impacto e menor esforço que o reconhecimento passivo revela: o registro DNS continua apontando para um recurso desprovisionado, e quem provisionar um recurso com aquele nome passa a responder por um domínio legítimo da organização.
+
+**Priorização.** O ativo esquecido vale mais que o ativo principal. O portal institucional é monitorado, corrigido e testado; o sistema de uma campanha de 2021 não tem dono, não tem atualização e frequentemente não tem sequer registro de log. É por ali que se entra.
+
+::: {#fig-pipeline-osint}
+```{.tikz}
+%%| filename: pipeline-osint
+%%| alt: Fluxo do reconhecimento passivo desde a coleta em fontes públicas até hipóteses priorizadas, com a fronteira que separa a fase passiva da validação ativa autorizada
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=2.4cm, minimum height=1.05cm}}
+
+  \node[et, draw=manualblue, fill=manualblue!13] (e1) at (-5.1,1.7)
+    {\textbf{Coleta}\\ fontes públicas,\\ sem tocar o alvo};
+  \node[et, draw=manualblue, fill=manualblue!13] (e2) at (-2.5,1.7)
+    {\textbf{Normalização}\\ deduplicar e\\ \textbf{filtrar escopo}};
+  \node[et, draw=manualyellow, fill=manualyellow!16] (e3) at (0.1,1.7)
+    {\textbf{Correlação}\\ ligar fontes,\\ inferir padrões};
+  \node[et, draw=manualyellow, fill=manualyellow!16] (e4) at (2.7,1.7)
+    {\textbf{Hipóteses}\\ frases\\ verificáveis};
+  \node[et, draw=manualgray, fill=manualgray!13] (e5) at (5.3,1.7)
+    {\textbf{Priorização}\\ o esquecido\\ antes do principal};
+
+  \foreach \a/\b in {e1/e2, e2/e3, e3/e4, e4/e5}
+    {\draw[->, >=stealth, thick, manualblue] (\a) -- (\b);}
+
+  \draw[dashed, very thick, manualred] (-6.5,0.5) -- (6.6,0.5);
+  \node[manualred, font=\scriptsize, fill=white, inner sep=2pt] at (0.0,0.5)
+    {\textbf{daqui para baixo, só dentro da janela autorizada}};
+
+  \node[et, draw=manualred, fill=manualred!13, minimum width=4.2cm] (e6) at (-2.2,-0.7)
+    {\textbf{Validação ativa}\\ resolução, conexão, requisição\\ --- aparece nos logs do alvo};
+  \node[et, draw=manualgreen, fill=manualgreen!13, minimum width=4.2cm] (e7) at (2.9,-0.7)
+    {\textbf{Descarte documentado}\\ hipótese refutada também é\\ resultado: é cobertura};
+
+  \draw[->, >=stealth, thick, manualred] (e4.south) -- (-2.2,-0.15);
+  \draw[->, >=stealth, thick, manualgreen] (e6) -- (e7);
+
+  \node[draw=manualgray, fill=manualgray!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\tiny, text width=11.8cm] at (0.2,-2.1)
+    {\textbf{O erro mais comum da fase passiva não é técnico, é de escopo:} incluir na
+     lista de alvos um ativo que apenas \emph{parece} do cliente --- domínio de
+     fornecedor, serviço de marketing terceirizado, sistema de um parceiro. Filtrar
+     escopo é etapa de processo, não bom senso.};
+\end{tikzpicture}
+```
+Da coleta à hipótese. A linha tracejada é a fronteira jurídica e operacional do engajamento.
+:::
+
+## O uso defensivo: as mesmas fontes, do outro lado
+
+Tudo o que este capítulo descreve está igualmente disponível para quem defende, e a prática de usar essas fontes de forma contínua tem nome: **gestão de superfície de ataque externa**. Ela responde à pergunta que quase nenhuma organização sabe responder de imediato — "o que está exposto em meu nome agora?".
+
+Quatro rotinas cobrem a maior parte do valor:
+
+**Monitorar os registros de transparência de certificados** com alerta para o domínio da organização. Certificado novo emitido para um subdomínio que ninguém pediu é sinal de duas coisas possíveis: um projeto fora do processo, ou uma emissão indevida. As duas merecem investigação.
+
+**Inventariar do lado de fora, periodicamente**, com as mesmas fontes que o adversário usa, e reconciliar com o inventário interno. A diferença entre as duas listas é a lista de trabalho.
+
+**Vigiar registros DNS órfãos.** Todo processo de desprovisionamento precisa remover o registro DNS antes de liberar o recurso na nuvem. A ordem inversa é a que cria a tomada de subdomínio.
+
+**Higienizar o que se publica**: remover metadados de documentos, evitar detalhamento excessivo de produtos em vagas, orientar sobre o que não vai para repositório pessoal. Nenhuma dessas medidas impede um adversário determinado — todas encarecem o trabalho dele e reduzem a chance do achado fácil.
+
+## ⚖️ Brasil em Foco
+
+**Dado pessoal disponível publicamente continua sendo dado pessoal.** É o ponto que mais gera erro em OSINT no Brasil. O art. 7º, §§ 3º e 4º, da LGPD deixa claro que o tratamento de dados tornados manifestamente públicos pelo titular ainda exige finalidade legítima e **não afasta os direitos do titular**. Coletar perfis de funcionários, montar organograma e cruzar com vazamentos é tratamento de dado pessoal, feito pela empresa contratada na qualidade de operadora. Precisa estar previsto no contrato, com finalidade restrita ao teste, guarda cifrada, prazo definido e eliminação comprovada [@lgpd2018].
+
+**O registro de domínios `.br` expõe titularidade por CNPJ, e isso é intencional.** A consulta pública permite mapear o conjunto de domínios de uma organização a partir de um único. Para o defensor, essa mesma característica é a forma mais barata de descobrir domínios registrados por áreas de negócio à revelia da TI — o fenômeno que costuma produzir os ativos esquecidos [@nicbr2024registro].
+
+**A Lei de Acesso à Informação amplia a superfície do setor público.** Portais de transparência, editais e contratos publicados descrevem com detalhe fornecedores, produtos e versões contratadas por órgãos públicos. É informação legitimamente pública e de altíssimo valor para reconhecimento. Para órgãos, a conclusão prática não é restringir a publicação — é assumir que a pilha tecnológica é conhecida e dimensionar a defesa a partir daí [@lai2011].
+
+**Coleta massiva automatizada tem limites além da LGPD.** Raspagem de redes sociais e de sites esbarra em termos de uso contratuais e, quando envolve volume relevante de dados pessoais, atrai o escrutínio da ANPD. A orientação da autoridade sobre tratamento de dados em bases públicas reforça que disponibilidade não equivale a livre uso — e, se a base coletada vazar, aplica-se o rito de comunicação da Resolução CD/ANPD nº 15/2024 [@anpd2023guia; @anpd2024res15].
+
+**Reconhecimento passivo não é crime; o passo seguinte pode ser.** Consultar fontes públicas não configura invasão. Mas a fronteira do art. 154-A do Código Penal é cruzada no momento em que se usa credencial vazada para autenticar, ainda que "só para confirmar". Testar credencial encontrada em vazamento é acesso não autorizado, e a autorização do cliente cobre apenas os sistemas do cliente [@lei12737; @lei14155].
+
+**Registros de conexão e identificação de origem.** O Marco Civil (arts. 13 e 15) obriga provedores a guardar registros, e o uso de CGNAT torna a atribuição de um endereço a um assinante dependente de porta e horário precisos. Para o testador, a consequência prática é que **as origens declaradas no escopo precisam ser estáveis e registradas**: sem isso, a atividade do teste é indistinguível da de um adversário nos logs do cliente, e a análise posterior de incidente fica contaminada [@marcocivil2014; @anatel740].
+
+**Vazamentos anteriores são um problema estrutural local.** O país acumula incidentes de larga escala com dados de CPF, e o CERT.br registra de forma recorrente comprometimentos que começam em credencial reaproveitada. Monitorar a exposição de endereços corporativos em vazamentos e forçar rotação é uma das medidas defensivas de melhor relação entre custo e efeito disponíveis [@cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Faça o reconhecimento passivo do seu próprio ambiente antes que alguém faça.** Comece pelos registros de transparência de certificados: em uma tarde você descobre subdomínios que não estão no inventário.
+
+**2. Monitore emissão de certificados** com alerta por domínio. Certificado novo sem projeto conhecido é ou processo furado, ou emissão indevida.
+
+**3. Reconcilie o inventário externo com o interno todo mês.** A diferença é a sua lista de trabalho, e ela raramente é vazia.
+
+**4. Corrija a ordem do desprovisionamento**: remova o registro DNS **antes** de liberar o recurso. A ordem inversa é a receita da tomada de subdomínio.
+
+**5. Procure domínios registrados pelo CNPJ da empresa.** Marketing e unidades de negócio registram domínios sem avisar a TI com frequência incômoda.
+
+**6. Verifique a exposição de credenciais corporativas em vazamentos** e force rotação. Reuso de senha é a regra, não a exceção.
+
+**7. Varra os repositórios da organização e o histórico**, não só o estado atual. E oriente sobre repositório pessoal — é onde o trecho de configuração costuma parar.
+
+**8. Remova metadados dos documentos publicados.** Autor, caminho de rede e versão de software entregam convenção de usuário e pilha interna.
+
+**9. Revise as vagas abertas.** Descrever a pilha com nome e versão de produto é entregar o mapa; descrever competências resolve a contratação do mesmo jeito.
+
+**10. No teste, filtre o escopo antes de correlacionar.** Ativo que apenas parece do cliente é o erro que produz teste não autorizado.
+
+**11. Nunca teste credencial encontrada em vazamento fora do escopo autorizado.** Confirmar que ela funciona é acesso não autorizado, mesmo com boa intenção.
+
+**12. Declare e mantenha estáveis as origens do teste**, e registre-as no escopo. É isso que permite ao cliente separar a sua atividade da de um adversário real nos logs.
+
+**13. Trate o material de OSINT sobre pessoas como dado pessoal**: mínimo necessário, guarda cifrada, prazo curto, eliminação comprovada. É exigência da LGPD, não zelo excessivo.
+
+**14. Priorize o esquecido.** O ativo sem dono, sem atualização e sem log vale mais para o adversário do que o portal principal — e para você também.
+
+**15. Documente as hipóteses descartadas.** "Verificamos e não se confirmou" é parte da cobertura que o relatório precisa demonstrar.
+
+## Resumo
+
+- **A superfície de ataque é maior que o inventário**, e a diferença entre as duas é onde os incidentes acontecem. O reconhecimento passivo é o método para medir essa diferença — para os dois lados.
+- Passivo é o que **não envia tráfego ao alvo**; ativo aparece nos logs e só ocorre dentro da janela autorizada. Se o pacote sai em direção ao alvo, é ativo.
+- As fontes de maior retorno: registros de titularidade e de números, **transparência de certificados**, DNS passivo, indexadores de serviços expostos, repositórios e seu histórico, metadados de documentos, arquivos históricos da web, vazamentos anteriores e informação sobre pessoas.
+- A transparência de certificados publica **todo nome para o qual se emite certificado**, incluindo ambientes internos e não divulgados. Não há como não participar — só como saber e monitorar.
+- Coleta vira valor quando produz **hipóteses verificáveis**: convenção de usuário, reuso de base entre ambientes, painel em caminho previsível, registro DNS órfão apontando para recurso desprovisionado.
+- **O ativo esquecido vale mais que o principal**: não tem dono, nem atualização, nem log.
+- Do lado defensivo, as mesmas fontes viram **gestão de superfície de ataque externa**: monitorar certificados, inventariar de fora, vigiar DNS órfão e higienizar o que se publica.
+- No Brasil, **dado público continua sendo dado pessoal** (art. 7º, §§ 3º e 4º da LGPD); o registro `.br` permite mapear domínios por CNPJ; a LAI amplia a superfície pública; e testar credencial vazada fora do escopo cruza a fronteira do art. 154-A do Código Penal.

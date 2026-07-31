@@ -1,3 +1,165 @@
 # Varredura e enumeração {#sec-cap058}
 
-*(em elaboracao)*
+O reconhecimento passivo do capítulo anterior entregou um mapa: domínios, blocos de endereços, hipóteses. Agora começa a parte que aparece nos logs. A primeira ação ativa de um teste é também a mais reveladora sobre a maturidade da organização — e não pelo motivo que se imagina.
+
+Em um teste interno recente, a varredura de uma faixa `/24` levou onze minutos e devolveu 47 hosts ativos. O inventário oficial do cliente listava 31. Dos 16 excedentes, quatro eram impressoras com serviço de administração web sem senha, três eram câmeras com firmware de 2019, dois eram servidores de um projeto encerrado e o restante era um pequeno zoológico de dispositivos que ninguém sabia nomear. A varredura não encontrou uma vulnerabilidade exótica; encontrou **a diferença entre o que a organização acha que tem e o que ela tem**. Essa diferença é a verdadeira descoberta desta fase.
+
+A distinção que organiza o capítulo: **varredura** responde "o que está ligado e o que está aberto"; **enumeração** responde "o que é, qual versão, quem usa e como se comporta". A primeira é ampla e rápida; a segunda é focada e paciente. As duas juntas transformam o mapa em uma lista de alvos com hipóteses concretas — e as duas, mal calibradas, derrubam serviço.
+
+## Descoberta de hosts: quem está vivo
+
+Antes de investigar portas, é preciso saber quais endereços respondem. Varrer o espaço inteiro de uma faixa procurando serviços em máquinas que nem existem é desperdício e barulho.
+
+A descoberta combina vários sinais porque nenhum é confiável sozinho. Uma resposta de eco confirma que o host está vivo, mas muitos ambientes bloqueiam esse tráfego, e a ausência de resposta **não** significa host inexistente — significa host que não responde àquele estímulo. Sondar algumas portas comuns, esperar uma resposta de rede da camada de transporte e consultar a tabela de vizinhança local (em rede interna) preenchem as lacunas. Em redes IPv6, a descoberta muda de natureza: o espaço de endereçamento é vasto demais para varredura por força bruta, e a enumeração passa a depender de outras fontes — o próprio DNS, os registros de vizinhança e o tráfego de multicast.
+
+A lição defensiva já aparece aqui: **um host que responde a uma sondagem que deveria estar bloqueada é um host mal segmentado**. A descoberta do atacante é, ponto a ponto, o inventário que faltava ao defensor.
+
+## Varredura de portas: o que está aberto
+
+Uma porta pode estar em três estados que importam. **Aberta**: há um serviço escutando e ele responde. **Fechada**: o host respondeu, mas não há serviço naquela porta — informação útil, porque confirma que o host existe e que um firewall não está filtrando ali. **Filtrada**: nada volta, e não se sabe se a porta está fechada ou se um firewall descartou o pacote silenciosamente. A distinção entre "fechada" e "filtrada" diz mais sobre a **postura de firewall** da rede do que sobre qualquer serviço.
+
+As técnicas de varredura exploram o comportamento da pilha TCP/IP do @sec-cap008:
+
+**Varredura por conexão completa** abre a conexão até o fim. É a mais confiável e a mais registrada — cada conexão completa aparece no log da aplicação. Não exige privilégio especial.
+
+**Varredura por meia conexão** envia o pedido inicial de conexão, observa a resposta e não completa o aperto de mãos. Historicamente vendida como "furtiva" por não registrar uma conexão completa na aplicação, ela **não é invisível**: qualquer sistema de detecção de rede moderno (@sec-cap031) percebe o padrão de muitas aberturas incompletas. A furtividade dessa técnica é folclore de uma era anterior à detecção comportamental.
+
+**Varredura de UDP** é lenta e traiçoeira. Como o UDP não tem aperto de mãos, a ausência de resposta é ambígua, e a inferência depende de mensagens de erro de rede que muitos hosts limitam por taxa. Serviços críticos vivem em UDP — DNS, SNMP, VPN, sincronização de tempo —, então pulá-la deixa buracos, mas ela exige paciência e cuidado.
+
+O ponto que separa profissional de amador não é a técnica: é a **calibração**. Varredura agressiva contra equipamento frágil — controlador industrial, dispositivo médico, roteador antigo, impressora — pode travar o dispositivo. Foi por isso que o @sec-cap056 insistiu em exclusões explícitas. A taxa de envio, o paralelismo e a escolha de portas são decisões de gestão de risco, não configurações padrão a aceitar sem pensar.
+
+::: {#fig-estados-porta}
+```{.tikz}
+%%| filename: estados-porta
+%%| alt: Árvore de decisão dos três estados de uma porta na varredura TCP — aberta, fechada e filtrada — e o que cada estado revela sobre serviço e firewall
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    no/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=2.5cm, minimum height=0.85cm}}
+
+  \node[no, draw=manualblue, fill=manualblue!14, very thick] (s) at (0,3.2)
+    {\textbf{sondagem}\\ pedido de conexão\\ enviado à porta};
+
+  \node[no, draw=manualgreen, fill=manualgreen!14] (ab) at (-4.2,1.2)
+    {\textbf{ABERTA}\\ o serviço aceita};
+  \node[no, draw=manualyellow, fill=manualyellow!16] (fe) at (0,1.2)
+    {\textbf{FECHADA}\\ o host recusa};
+  \node[no, draw=manualred, fill=manualred!14] (fi) at (4.2,1.2)
+    {\textbf{FILTRADA}\\ silêncio total};
+
+  \draw[->, >=stealth, thick, manualgreen] (s) -- (ab)
+    node[midway, above left, font=\tiny, manualgreen] {aceite};
+  \draw[->, >=stealth, thick, manualyellow] (s) -- (fe)
+    node[midway, left, font=\tiny] {recusa};
+  \draw[->, >=stealth, thick, manualred] (s) -- (fi)
+    node[midway, above right, font=\tiny, manualred] {sem resposta};
+
+  \node[align=center, font=\tiny, text width=3.4cm, manualgreen] at (-4.2,-0.3)
+    {há serviço escutando --- \\ candidato à enumeração};
+  \node[align=center, font=\tiny, text width=3.4cm] at (0,-0.3)
+    {o host existe e \textbf{não} há\\ firewall filtrando ali};
+  \node[align=center, font=\tiny, text width=3.6cm, manualred] at (4.2,-0.3)
+    {porta fechada \emph{ou} firewall\\ descartando --- ambíguo};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=11.8cm] at (0,-1.8)
+    {\textbf{A diferença entre ``fechada'' e ``filtrada'' descreve a postura de
+     firewall, não o serviço.} Rede madura devolve silêncio (filtrada) em quase tudo;
+     rede plana devolve ``fechada'' e entrega, de graça, o mapa de quais hosts existem.
+     A varredura é, para o defensor, o inventário que faltava.};
+\end{tikzpicture}
+```
+Os três estados de porta e o que cada um revela. O silêncio de uma porta filtrada é, ele próprio, informação sobre a defesa.
+:::
+
+## Enumeração: do serviço à hipótese
+
+Encontrar uma porta aberta é o começo. A enumeração responde às perguntas que transformam "porta 443 aberta" em "servidor web X versão Y com painel administrativo em caminho previsível e certificado que revela três outros nomes internos".
+
+**Identificação de serviço e versão.** O serviço se apresenta — no banner, no cabeçalho de resposta, no comportamento característico. A versão é o elo direto com a análise de vulnerabilidades do próximo capítulo: saber que é a versão X.Y.Z permite consultar quais falhas conhecidas a afetam. Vale a ressalva: banner mente. Sistemas maduros alteram ou removem a identificação, e retrocompatibilidade faz um servidor atualizado ainda anunciar versão antiga. A versão do banner é hipótese, não fato.
+
+**Enumeração específica por protocolo** é onde mora o valor real, porque cada serviço vaza de um jeito:
+
+- **Web** entrega tecnologias, estrutura de diretórios, arquivos esquecidos (backups, painéis, documentação de API), páginas de erro que revelam a pilha, e o certificado com seus nomes alternativos — que frequentemente listam ambientes internos.
+- **DNS**, quando permite transferência de zona a qualquer um, entrega a lista completa de nomes de uma vez — uma configuração incorreta clássica (@sec-cap032) que ainda aparece.
+- **SMTP** revela software, e comandos de verificação mal configurados confirmam a existência de contas.
+- **SNMP** com a comunidade padrão `public` ainda ativa é uma das fontes mais generosas de informação interna que existe: tabela de interfaces, processos, usuários, topologia. Configuração padrão nunca trocada é o achado, não a sofisticação.
+- **Compartilhamentos de arquivo** expõem, quando permitem acesso anônimo, pastas, permissões e, com frequência, arquivos que não deveriam estar acessíveis.
+- **Serviços de diretório** (o tema do @sec-cap013) entregam, muitas vezes com uma sessão anônima ou de usuário comum, a lista de usuários, grupos, políticas e a estrutura organizacional inteira — insumo direto para a fase de movimentação lateral do @sec-cap061.
+
+**Correlação com o reconhecimento passivo.** A enumeração ativa confirma ou refuta as hipóteses da fase passiva. O certificado que o registro de transparência mostrou aparece agora no serviço real; a convenção de usuário inferida dos metadados se confirma no comportamento do serviço de diretório; o painel administrativo suposto responde — ou não. Cada confirmação é uma hipótese que sobe de prioridade; cada refutação é cobertura documentada.
+
+## O produto da fase: a superfície viva
+
+Ao fim da varredura e da enumeração, o testador tem o que nenhum diagrama de rede do cliente costuma ter: a **superfície de ataque real e atual**. Não a que foi desenhada, não a que está no documento de arquitetura — a que responde aos pacotes hoje.
+
+Esse produto tem três partes:
+
+1. **Inventário real de hosts e serviços**, com o delta em relação ao inventário oficial destacado. O delta é, sozinho, um dos achados mais valiosos do teste inteiro.
+2. **Alvos priorizados**, cada um com serviço, versão presumida e a razão de ter subido na fila (exposto, sem correção, sem dono, com configuração padrão).
+3. **Hipóteses para a análise de vulnerabilidades**, que é o assunto do @sec-cap059.
+
+## O outro lado: por que a varredura importa para a defesa
+
+Cada técnica deste capítulo tem um espelho defensivo, e ignorar essa simetria é desperdiçar o teste.
+
+A varredura só é tão reveladora porque a maioria das redes é **plana e verbosa**: responde a sondagens que deveria filtrar, devolve "fechada" onde deveria devolver silêncio, mantém serviços de administração acessíveis de qualquer lugar e roda configurações padrão. A segmentação do @sec-cap028 é o que limita o alcance de uma varredura interna; o firewall bem configurado do @sec-cap029 é o que transforma "fechada" em "filtrada"; a detecção de rede do @sec-cap031 é o que percebe a varredura em andamento.
+
+E a melhor defesa contra a surpresa do delta de inventário é **fazer a própria varredura primeiro, continuamente**. Um scanner autorizado, rodando internamente todo dia, encontra a impressora sem senha e o servidor do projeto esquecido antes que o teste — ou o adversário — encontre. A varredura não é só ferramenta ofensiva: é a ferramenta de descoberta de ativos que o inventário sempre promete e nunca entrega sozinho.
+
+## ⚖️ Brasil em Foco
+
+**Varredura e enumeração são atividade ativa e só cabem dentro do escopo autorizado.** Diferente do reconhecimento passivo do @sec-cap057, aqui há tráfego dirigido aos sistemas do cliente. Fazer isso sem autorização é, no mínimo, acesso não autorizado a dispositivo informático nos termos do art. 154-A do Código Penal — e a defesa de "só olhei as portas" não resiste, porque a sondagem é interação deliberada com sistema alheio [@lei12737; @lei14155].
+
+**A captura de tráfego durante a enumeração tem regime próprio.** Em rede interna, a análise de tráfego para identificar serviços pode alcançar comunicações de terceiros. A Lei 9.296/1996 e o Marco Civil (arts. 7º e 10) impõem limites rígidos à interceptação; o escopo precisa autorizar explicitamente a captura e restringir tecnicamente o que é armazenado, sob pena de o teste produzir prova ilícita e responsabilidade para as duas partes [@lei9296; @marcocivil2014].
+
+**Serviço frágil derrubado durante a varredura pode gerar dano indenizável.** Se a sondagem travar um equipamento — controlador industrial, dispositivo médico, roteador antigo — e isso causar prejuízo, a responsabilidade civil recai sobre quem executou o teste, salvo previsão contratual e exclusão de escopo bem redigida. É a tradução jurídica da insistência do @sec-cap056 em exclusões explícitas e critérios de parada [@lei12737].
+
+**O delta de inventário conversa diretamente com a LGPD.** O art. 46 exige medidas técnicas para proteger dados pessoais, e não se protege o que não se sabe que existe. O servidor esquecido que a varredura revelou, se tratar dados pessoais, é um ponto de tratamento fora de qualquer controle — e, num incidente, contamina a resposta e os prazos da Resolução CD/ANPD nº 15/2024. Inventário de ativos é pré-condição de conformidade, não refinamento [@lgpd2018; @anpd2024res15].
+
+**Setores regulados exigem varredura contínua, não pontual.** A Resolução BCB nº 85 e o PCI-DSS v4 (Requisitos 11.2 e 11.3) exigem varredura de vulnerabilidades periódica, interna e externa, com registro e tratamento dos achados. Para instituições financeiras e de pagamento, a varredura própria contínua não é boa prática opcional: é obrigação regulatória com evidência exigida em auditoria [@bcb85; @pcidss4].
+
+**Origem estável e registrada protege as duas partes.** Como no capítulo anterior, o CGNAT e o dever de guarda de registros do Marco Civil (arts. 13 e 15) tornam essencial que as origens da varredura estejam declaradas no escopo. Sem isso, a atividade autorizada é indistinguível de um ataque nos logs, e a análise forense posterior a qualquer incidente parte de dados contaminados [@marcocivil2014; @anatel740].
+
+## 🛠️ No Campo
+
+**1. Faça você mesmo a varredura interna, todo dia, com scanner autorizado.** A impressora sem senha e o servidor esquecido aparecem para você antes de aparecerem para o teste ou para o adversário.
+
+**2. Reconcilie o resultado da varredura com o inventário oficial.** O delta é um dos achados mais valiosos que existem, e ele nunca é zero.
+
+**3. Configure o firewall para devolver silêncio, não "fechada".** A diferença entre filtrada e fechada é o mapa de quais hosts existem, entregue de graça.
+
+**4. Segmente para limitar o alcance da varredura interna.** Rede plana faz uma varredura de dez minutos render o mapa inteiro. Segmentação é o que contém isso.
+
+**5. Troque toda comunidade SNMP padrão e restrinja o acesso.** `public` ainda ativo é uma das fontes mais generosas de informação interna que um atacante encontra.
+
+**6. Desative transferência de zona DNS para clientes arbitrários.** Ela entrega a lista completa de nomes de uma só vez.
+
+**7. Remova ou padronize banners** que revelam versão. Não é defesa de fundo, mas encarece a análise de vulnerabilidades do outro lado.
+
+**8. Bloqueie sessão anônima em serviços de diretório e em compartilhamentos.** Lista de usuários e estrutura organizacional obtidas anonimamente alimentam diretamente a movimentação lateral.
+
+**9. Trave o acesso aos painéis de administração** de impressoras, câmeras e equipamentos de rede a uma rede de gestão isolada. Serviço de administração exposto e sem senha é o achado clássico.
+
+**10. Ative a detecção de varredura na rede.** O padrão de muitas conexões incompletas ou de sondagem sequencial de portas é detectável — e um teste anunciado é a oportunidade de validar se o alerta dispara.
+
+**11. No teste, calibre a agressividade pelo alvo.** Taxa, paralelismo e conjunto de portas são decisões de risco. Equipamento frágil pede varredura lenta e leve, ou exclusão.
+
+**12. Não pule o UDP, mas trate-o com paciência.** DNS, SNMP e VPN vivem lá; pular deixa buraco, mas varredura UDP agressiva gera ruído e ambiguidade.
+
+**13. Confirme as hipóteses do reconhecimento passivo.** Cada confirmação sobe a prioridade; cada refutação é cobertura documentada.
+
+**14. Registre tudo com carimbo de tempo e origem.** Serve ao relatório, à correlação com os logs do cliente e à sua defesa.
+
+**15. Trate o delta de inventário como ponto de partida de um programa, não como curiosidade.** Cada host desconhecido precisa ganhar dono, correção e registro de log — ou ser desligado.
+
+## Resumo
+
+- A varredura ativa revela **a diferença entre o que a organização acha que tem e o que ela tem**; esse delta de inventário é, muitas vezes, o achado mais valioso do teste.
+- **Varredura** responde "o que está ligado e aberto"; **enumeração** responde "o que é, qual versão, quem usa e como se comporta". As duas juntas transformam o mapa em alvos com hipóteses.
+- Os três estados de porta importam: aberta indica serviço; fechada confirma host sem firewall filtrando ali; **filtrada descreve a postura de firewall**, não o serviço.
+- A "furtividade" da varredura por meia conexão é folclore anterior à detecção comportamental: qualquer sistema de detecção de rede moderno percebe o padrão.
+- **Calibração é o que separa profissional de amador:** varredura agressiva trava equipamento frágil. Taxa, paralelismo e portas são decisões de gestão de risco.
+- A enumeração vaza por protocolo: web, DNS com transferência de zona aberta, SNMP com comunidade padrão, compartilhamentos anônimos e serviços de diretório com sessão anônima — quase sempre é **configuração padrão nunca trocada**, não sofisticação.
+- O produto da fase é a **superfície de ataque real e atual**: inventário com delta, alvos priorizados e hipóteses para a análise de vulnerabilidades.
+- Toda técnica tem espelho defensivo: segmentação limita o alcance, firewall transforma "fechada" em silêncio, detecção percebe a varredura — e **fazer a própria varredura primeiro, continuamente**, é a melhor defesa contra a surpresa do delta.

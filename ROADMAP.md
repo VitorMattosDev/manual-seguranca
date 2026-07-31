@@ -95,14 +95,14 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 9 — Testes de Invasão
 
-- [ ] **cap 056** - Metodologias e definição de escopo: PTES, OSSTMM e NIST SP 800-115 - `vol09/cap056-metodologias-e-definicao-de-escopo-ptes.qmd`
-- [ ] **cap 057** - Reconhecimento passivo e OSINT - `vol09/cap057-reconhecimento-passivo-e-osint.qmd`
-- [ ] **cap 058** - Varredura e enumeração - `vol09/cap058-varredura-e-enumeracao.qmd`
-- [ ] **cap 059** - Análise de vulnerabilidades - `vol09/cap059-analise-de-vulnerabilidades.qmd`
-- [ ] **cap 060** - Exploração: conceitos e anatomia de uma falha - `vol09/cap060-exploracao-conceitos-e-anatomia-de-uma-falha.qmd`
-- [ ] **cap 061** - Pós-exploração, persistência e movimentação lateral - `vol09/cap061-pos-exploracao-persistencia-e-movimentacao.qmd`
-- [ ] **cap 062** - Teste de invasão em aplicações web na prática - `vol09/cap062-teste-de-invasao-em-aplicacoes-web-na-pratica.qmd`
-- [ ] **cap 063** - Relatório técnico e comunicação de achados - `vol09/cap063-relatorio-tecnico-e-comunicacao-de-achados.qmd`
+- [x] **cap 056** - Metodologias e definição de escopo: PTES, OSSTMM e NIST SP 800-115 - `vol09/cap056-metodologias-e-definicao-de-escopo-ptes.qmd`
+- [x] **cap 057** - Reconhecimento passivo e OSINT - `vol09/cap057-reconhecimento-passivo-e-osint.qmd`
+- [x] **cap 058** - Varredura e enumeração - `vol09/cap058-varredura-e-enumeracao.qmd`
+- [x] **cap 059** - Análise de vulnerabilidades - `vol09/cap059-analise-de-vulnerabilidades.qmd`
+- [x] **cap 060** - Exploração: conceitos e anatomia de uma falha - `vol09/cap060-exploracao-conceitos-e-anatomia-de-uma-falha.qmd`
+- [x] **cap 061** - Pós-exploração, persistência e movimentação lateral - `vol09/cap061-pos-exploracao-persistencia-e-movimentacao.qmd`
+- [x] **cap 062** - Teste de invasão em aplicações web na prática - `vol09/cap062-teste-de-invasao-em-aplicacoes-web-na-pratica.qmd`
+- [x] **cap 063** - Relatório técnico e comunicação de achados - `vol09/cap063-relatorio-tecnico-e-comunicacao-de-achados.qmd`
 
 ### Volume 10 — Fator Humano
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (55 concluidos).
+**Total:** 107 capitulos em 16 volumes (63 concluidos).
 
