@@ -84,7 +84,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 ### Volume 8 — Nuvem e Contêineres
 
 - [x] **cap 050** - Modelo de responsabilidade compartilhada - `vol08/cap050-modelo-de-responsabilidade-compartilhada.qmd`
-- [ ] **cap 051** - IAM em nuvem e os erros de configuração mais caros - `vol08/cap051-iam-em-nuvem-e-os-erros-de-configuracao-mais.qmd`
+- [x] **cap 051** - IAM em nuvem e os erros de configuração mais caros - `vol08/cap051-iam-em-nuvem-e-os-erros-de-configuracao-mais.qmd`
 - [ ] **cap 052** - Segurança de contêineres e de imagens - `vol08/cap052-seguranca-de-conteineres-e-de-imagens.qmd`
 - [ ] **cap 053** - Segurança em Kubernetes - `vol08/cap053-seguranca-em-kubernetes.qmd`
 - [ ] **cap 054** - Infraestrutura como código e segurança de pipeline - `vol08/cap054-infraestrutura-como-codigo-e-seguranca-de.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (50 concluidos).
+**Total:** 107 capitulos em 16 volumes (51 concluidos).
 

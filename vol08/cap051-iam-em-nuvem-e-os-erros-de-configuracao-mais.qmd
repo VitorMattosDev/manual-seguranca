@@ -1,3 +1,230 @@
 # IAM em nuvem e os erros de configuração mais caros {#sec-cap051}
 
-*(em elaboracao)*
+Em 2019, uma instituição financeira americana sofreu um dos vazamentos mais estudados da década: dados de mais de cem milhões de pessoas, incluindo pedidos de crédito, extraídos de repositórios de objetos em nuvem. Não houve exploração de falha do provedor, nem senha fraca, nem malware.
+
+A cadeia foi outra: uma aplicação exposta na internet permitia que o atacante fizesse a aplicação buscar uma URL arbitrária — a falsificação de requisição do lado do servidor do @sec-cap047. A URL escolhida foi a do **serviço de metadados da instância**, um endereço interno que devolve, sem autenticação, as credenciais temporárias associadas ao papel daquela máquina. Com as credenciais em mãos, o atacante listou e baixou os repositórios que aquele papel podia acessar — e o papel podia acessar muito mais do que a aplicação precisava [@capitalone2019].
+
+Três elementos, cada um comum e individualmente pouco alarmante: uma falha de aplicação de severidade média, um serviço de metadados desprotegido e um papel com permissões amplas demais. **A combinação custou centenas de milhões de dólares.**
+
+Este capítulo é sobre a camada que transformou os três em um: a gestão de identidade e acesso em nuvem. Na infraestrutura tradicional, comprometer uma máquina dá acesso àquela máquina. Na nuvem, comprometer uma máquina dá acesso ao que a **identidade** dela pode fazer — e é o modelo de permissões, não a rede, que decide o tamanho do estrago.
+
+## O modelo mental: quatro peças e uma avaliação
+
+Os provedores usam nomes diferentes, mas o modelo conceitual é convergente e vale para todos. Quatro peças bastam para entender qualquer um deles.
+
+**Principal.** Quem faz a chamada: um usuário humano, uma aplicação, uma máquina virtual, um serviço do próprio provedor. É o sujeito do @sec-cap022 no vocabulário da nuvem.
+
+**Papel.** Um conjunto de permissões que **não pertence a ninguém em permanência** e é assumido temporariamente. Ao assumir um papel, o principal recebe credenciais de curta duração — normalmente minutos ou poucas horas. É a peça mais importante do modelo, porque é o que permite eliminar credenciais estáticas.
+
+**Política.** O documento que diz o que pode e o que não pode. Há dois tipos, e confundi-los é a origem de metade das dúvidas: a **política de identidade** está anexada ao principal e diz "este principal pode fazer X"; a **política de recurso** está anexada ao objeto e diz "estes principais podem me acessar". Elas se somam, e a segunda é a que permite que um recurso seja acessado por alguém de **outra conta** — inclusive por qualquer pessoa da internet, se a política disser isso.
+
+**Fronteira organizacional.** Regras aplicadas no nível da conta ou da organização que estabelecem um **teto**: nada abaixo delas pode ultrapassá-las, mesmo que a política local conceda. É o mecanismo que separa "o administrador da conta pode tudo" de "o administrador da conta pode tudo, dentro do que a organização permitiu".
+
+A avaliação segue uma ordem que é praticamente idêntica entre provedores, e memorizá-la resolve a maior parte das investigações:
+
+1. **Negação explícita vence sempre.** Qualquer negação, em qualquer política aplicável, encerra a decisão.
+2. **A fronteira organizacional precisa permitir.** Se o teto não contempla a ação, não há permissão possível abaixo dele.
+3. **Alguma política precisa permitir explicitamente** — de identidade ou de recurso.
+4. **Na ausência de permissão explícita, o padrão é negar.**
+
+::: {#fig-avaliacao-politica}
+```{.tikz}
+%%| filename: avaliacao-politica
+%%| alt: Fluxo de avaliação de uma requisição de API em nuvem passando por negação explícita, fronteira organizacional, políticas de identidade e de recurso até a decisão final
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, very thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, minimum width=3.5cm, minimum height=0.85cm},
+    nt/.style={font=\tiny, anchor=west, align=left, text width=5.4cm, text=manualgray}}
+
+  \node[et, draw=manualblue, fill=manualblue!14] (req) at (0,4.6)
+    {\textbf{requisição à API}\\ principal + ação + recurso};
+  \node[et, draw=manualred, fill=manualred!12] (deny) at (0,3.2)
+    {\textbf{1. negação explícita?}};
+  \node[et, draw=manualyellow, fill=manualyellow!14] (scp) at (0,1.8)
+    {\textbf{2. fronteira da organização}\\ permite a ação?};
+  \node[et, draw=manualyellow, fill=manualyellow!14] (idp) at (0,0.4)
+    {\textbf{3. política de identidade}\\ ou de recurso permite?};
+  \node[et, draw=manualgreen, fill=manualgreen!16] (ok) at (0,-1.0)
+    {\textbf{PERMITIDO}};
+  \node[et, draw=manualred, fill=manualred!14] (no) at (5.6,1.1)
+    {\textbf{NEGADO}\\ (padrão na ausência\\ de permissão)};
+
+  \foreach \a/\b in {req/deny, deny/scp, scp/idp, idp/ok}
+    {\draw[->, >=stealth, thick, manualblue] (\a) -- (\b);}
+  \draw[->, >=stealth, thick, manualred] (deny) -- ++(2.6,0) |- (no);
+  \draw[->, >=stealth, thick, manualred] (scp) -- ++(2.6,0) -- (no);
+  \draw[->, >=stealth, thick, manualred] (idp) -- ++(2.6,0) |- (no);
+
+  \node[nt] at (2.0,3.9) {qualquer negação encerra a decisão};
+  \node[nt] at (2.0,2.5) {o teto não pode ser ultrapassado por\\ nenhuma política abaixo dele};
+  \node[nt] at (2.0,-0.3) {a política de recurso é a que permite\\ acesso de outra conta --- ou de qualquer\\ pessoa da internet};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (2.6,-2.5)
+    {\textbf{Toda investigação de ``por que isso foi permitido?'' desce esta escada.}
+     E toda investigação de ``por que isso foi negado?'' começa procurando a negação
+     explícita ou o teto da organização --- nessa ordem, porque adicionar permissão
+     na política de identidade não resolve nenhum dos dois.};
+\end{tikzpicture}
+```
+A ordem de avaliação de uma requisição. Negação explícita e teto organizacional decidem antes de qualquer permissão local.
+:::
+
+## Credencial estática é o problema, não a solução
+
+O erro mais consequente da gestão de identidade em nuvem é o mais banal: **chave de acesso de longa duração**. Um par de identificador e segredo, sem prazo de validade, que autentica qualquer chamada de API vinda de qualquer lugar do mundo.
+
+Essas chaves vazam de todos os jeitos possíveis: repositório público, histórico do repositório privado que depois virou público, imagem de contêiner, variável em pipeline registrada em log, captura de tela em chamado de suporte, arquivo de configuração em estação de trabalho comprometida. E, uma vez fora, não expiram sozinhas. Existem sistemas automatizados varrendo repositórios públicos e testando credenciais em **segundos** após a publicação.
+
+A alternativa é estrutural, não disciplinar:
+
+**Para máquinas dentro do provedor**, use papéis anexados ao recurso. A instância, o contêiner ou a função recebe credenciais temporárias automaticamente, renovadas pelo próprio ambiente. Nenhum segredo é gravado em lugar nenhum.
+
+**Para sistemas fora do provedor** — o pipeline de integração contínua sendo o caso mais comum —, use federação por identidade de confiança. O provedor de nuvem confia no emissor de tokens do sistema de CI e concede um papel com base em declarações verificáveis do token: qual repositório, qual ramo, qual fluxo de trabalho. **Isso elimina a categoria inteira de "chave de produção guardada como segredo do repositório"**, que é a credencial mais roubada da indústria. É o assunto operacional do @sec-cap054.
+
+**Para pessoas**, use federação com o provedor de identidade corporativo (@sec-cap025), com múltiplo fator e acesso a papéis por sessão. Usuário local com chave permanente deve ser exceção documentada, não o padrão.
+
+A regra prática: se existe um segredo de nuvem de longa duração em algum lugar, ele é uma dívida, e a pergunta certa não é "está bem guardado?", mas "o que precisa mudar para ele não existir?".
+
+## O serviço de metadados e o caminho da escalada
+
+O caso que abriu o capítulo depende de um detalhe que muita gente desconhece: toda instância em nuvem tem acesso a um endereço interno especial, não roteável, que responde informações sobre ela mesma — incluindo **as credenciais temporárias do papel anexado**.
+
+Isso é um recurso, não uma falha: é justamente o que permite eliminar as chaves estáticas. Mas nas primeiras gerações desse serviço, qualquer processo na máquina — e, por extensão, qualquer requisição que a aplicação fosse induzida a fazer — obtinha as credenciais com um simples GET, sem cabeçalho, sem token, sem nada. **Uma falha de falsificação de requisição do lado do servidor virava, de graça, um roubo de credenciais de nuvem.**
+
+A correção tem duas camadas, e ambas importam:
+
+**Exija a versão do serviço de metadados que usa sessão.** As versões modernas obrigam a obter um token por um método HTTP diferente, com cabeçalho específico e limite de saltos de rede. Isso quebra a exploração por falsificação de requisição, porque o atacante controla a URL mas não os cabeçalhos nem o método. Configure a exigência no nível da instância e, quando o provedor permitir, imponha-a por política na organização inteira.
+
+**Limite o que o papel pode fazer.** Se a aplicação precisa ler um prefixo de um repositório, o papel deve permitir ler aquele prefixo — não listar tudo, não escrever, não acessar outros serviços. O bloqueio da primeira camada impede o roubo; a segunda decide o que acontece quando o roubo funciona mesmo assim.
+
+::: {#fig-cadeia-metadados}
+```{.tikz}
+%%| filename: cadeia-metadados
+%%| alt: Cadeia de ataque que parte de falsificação de requisição na aplicação, passa pelo serviço de metadados e chega ao acesso amplo aos dados, com as contramedidas em cada elo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    st/.style={draw=manualred, fill=manualred!12, very thick, rounded corners=3pt,
+               align=center, font=\tiny, inner sep=4pt, minimum width=2.5cm,
+               minimum height=1.0cm},
+    cm/.style={draw=manualgreen, fill=manualgreen!14, thick, rounded corners=3pt,
+               align=left, font=\tiny, inner sep=4pt, text width=2.5cm,
+               minimum height=1.35cm}}
+
+  \node[st] (a) at (0,2.6)    {\textbf{1}\\ falha de falsificação\\ de requisição na\\ aplicação};
+  \node[st] (b) at (3.2,2.6)  {\textbf{2}\\ requisição ao\\ serviço de\\ metadados};
+  \node[st] (c) at (6.4,2.6)  {\textbf{3}\\ credenciais\\ temporárias do\\ papel obtidas};
+  \node[st] (d) at (9.6,2.6)  {\textbf{4}\\ leitura de todos os\\ repositórios que o\\ papel alcança};
+
+  \foreach \a/\b in {a/b, b/c, c/d}
+    {\draw[->, >=stealth, very thick, manualred] (\a) -- (\b);}
+
+  \node[cm] (ca) at (0,0.6)   {\textbf{validar destino}\\ da requisição por lista de permissão; bloquear faixas internas};
+  \node[cm] (cb) at (3.2,0.6) {\textbf{exigir a versão}\\ com sessão e limite de saltos; impor por política};
+  \node[cm] (cc) at (6.4,0.6) {\textbf{papel mínimo}\\ e condições na política: origem, recurso, horário};
+  \node[cm] (cd) at (9.6,0.6) {\textbf{detectar}: uso da credencial fora da rede esperada};
+
+  \foreach \x in {0, 3.2, 6.4, 9.6}
+    {\draw[->, >=stealth, thick, manualgreen] (\x,1.28) -- (\x,2.08);}
+
+  \node[draw=manualyellow, fill=manualyellow!14, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\scriptsize, text width=12.2cm] at (4.8,-1.2)
+    {\textbf{Nenhum dos quatro elos é, sozinho, uma falha grave.} A falsificação de
+     requisição é severidade média; o serviço de metadados é um recurso legítimo;
+     o papel amplo é ``conveniência''. Quebrar \emph{qualquer} elo interrompe a
+     cadeia --- e é por isso que a defesa em profundidade continua sendo o
+     argumento mais forte da segurança em nuvem.};
+\end{tikzpicture}
+```
+A cadeia completa e a contramedida de cada elo. Quebrar um elo qualquer já interrompe o ataque.
+:::
+
+## Escalada de privilégio pela própria camada de permissões
+
+Um ponto que costuma escapar: **permissões sobre o serviço de identidade são permissões sobre tudo**. Um principal aparentemente modesto pode chegar a administrador total por caminhos legítimos, sem explorar falha nenhuma.
+
+**Poder criar ou anexar políticas.** Quem pode anexar uma política a si mesmo pode se conceder qualquer coisa. É administrador, com outro nome.
+
+**Poder passar um papel a um serviço.** A permissão de "entregar" um papel a um recurso que você cria é o vetor clássico: crie uma função, entregue a ela o papel administrativo, execute-a e leia o resultado. Por isso essa permissão sempre precisa vir **restrita a papéis específicos**, nunca genérica.
+
+**Poder criar uma nova versão de política.** Em provedores que versionam políticas, criar uma versão nova e defini-la como padrão é equivalente a editar a política — mesmo sem a permissão de editar.
+
+**Poder alterar a relação de confiança de um papel.** Quem edita quem pode assumir um papel pode se incluir na lista.
+
+**Poder criar credenciais para outro principal.** Redefinir senha, criar chave de acesso ou credencial de serviço para um usuário mais privilegiado é escalada direta.
+
+A conclusão prática é desconfortável e vale escrever nas políticas internas: **conceder permissões de administração de identidade é conceder administração**. Toda análise séria de permissões em nuvem trata essas ações como um grupo à parte, e as ferramentas nativas e livres de análise de caminho de privilégio existem exatamente para encontrá-las [@nistsp800210].
+
+## Os erros de configuração que mais custam
+
+A lista abaixo é curta de propósito. São os padrões que aparecem repetidamente em relatórios de incidente e que, juntos, respondem pela maior parte dos vazamentos em nuvem [@csathreats]:
+
+**Armazenamento de objetos exposto.** Ainda é o campeão. Hoje quase todos os provedores oferecem um bloqueio de acesso público no nível da conta — ligue-o, e trate a exceção como exceção formal.
+
+**Curinga em permissão.** `Action: "*"` sobre `Resource: "*"` é o padrão que atravessa qualquer investigação. Sobrevive porque funciona: ninguém volta a apertar uma permissão que já está entregando.
+
+**Papel de serviço com permissão administrativa.** A função criada para ler uma fila termina com acesso amplo porque o exemplo da documentação era genérico.
+
+**Conta administrativa raiz em uso cotidiano**, com chave de acesso programático e sem múltiplo fator. A conta raiz deve ficar guardada, com fator físico, e ser usada apenas nas poucas operações que exigem.
+
+**Confiança entre contas sem condição.** Uma política que permite que principais de outra conta assumam um papel, sem identificador externo e sem restrição de origem, é o cenário do delegado confuso: um terceiro legítimo é induzido a usar o acesso dele em seu nome.
+
+**Grupo de segurança aberto para a internet.** Administração remota, banco de dados e painéis de gestão acessíveis de qualquer lugar. É o @sec-cap029 aplicado a uma camada nova, com o agravante de que aqui a regra é criada com uma linha em um arquivo.
+
+**Registro desligado ou concentrado na mesma conta.** Sem registro do plano de controle, uma investigação não tem por onde começar; com o registro na mesma conta comprometida, o atacante apaga o rastro.
+
+**Ausência de fronteira organizacional.** Sem teto, qualquer conta que cresça em permissões vira um ponto único de comprometimento total.
+
+## ⚖️ Brasil em Foco
+
+**Permissão ampla demais é problema de LGPD, não só de segurança.** O art. 6º traz os princípios da **necessidade** e da **finalidade**: o tratamento deve se limitar ao mínimo necessário para propósitos legítimos e específicos. Um papel de aplicação que pode ler todos os repositórios de dados pessoais da organização, quando precisa de um, é tratamento além do necessário — e a discussão deixa de ser técnica no momento em que há um incidente. Somado ao art. 46, o desenho de permissões vira evidência direta de medida técnica adequada [@lgpd2018].
+
+**A ANPD exige comunicação de incidente com prazo e conteúdo definidos.** A Resolução CD/ANPD nº 15/2024 estabelece o prazo de três dias úteis para a comunicação do incidente de segurança relevante e detalha o que precisa constar. Em incidentes de nuvem, responder "quais dados foram acessados" depende inteiramente de haver registro do plano de controle e de acesso a dados **antes** do incidente. Sem esse registro, a organização é obrigada a comunicar na hipótese mais ampla, o que costuma ser muito pior comercial e juridicamente do que a realidade [@anpd2024res15].
+
+**No setor financeiro, o controle de acesso privilegiado é item de fiscalização.** As resoluções que disciplinam segurança cibernética e contratação de nuvem por instituições financeiras e de pagamento exigem controles de acesso, segregação de funções e rastreabilidade — o que na prática significa demonstrar quem pode fazer o quê em produção, com evidência. Um curinga em política de identidade é achado de auditoria concreto nesse contexto [@bcb4893; @bcb85].
+
+**A jurisprudência penal alcança quem usa credencial obtida indevidamente.** A Lei nº 12.737/2012 tipificou a invasão de dispositivo informático, e o acesso a ambiente de nuvem alheio com credencial vazada se enquadra no tipo, independentemente de a credencial ter sido "encontrada" em um repositório público. Para quem trabalha com segurança, a consequência prática é que **testar credencial achada não é pesquisa: é crime**, e a fronteira do escopo autorizado do @sec-cap007 vale integralmente aqui [@lei12737].
+
+**A administração pública tem exigência explícita de perfis mínimos.** A Instrução Normativa GSI/PR nº 5/2021 e as normas complementares tratam de controle de acesso e de segregação em soluções de nuvem contratadas por órgãos federais. Para fornecedores, entregar o ambiente com papéis desenhados por função — e não com um único perfil administrativo compartilhado — deixou de ser boa prática e virou requisito contratual [@ingsi5].
+
+**Provedores regionais e o CERT.br registram o mesmo padrão.** Boa parte dos incidentes tratados no país envolve credencial de nuvem vazada em repositório de código ou reaproveitada de outro vazamento — o que reforça, com dado local, que a resposta certa é eliminar a credencial estática, não recomendar cuidado [@cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Inventarie e elimine as chaves de longa duração.** Liste todas, marque a última utilização, desative as inativas imediatamente e migre as ativas para papel ou federação. A meta é zero — e ela é alcançável.
+
+**2. Ligue a federação para o pipeline hoje.** É a mudança de maior retorno do capítulo: substituir a chave de produção guardada como segredo do repositório por confiança em token de curta duração, restrita a repositório e ramo específicos.
+
+**3. Exija a versão do serviço de metadados com sessão** em todas as instâncias, e imponha por política de organização para que instâncias novas já nasçam corretas.
+
+**4. Bloqueie acesso público ao armazenamento no nível da conta**, não recurso a recurso. Exceções passam por aprovação formal e revisão periódica.
+
+**5. Trate estas permissões como administrativas**, mesmo quando o nome não sugere: anexar política, criar versão de política, passar papel a serviço, editar relação de confiança e criar credencial para outro principal.
+
+**6. Restrinja a permissão de passar papel** a uma lista explícita de papéis. Genérica, ela é escalada para administrador.
+
+**7. Construa a política mínima a partir do uso real.** Comece com o acesso amplo em ambiente de teste, colete os registros por algumas semanas, gere a política a partir do que foi efetivamente chamado, e só então aperte. Escrever política mínima no papel, antes de conhecer o uso, produz aplicação quebrada e reversão para o curinga.
+
+**8. Use condições nas políticas.** Origem da rede, exigência de múltiplo fator, etiqueta do recurso, horário. Uma credencial vazada usada de fora da faixa esperada falha antes de qualquer detecção.
+
+**9. Estabeleça o teto organizacional** com as proibições que nunca devem ser possíveis: desligar o registro, apagar trilhas de auditoria, criar recurso em região não aprovada, remover o bloqueio de acesso público.
+
+**10. Mande os registros para uma conta separada**, com escrita apenas por acréscimo e acesso administrativo distinto. Trilha de auditoria na mesma conta que o atacante controla não é trilha.
+
+**11. Rode analisador de acesso externo continuamente.** Ele responde à pergunta que importa: quais recursos meus são alcançáveis por alguém de fora da minha organização, e por qual política.
+
+**12. Alerte no que é raro e caro:** autenticação com a conta raiz, criação de chave de acesso, alteração de política de confiança, desativação de registro, credencial de instância usada a partir de um endereço externo — este último sendo o sinal mais direto do cenário que abriu o capítulo.
+
+**13. Ensaie a revogação.** Cronometre quanto tempo leva, do aviso à revogação efetiva de uma credencial comprometida em produção. Se a resposta for "não sei", esse é o próximo exercício.
+
+## Resumo
+
+- Na nuvem, comprometer uma máquina dá acesso ao que a **identidade dela** pode fazer. O modelo de permissões, e não a rede, decide o tamanho do estrago.
+- Quatro peças explicam qualquer provedor: **principal, papel, política** (de identidade e de recurso) e **fronteira organizacional**. A avaliação sempre segue: negação explícita vence, o teto precisa permitir, alguma política precisa permitir explicitamente, e o padrão é negar.
+- **Credencial estática é o problema.** Papéis para recursos internos, federação por token de curta duração para o pipeline e federação corporativa para pessoas eliminam a categoria inteira de segredo de longa duração.
+- O **serviço de metadados** transforma uma falsificação de requisição de severidade média em roubo de credenciais de nuvem. Exigir a versão com sessão quebra a exploração; papel mínimo limita o dano quando ela funciona.
+- **Permissões sobre a camada de identidade são permissões sobre tudo**: anexar política, passar papel, criar versão de política, editar confiança e criar credencial para outro principal são escaladas para administrador com outro nome.
+- Os erros mais caros são poucos e repetitivos: armazenamento público, curinga em política, papel de serviço administrativo, raiz em uso cotidiano, confiança entre contas sem condição, porta de administração aberta, registro desligado e ausência de teto organizacional.
+- **Política mínima se constrói a partir do uso observado**, não do papel em branco — e condições nas políticas fazem uma credencial vazada falhar antes de qualquer detecção.
+- No Brasil, permissão excessiva colide com os princípios da necessidade e da finalidade da LGPD; o prazo de três dias úteis da Resolução CD/ANPD nº 15/2024 só é cumprível com registro anterior ao incidente; e testar credencial encontrada em repositório público é conduta tipificada, não pesquisa.
