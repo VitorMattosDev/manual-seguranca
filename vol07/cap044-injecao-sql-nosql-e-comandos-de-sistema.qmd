@@ -1,3 +1,398 @@
 # Injeção: SQL, NoSQL e comandos de sistema {#sec-cap044}
 
-*(em elaboracao)*
+O portal de transparência de um município tem uma busca de servidores por nome. Alguém digita `Silva' OR '1'='1` e recebe a folha inteira — inclusive os cargos em comissão, as matrículas e, porque a consulta faz junção com uma tabela que não deveria estar ali, o CPF de todo mundo. Não houve invasão de servidor, não houve senha quebrada, não houve malware. Houve um campo de texto que aceitou o que foi digitado e um servidor de banco de dados que fez exatamente o que lhe foi mandado fazer.
+
+Injeção é a classe de falha mais bem compreendida da segurança de aplicações. Está documentada há mais de vinte e cinco anos, a correção é conhecida, é simples e frequentemente mais rápida de escrever do que o código errado. E ela continua aparecendo, porque a causa não é ignorância técnica: é que **o caminho errado é o caminho natural**. Montar uma string é a primeira coisa que qualquer pessoa aprende a fazer com texto, e uma consulta SQL é texto.
+
+Este capítulo trata do mecanismo comum a todas as injeções, das três famílias que mais importam na prática — banco relacional, banco de documentos e comandos de sistema — e da razão pela qual as defesas populares (escapar caracteres, filtrar palavras proibidas, confiar no ORM) falham de forma previsível.
+
+## O mecanismo: um canal, dois significados
+
+Toda injeção tem a mesma estrutura, e vale enunciá-la de forma independente de tecnologia:
+
+> Um interpretador recebe, por um único canal, uma sequência que contém **instrução** e **dado**. A instrução foi escrita pela aplicação; o dado veio de fora. Como o canal é único, quem controla o dado consegue alterar a instrução.
+
+O interpretador pode ser o motor SQL, o interpretador de consultas do banco de documentos, o shell do sistema operacional, o mecanismo de templates, o parser de LDAP ou de XPath. O que muda é a sintaxe; a estrutura é idêntica.
+
+Daí decorre a correção, também independente de tecnologia: **separar os canais**. A instrução vai por um caminho, o dado por outro, e o interpretador é informado de qual é qual antes de receber o conteúdo. Quando essa separação existe, não há caractere que o atacante possa digitar que mude a instrução — porque a instrução já foi analisada e fixada antes de o dado chegar.
+
+Essa é a diferença entre parametrizar e escapar, e é o ponto central do capítulo. Escapar tenta neutralizar caracteres perigosos dentro de um canal único, o que exige acertar todas as regras de escape do interpretador específico, em todos os contextos, todas as vezes. Parametrizar elimina o problema: não há um canal único a proteger.
+
+::: {#fig-injecao-canais}
+```{.tikz}
+%%| filename: injecao-canais
+%%| alt: Comparação entre consulta montada por concatenação, onde instrução e dado compartilham o mesmo canal, e consulta parametrizada, onde a instrução é analisada antes de o dado chegar
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, very thick, rounded corners=3pt, align=left, inner sep=5pt,
+               minimum width=6.0cm, font=\tiny},
+    bx/.style={draw, thick, rounded corners=2pt, align=center, inner sep=3pt,
+               minimum width=1.9cm, minimum height=0.62cm, font=\tiny, fill=white}}
+
+  \node[font=\scriptsize, manualred, anchor=west] at (0,4.5)
+    {\textbf{CONCATENAÇÃO} --- canal único};
+  \node[font=\scriptsize, manualgreen, anchor=west] at (7.6,4.5)
+    {\textbf{PARAMETRIZAÇÃO} --- canais separados};
+
+  \node[bx, draw=manualblue, fill=manualblue!12] (i1) at (1.0,3.7) {instrução};
+  \node[bx, draw=manualred,  fill=manualred!12]  (d1) at (3.6,3.7) {dado externo};
+  \node[cx, draw=manualred, fill=manualred!6, anchor=north west] (m1) at (-0.3,3.2)
+    {\texttt{"SELECT * FROM srv}\\
+     \texttt{ WHERE nome = '" + entrada + "'"}\\[4pt]
+     entrada = \texttt{Silva' OR '1'='1}\\[4pt]
+     \textcolor{manualred}{\textbf{o motor recebe uma condição nova}}\\
+     \textcolor{manualred}{\textbf{e a executa como instrução}}};
+  \draw[->, >=stealth, thick, manualred] (i1) -- (1.0,3.2);
+  \draw[->, >=stealth, thick, manualred] (d1) -- (3.6,3.2);
+
+  \node[bx, draw=manualblue,  fill=manualblue!12]  (i2) at (8.6,3.7) {instrução};
+  \node[bx, draw=manualgreen, fill=manualgreen!12] (d2) at (11.2,3.7) {dado externo};
+  \node[cx, draw=manualgreen, fill=manualgreen!6, anchor=north west] (m2) at (7.3,3.2)
+    {\texttt{"SELECT * FROM srv WHERE nome = ?"}\\
+     \texttt{stmt.setString(1, entrada)}\\[4pt]
+     entrada = \texttt{Silva' OR '1'='1}\\[4pt]
+     \textcolor{manualgreen}{\textbf{a instrução já foi analisada e fixada;}}\\
+     \textcolor{manualgreen}{\textbf{o dado só pode ser um valor}}};
+  \draw[->, >=stealth, thick, manualgray] (i2) -- (8.6,3.2);
+  \draw[->, >=stealth, thick, manualgray] (d2) -- (11.2,3.2);
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=13.0cm] at (6.4,0.0)
+    {\textbf{A diferença não é de rigor, é de estrutura.} Escapar tenta neutralizar
+     caracteres perigosos dentro de um canal único --- exige acertar todas as regras
+     do interpretador, em todos os contextos, todas as vezes. Parametrizar elimina o
+     canal único: \textbf{não existe caractere capaz de mudar uma instrução que já
+     foi analisada}.};
+\end{tikzpicture}
+```
+Concatenação mistura instrução e dado no mesmo canal; parametrização os separa antes da análise sintática.
+:::
+
+## Injeção de SQL
+
+### Como se manifesta
+
+O caso clássico é o do exemplo de abertura. A aplicação monta:
+
+```sql
+SELECT nome, cargo FROM servidores WHERE nome LIKE '%__ENTRADA__%'
+```
+
+Se `__ENTRADA__` for `Silva' OR '1'='1`, a condição vira sempre verdadeira e a consulta devolve tudo. É o payload didático mais reproduzido da história da segurança, e continua funcionando em código brasileiro em produção hoje.
+
+O que importa entender é que isso é o caso mais benigno. As variações mais graves:
+
+**Consulta unida.** Se o atacante consegue anexar um `UNION SELECT` compatível, ele passa a ler **outras tabelas** — inclusive a de usuários e a de senhas. A busca de servidores vira um dumper de banco.
+
+**Injeção cega, por condição.** Quando a aplicação não devolve o resultado da consulta, mas se comporta de forma diferente conforme ela seja verdadeira ou falsa (uma página que aparece ou não aparece), o atacante extrai o banco caractere a caractere, uma pergunta de sim ou não por vez. É lento e é completamente automatizável.
+
+**Injeção cega, por tempo.** Quando nem o comportamento muda, resta pedir ao banco que espere alguns segundos se a condição for verdadeira. O canal de saída passa a ser o cronômetro. Funciona em quase todo lugar, e é a razão de "a aplicação não mostra erro" não ser defesa.
+
+**Escrita e execução.** Injeção não é só leitura. Dependendo da permissão da conta que a aplicação usa, é possível alterar registros, apagar tabelas, ler arquivos do sistema de arquivos do servidor de banco, escrever arquivos e, em algumas configurações, executar comandos no sistema operacional. **É por isso que a conta de banco da aplicação nunca deve ser administrativa** — essa é a diferença entre um vazamento e um comprometimento total.
+
+### A correção
+
+Consulta parametrizada. Em todas as linguagens, em todos os bancos:
+
+```python
+# Python — psycopg / sqlite3 / mysql-connector: o padrão é o mesmo
+cur.execute(
+    "SELECT nome, cargo FROM servidores WHERE nome LIKE %s",
+    (f"%{entrada}%",)
+)
+```
+
+```java
+// Java — JDBC
+PreparedStatement ps = conn.prepareStatement(
+    "SELECT nome, cargo FROM servidores WHERE nome LIKE ?");
+ps.setString(1, "%" + entrada + "%");
+```
+
+```php
+// PHP — PDO, com emulação de prepare desligada
+$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+$stmt = $pdo->prepare(
+    'SELECT nome, cargo FROM servidores WHERE nome LIKE :nome');
+$stmt->execute([':nome' => "%$entrada%"]);
+```
+
+O detalhe do PHP merece nota: com a emulação de prepare ligada — que já foi o padrão —, o driver monta a string localmente e apenas *finge* parametrizar. A proteção estrutural desaparece. Vale conferir esse atributo em qualquer base PHP legada.
+
+### Onde a parametrização não alcança
+
+Parâmetro substitui **valor**, nunca **identificador**. Não é possível parametrizar o nome de uma tabela, o nome de uma coluna, a direção de ordenação ou a estrutura da cláusula. E é exatamente aí que a injeção sobrevive em aplicações que, no resto, estão corretas — o caso típico é a ordenação de uma tabela na interface:
+
+```python
+# ERRADO — coluna e direção vêm da requisição e são concatenadas
+sql = f"SELECT * FROM servidores ORDER BY {coluna} {direcao}"
+
+# CERTO — lista de permissão, e o que não está nela não existe
+COLUNAS = {"nome": "nome", "cargo": "cargo", "lotacao": "lotacao"}
+DIRECOES = {"asc": "ASC", "desc": "DESC"}
+
+col = COLUNAS.get(coluna, "nome")
+dir_ = DIRECOES.get(direcao, "ASC")
+sql = f"SELECT * FROM servidores ORDER BY {col} {dir_}"
+```
+
+A regra: identificador dinâmico só pode vir de um **mapeamento fechado escrito na aplicação**. Não se valida a entrada procurando o que é perigoso; escolhe-se, entre opções conhecidas, qual foi pedida. A diferença é que a lista de permissão falha para o lado seguro por construção.
+
+### Por que as outras defesas falham
+
+**Escapar caracteres.** Exige conhecer todas as regras do banco específico, incluindo comportamento com conjuntos de caracteres multibyte, e aplicar em todos os pontos. Uma omissão em cem lugares reabre tudo. É defesa que depende de disciplina perfeita e permanente.
+
+**Filtrar palavras proibidas.** Bloquear `UNION`, `SELECT`, `--`. A lista de contornos é infinita: variação de maiúsculas, comentários no meio da palavra, codificação alternativa, funções equivalentes. Além disso, essa defesa quebra a aplicação para quem se chama `Marcelo Uniãozinho` ou escreve "select" num campo de observações. Filtro por palavra é a defesa que mais incomoda o usuário legítimo e menos incomoda o atacante.
+
+**Confiar no ORM.** Frameworks modernos parametrizam por padrão, e isso reduziu drasticamente a incidência — mas todos oferecem uma porta para SQL cru, e é por ela que a falha entra. Uma varredura por essas chamadas costuma render mais do que qualquer ferramenta:
+
+```bash
+grep -rnE "\.raw\(|extra\(|createQuery\(|DB::select\(|executeQuery\(" src/
+```
+
+Cada ocorrência precisa ser lida uma vez. A maioria será legítima; a que não for é a vulnerabilidade crítica da aplicação.
+
+**WAF.** Filtro de requisições ajuda a atrasar exploração automatizada e dá visibilidade, mas é assinatura sobre texto e é contornável por quem se dedica. Serve como sinal e como medida temporária enquanto a correção real é escrita — nunca como a correção.
+
+## Injeção em bancos de documentos
+
+Bancos que armazenam documentos e recebem consultas como estruturas de dados não estão imunes. A injeção muda de forma: em vez de quebrar uma string, o atacante fornece um **objeto onde a aplicação esperava um escalar**.
+
+O caso mais conhecido é o do formulário de login que repassa o corpo da requisição direto para a consulta:
+
+```javascript
+// ERRADO — o corpo da requisição vira o filtro da consulta
+const user = await db.collection('usuarios').findOne({
+  usuario: req.body.usuario,
+  senha:   req.body.senha
+});
+```
+
+Se a requisição for enviada como JSON com `{"usuario": "admin", "senha": {"$ne": null}}`, o campo de senha deixa de ser um valor e vira um **operador**: "senha diferente de nulo". A consulta encontra o administrador e a autenticação passa sem senha nenhuma.
+
+As correções são duas, e ambas valem:
+
+**Force o tipo antes de usar.** Se o campo deve ser uma string, converta-o em string. Um objeto convertido perde o poder de operador.
+
+```javascript
+const usuario = String(req.body.usuario ?? '');
+const senha   = String(req.body.senha ?? '');
+```
+
+**Valide o esquema na borda.** Uma biblioteca de validação que rejeite qualquer coisa fora do formato esperado resolve essa classe inteira, e de quebra várias outras:
+
+```javascript
+const schema = z.object({
+  usuario: z.string().min(1).max(64),
+  senha:   z.string().min(8).max(200)
+});
+const { usuario, senha } = schema.parse(req.body);
+```
+
+E vale a observação óbvia mas necessária: **esse exemplo compara senha dentro da consulta**, o que já está errado por outra razão. Senha se verifica com função de derivação lenta sobre o resumo armazenado, nunca por comparação no banco (@sec-cap023).
+
+O mesmo raciocínio se aplica a mecanismos que aceitam expressões — funções de avaliação de JavaScript no servidor de banco, operadores de correspondência por expressão regular sem limite de complexidade — que devem ficar desabilitados salvo necessidade demonstrada.
+
+## Injeção de comandos de sistema
+
+É a família com maior impacto imediato, porque o interpretador é o sistema operacional. Aparece onde a aplicação chama um utilitário externo: converter uma imagem, gerar um PDF, testar conectividade, extrair um arquivo compactado.
+
+```python
+# ERRADO — a entrada é entregue ao shell
+os.system(f"ping -c 1 {host}")
+```
+
+O shell interpreta `;`, `|`, `&&`, `$(...)` e crases. Qualquer um deles encerra o comando pretendido e começa outro. E a defesa intuitiva — colocar aspas em volta — apenas troca qual caractere é necessário para escapar.
+
+A correção estrutural é **não invocar o shell**:
+
+```python
+# CERTO — sem shell; argumentos como lista, não como string
+subprocess.run(["ping", "-c", "1", host], shell=False,
+               capture_output=True, timeout=5, check=False)
+```
+
+Sem shell, `;` e `|` são apenas caracteres dentro de um argumento — não há quem os interprete. Essa única mudança elimina a classe.
+
+Restam dois cuidados. O primeiro é que a entrada ainda pode virar **argumento indesejado**: um valor começando com `-` pode ser lido como opção pelo programa chamado. Validar o formato esperado resolve — e, quando o utilitário suporta, o separador `--` marca o fim das opções.
+
+```python
+if not re.fullmatch(r"[A-Za-z0-9.\-]{1,253}", host):
+    raise ValueError("host inválido")
+```
+
+O segundo é que **a melhor chamada externa é a que não acontece**. Bibliotecas nativas para manipular imagens, gerar documentos ou resolver nomes eliminam o interpretador inteiro do caminho. Quando a chamada é inevitável, ela deve rodar com o menor privilégio possível, com tempo limite e com o diretório de trabalho isolado.
+
+## As outras injeções, em uma linha cada
+
+O mesmo padrão reaparece em cada interpretador que a aplicação toca:
+
+- **LDAP.** Entrada concatenada em filtro de diretório permite alterar a condição de busca e, em alguns casos, autenticar sem credencial válida. Correção: interface que parametrize ou escape específico de filtro LDAP.
+- **XPath e XQuery.** Mesma mecânica sobre documentos XML.
+- **Templates no servidor.** Entrada colocada dentro do *template*, e não passada como variável para ele, permite avaliar expressões — e em vários mecanismos isso escala para execução de código. Regra: template é código, dado é dado; nunca se constrói template com entrada de usuário.
+- **Cabeçalhos e resposta HTTP.** Entrada com quebra de linha refletida em cabeçalho permite injetar cabeçalhos ou dividir a resposta.
+- **Registros de log.** Entrada com quebra de linha gravada em log cria eventos falsos e atrapalha a investigação. Vale sanitizar quebras de linha antes de registrar — e lembrar que já houve caso célebre de mecanismo de log que *interpretava* o conteúdo registrado, transformando log em execução remota.
+- **Fórmulas em planilhas.** Um campo exportado para CSV começando com `=`, `+`, `-` ou `@` é interpretado como fórmula ao abrir a planilha. Afeta quem recebe o relatório, não o servidor — e é o vetor mais esquecido de todos.
+
+::: {#fig-injecao-interpretadores}
+```{.tikz}
+%%| filename: injecao-interpretadores
+%%| alt: Mapa dos interpretadores que uma aplicação aciona e da defesa estrutural correspondente a cada um
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ap/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.5cm, minimum height=1.5cm, font=\scriptsize},
+    ip/.style={draw, thick, rounded corners=2pt, align=center, inner sep=3pt,
+               minimum width=2.3cm, minimum height=0.6cm, font=\tiny, fill=white},
+    df/.style={draw, thick, rounded corners=2pt, align=left, inner sep=3pt,
+               minimum width=5.3cm, minimum height=0.6cm, font=\tiny, fill=white,
+               anchor=west}}
+
+  \node[ap, draw=manualblue, fill=manualblue!12] (app) at (0,1.5) {\textbf{aplicação}\\[2pt]\tiny recebe entrada\\\tiny não confiável};
+
+  \node[ip, draw=manualred] (sql) at (3.6,3.6) {motor SQL};
+  \node[ip, draw=manualred] (doc) at (3.6,2.7) {banco de documentos};
+  \node[ip, draw=manualred] (sh)  at (3.6,1.8) {shell do sistema};
+  \node[ip, draw=manualred] (ldp) at (3.6,0.9) {LDAP / XPath};
+  \node[ip, draw=manualred] (tpl) at (3.6,0.0) {mecanismo de template};
+  \node[ip, draw=manualred] (csv) at (3.6,-0.9) {planilha do destinatário};
+
+  \foreach \n in {sql, doc, sh, ldp, tpl, csv} {
+    \draw[->, >=stealth, thick, manualgray] (app.east) -- (\n.west);}
+
+  \node[df, draw=manualgreen] at (5.1,3.6)  {consulta parametrizada; identificador por lista fechada};
+  \node[df, draw=manualgreen] at (5.1,2.7)  {tipagem forçada e validação de esquema na borda};
+  \node[df, draw=manualgreen] at (5.1,1.8)  {\textbf{não invocar shell}; argumentos como lista};
+  \node[df, draw=manualgreen] at (5.1,0.9)  {interface que parametrize ou escape específico};
+  \node[df, draw=manualgreen] at (5.1,0.0)  {template é código: nunca construído com entrada};
+  \node[df, draw=manualgreen] at (5.1,-0.9) {prefixar campo que comece com sinal de fórmula};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.6cm] at (5.6,-2.4)
+    {\textbf{Uma estrutura, muitos interpretadores.} Toda injeção é o mesmo defeito:
+     instrução e dado no mesmo canal. Por isso a pergunta de revisão não é ``a entrada
+     foi validada?'', e sim \textbf{``quais interpretadores esta entrada alcança, e
+     em qual deles ela ainda chega concatenada?''}};
+\end{tikzpicture}
+```
+Cada interpretador que a aplicação aciona é um destino possível de injeção, com uma defesa estrutural própria.
+:::
+
+## Defesa em profundidade: o que fazer além de parametrizar
+
+Parametrizar corrige a falha. As camadas abaixo reduzem o estrago quando alguma passou:
+
+**Conta de banco com privilégio mínimo.** A aplicação conecta com uma conta que só pode ler e escrever nas tabelas que usa. Sem `DROP`, sem acesso a tabelas de outros módulos, sem permissão administrativa, sem leitura do sistema de arquivos. É o que separa "vazou uma tabela" de "perdemos o banco".
+
+**Separação por finalidade.** Se um relatório só precisa ler, ele usa uma conta somente de leitura. Duas ou três contas por aplicação custam pouco e limitam bastante.
+
+**Mensagens de erro genéricas em produção.** Erro do banco devolvido ao navegador entrega o esquema e transforma injeção cega em injeção trivial. O detalhe vai para o log; ao usuário vai um identificador de correlação.
+
+**Limite de volume na resposta.** Uma consulta que devolve dez mil linhas onde a interface mostra vinte é um sinal, e limitá-la reduz o valor da extração.
+
+**Registro e detecção.** Erro de sintaxe SQL no log de produção quase nunca é acidente — é alguém testando. É um dos sinais de maior precisão que uma aplicação pode gerar (@sec-cap031).
+
+## Erros que se repetem
+
+- **Parametrizar noventa e nove pontos e concatenar o centésimo** — normalmente o `ORDER BY` ou um filtro dinâmico.
+- **Aplicação conectando ao banco com conta administrativa**, transformando qualquer injeção em comprometimento total.
+- **Achar que o ORM protege**, sem revisar as chamadas de SQL cru que ele oferece.
+- **Filtrar palavras proibidas** em vez de parametrizar, quebrando o usuário legítimo e não o atacante.
+- **Emulação de prepare ligada** em base PHP legada, o que anula a parametrização sem avisar.
+- **Confiar em validação do lado do cliente**, que é conveniência de interface e não controle de segurança — a requisição pode ser montada sem passar pelo navegador.
+- **Passar entrada para o shell** por conveniência, quando a chamada sem shell tem a mesma complexidade.
+- **Mensagem de erro do banco visível em produção**, entregando o esquema de graça.
+
+## ⚖️ Brasil em Foco
+
+**Explorar injeção em sistema de terceiro é crime tipificado.** O art. 154-A do Código Penal, na redação dada pela Lei 12.737/2012 e alterada pela Lei 14.155/2021, pune a invasão de dispositivo informático com o fim de obter, adulterar ou destruir dados sem autorização expressa ou tácita. **Não é necessário quebrar senha para configurar invasão**: obter dados por meio de uma consulta manipulada, sem autorização, se enquadra. E não existe defesa de "o sistema estava vulnerável" — a fragilidade da fechadura nunca autorizou a entrada. Quem estuda o tema pratica em laboratório próprio ou em ambiente com autorização escrita (@sec-cap007) [@lei12737; @lei14155].
+
+**Do lado de quem opera o sistema, injeção explorada é incidente comunicável.** Vazamento de dados pessoais por SQL injection aciona o art. 48 da LGPD e a Resolução ANPD 15/2024, com prazo e conteúdo definidos para a comunicação à autoridade e aos titulares. E há um agravante específico desta classe de falha: **a exploração deixa rastro no log do banco e do servidor web**, o que significa que a extensão do vazamento costuma ser determinável. É a diferença entre comunicar "houve acesso indevido a 12.400 registros entre 3 e 5 de março" e comunicar "não sabemos" — e essa diferença pesa na avaliação da autoridade, que considera a capacidade de resposta do agente [@lgpd2018; @anpd2024res15].
+
+**Portais de transparência são alvo estruturalmente exposto.** A Lei de Acesso à Informação obriga órgãos públicos a manterem consulta aberta a dados de servidores, contratos e despesas. Isso significa **superfície de busca pública, sem autenticação, sobre bases que frequentemente compartilham servidor com sistemas internos**. É a combinação exata que transforma injeção em vazamento de dado pessoal — e a LAI, no art. 31, é explícita quanto à proteção de informações pessoais, que não deixam de ser protegidas por estarem em um sistema de transparência. Separar fisicamente a base de consulta pública da base operacional é a medida arquitetural que resolve o problema na origem.
+
+**Contratos de fábrica de software raramente cobrem a correção.** Injeção descoberta dois anos após a entrega costuma cair em zona cinzenta contratual: a garantia expirou, o defeito é antigo, e a discussão vira negociação comercial. A cláusula que resolve é a de responsabilidade por defeito de segurança com prazo próprio, distinto da garantia funcional. Vale escrevê-la antes de precisar dela.
+
+**No setor financeiro, a exigência é explícita.** O PCI-DSS v4 trata das falhas de injeção no Requisito 6 e demanda tanto proteção no código quanto verificação periódica; a Resolução BCB 4.893/2021 exige controles proporcionais à criticidade dos sistemas. Para instituição regulada, injeção em sistema que toca dado de pagamento é achado de auditoria com prazo de correção, não recomendação [@pcidss4; @bcb4893].
+
+## 🛠️ No Campo
+
+**1. Encontre a concatenação antes que o atacante encontre.** É a varredura de maior retorno em qualquer base:
+
+```bash
+# construção de SQL por concatenação ou interpolação
+grep -rnE "(SELECT|INSERT|UPDATE|DELETE).*(\+|\|\||\.format\(|f\"|%s\" *%|\\$\{)" \
+  --include="*.py" --include="*.java" --include="*.php" --include="*.js" src/
+
+# escapes de SQL cru oferecidos pelos ORMs
+grep -rnE "\.raw\(|\.extra\(|createQuery\(|DB::select\(|executeQuery\(" src/
+
+# chamadas ao shell
+grep -rnE "os\.system|shell=True|exec\(|popen\(|Runtime\.getRuntime|child_process\.exec\(" src/
+```
+
+Nem toda ocorrência é falha, mas toda falha desta classe está em uma delas.
+
+**2. Descubra com que conta a aplicação fala com o banco — e reduza.** É a correção mais rápida e a que mais reduz impacto:
+
+```sql
+-- PostgreSQL: o que a conta da aplicação realmente pode fazer
+\du app_user
+SELECT table_name, privilege_type FROM information_schema.role_table_grants
+ WHERE grantee = 'app_user';
+
+-- MySQL
+SHOW GRANTS FOR 'app_user'@'%';
+```
+
+Se aparecer `SUPERUSER`, `ALL PRIVILEGES` ou `FILE`, há trabalho para hoje.
+
+**3. Desligue a emulação de prepare em toda base PHP.** Uma linha, e ela restaura a parametrização real:
+
+```php
+$pdo = new PDO($dsn, $user, $pass, [
+    PDO::ATTR_EMULATE_PREPARES   => false,
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+]);
+```
+
+**4. Troque todo ponto onde a entrada vira identificador por mapa fechado.** Ordenação, nome de coluna, nome de tabela, direção. O mapa fica no código; o que não está nele não existe.
+
+**5. Elimine o shell.** Substitua `shell=True` por lista de argumentos, e prefira biblioteca nativa a utilitário externo. Onde a chamada permanecer, adicione tempo limite e valide o formato do argumento.
+
+**6. Valide esquema na borda, em toda API.** Uma biblioteca de validação aplicada a cada endpoint elimina de uma vez a injeção em banco de documentos, boa parte da poluição de parâmetros e uma classe de erros de tipo:
+
+```javascript
+app.post('/login', validate(loginSchema), async (req, res) => { /* ... */ });
+```
+
+**7. Desligue mensagens de erro detalhadas em produção** e devolva um identificador de correlação. O detalhe vai para o log, não para o navegador.
+
+**8. Trate erro de sintaxe SQL no log como alerta de segurança.** É um dos sinais de maior precisão disponíveis:
+
+```bash
+grep -iE "syntax error|unterminated quoted|ORA-01756|SQLSTATE\[42000\]" \
+  /var/log/app/*.log | tail -50
+```
+
+Poucos falsos positivos, e o achado é sempre acionável.
+
+**9. Prefixe campos exportados para CSV.** Um apóstrofo à frente de qualquer valor que comece com `=`, `+`, `-` ou `@` protege quem abrir a planilha — e essa pessoa costuma ser alguém da própria organização.
+
+**10. Separe a base de consulta pública da base operacional** em portais de transparência. Réplica somente de leitura, com apenas as colunas publicáveis, em servidor distinto. Resolve na arquitetura o que seria eterna vigilância no código.
+
+**11. Coloque um caso de teste automatizado por endpoint que toca o banco.** O teste envia o payload didático clássico e verifica que a resposta é o resultado vazio esperado, e não um erro do banco nem uma lista completa. É regressão barata que impede a falha de voltar.
+
+**12. Use WAF como sinal, não como correção.** Ligue-o em modo de registro para descobrir quem está testando a sua aplicação, e trate cada bloqueio como indício — não como problema resolvido.
+
+## Resumo
+
+- Toda injeção é o **mesmo defeito estrutural**: instrução e dado trafegando pelo mesmo canal até um interpretador. Muda a sintaxe — SQL, banco de documentos, shell, LDAP, template —, não o mecanismo.
+- A correção é **separar os canais**, não neutralizar caracteres. Parametrização elimina a classe por construção; escapar depende de disciplina perfeita e permanente em todos os pontos.
+- Injeção de SQL não se limita a ler: conforme a permissão da conta, permite escrever, apagar, ler arquivos e às vezes executar comandos. **Conta de aplicação sem privilégio administrativo é o que separa um vazamento de um comprometimento total.**
+- Parâmetro substitui valor, **nunca identificador**. Nome de coluna, de tabela e direção de ordenação exigem mapeamento fechado escrito na aplicação — e é aí que a injeção sobrevive em código que, no resto, está correto.
+- Em bancos de documentos a injeção muda de forma: o atacante envia um **objeto onde a aplicação esperava um escalar**, e um campo de senha vira operador. Tipagem forçada e validação de esquema na borda resolvem.
+- Em comandos de sistema, a correção estrutural é **não invocar o shell**: argumentos como lista eliminam o interpretador que dava significado a `;` e `|`.
+- Defesas populares que falham de forma previsível: filtrar palavras proibidas, confiar cegamente no ORM, deixar emulação de prepare ligada, e tratar WAF como correção em vez de sinal.
+- No Brasil, explorar injeção sem autorização é crime do art. 154-A do Código Penal, e não exige quebra de senha para se configurar; do lado de quem opera, o vazamento é incidente comunicável — com o agravante e a vantagem de que o log costuma permitir determinar a extensão exata do que saiu.
