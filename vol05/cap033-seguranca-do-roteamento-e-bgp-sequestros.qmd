@@ -1,3 +1,263 @@
 # Segurança do roteamento e BGP: sequestros, vazamentos e RPKI {#sec-cap033}
 
-*(em elaboracao)*
+Em 24 de fevereiro de 2008, o YouTube saiu do ar para boa parte do mundo por cerca de duas horas. A causa não foi um ataque ao YouTube. Uma operadora paquistanesa, cumprindo uma ordem doméstica de bloqueio, anunciou internamente uma rota mais específica para o bloco do YouTube — e essa rota vazou para o seu provedor de trânsito, que a repassou. Em minutos, o tráfego de milhões de pessoas em vários continentes estava sendo entregue a uma rede no Paquistão, que simplesmente o descartava.
+
+Dez anos depois, em abril de 2018, o mesmo mecanismo foi usado deliberadamente: um sequestro de rota redirecionou consultas de DNS de um serviço de carteiras de criptomoedas para servidores controlados por criminosos, que serviram um site clonado com certificado autoassinado. Quem clicou em "continuar assim mesmo" perdeu o dinheiro.
+
+Os dois episódios têm a mesma raiz. O protocolo que decide **por onde o tráfego da internet inteira caminha** foi projetado para uma rede de organizações que se conheciam, e ele acredita, por padrão, no que os vizinhos dizem. Um roteador BGP que recebe o anúncio "eu sou o caminho para este bloco de endereços" não tem, no protocolo, como verificar se aquilo é verdade.
+
+Este capítulo é sobre como isso é explorado e sobre o que existe hoje para consertar — em particular o RPKI, que deixou de ser experimento e virou requisito de peering.
+
+## Por que o BGP acredita
+
+O BGP é um protocolo de vetor de caminho: cada sistema autônomo anuncia os blocos que alcança, acrescenta seu número ao caminho e repassa aos vizinhos. As decisões são tomadas por política — preferência local, comprimento do caminho, relacionamento comercial — e não por métrica técnica (@sec-cap009).
+
+Três propriedades do desenho original explicam tudo o que vem depois:
+
+1. **Não há autenticação de origem.** Nada no protocolo prova que o sistema autônomo que anuncia um bloco tem direito a ele.
+2. **Não há verificação do caminho.** O atributo que lista os sistemas autônomos percorridos pode ser fabricado.
+3. **Não há noção de relacionamento.** O protocolo não sabe distinguir cliente de fornecedor ou de par; essa semântica existe apenas na configuração de cada operador.
+
+A consequência é que a segurança do roteamento global é, hoje, o resultado agregado de **filtros configurados por cada operador**. Onde o filtro falha, a internet inteira sente.
+
+## A taxonomia dos incidentes
+
+**Sequestro de origem.** Um sistema autônomo anuncia um bloco que não lhe pertence. Se os vizinhos aceitarem, parte do tráfego destinado ao dono legítimo passa a ser entregue ao impostor.
+
+**Sequestro por prefixo mais específico.** O caso mais eficaz, e o do YouTube. O encaminhamento IP obedece à regra do casamento mais longo: uma rota para `/24` vence uma rota para `/16` que a contenha, **independentemente de qualquer política**. Anunciar blocos mais específicos que os do dono legítimo captura o tráfego globalmente, mesmo com o anúncio original intacto.
+
+::: {#fig-sequestro-bgp}
+```{.tikz}
+%%| filename: sequestro-bgp
+%%| alt: Sequestro de rota por prefixo mais específico, em que o anúncio de um bloco menor vence o anúncio legítimo do bloco maior pela regra do casamento mais longo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    asn/.style={draw, very thick, circle, minimum size=1.25cm, align=center,
+                font=\scriptsize, inner sep=1pt},
+    fx/.style={->, >=stealth, very thick}}
+
+  \node[asn, draw=manualgreen, fill=manualgreen!14] (leg) at (0,2.6)
+    {AS 64500\\\tiny legítimo};
+  \node[asn, draw=manualgray,  fill=manualgray!10]  (tr1) at (4.0,3.9) {AS 64600};
+  \node[asn, draw=manualgray,  fill=manualgray!10]  (tr2) at (4.0,1.3) {AS 64700};
+  \node[asn, draw=manualblue,  fill=manualblue!12]  (usr) at (8.0,2.6)
+    {AS 64800\\\tiny usuários};
+  \node[asn, draw=manualred,   fill=manualred!14]   (atk) at (0,-0.3)
+    {AS 64900\\\tiny atacante};
+
+  \draw[fx, manualgreen] (leg) -- node[above, sloped, font=\tiny]{203.0.113.0/22} (tr1);
+  \draw[fx, manualgreen] (leg) -- node[below, sloped, font=\tiny]{203.0.113.0/22} (tr2);
+  \draw[fx, manualred]   (atk) -- node[below, sloped, font=\tiny]{\textbf{203.0.113.0/24}} (tr2);
+  \draw[fx, manualgray]  (tr1) -- (usr);
+  \draw[fx, manualgray]  (tr2) -- (usr);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=5.6cm] at (4.2,-1.6)
+    {\textbf{A regra do casamento mais longo decide sozinha:} o \texttt{/24} vence
+     o \texttt{/22} em todo roteador que aceitar os dois. O anúncio legítimo
+     continua no ar --- e é justamente por isso que o dono do bloco pode levar
+     horas para perceber.};
+
+  \node[draw=manualgreen, fill=manualgreen!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=4.6cm] at (10.4,0.2)
+    {\textbf{Onde o RPKI atua:} a ROA do AS 64500 declara
+     \texttt{203.0.113.0/22}, origem 64500, \texttt{maxLength 24}
+     --- e o anúncio do AS 64900 passa a ser \emph{inválido},
+     descartado por quem valida.};
+\end{tikzpicture}
+```
+Sequestro por prefixo mais específico: o mecanismo por trás dos incidentes mais graves de roteamento.
+:::
+
+**Manipulação de caminho.** Inserir o número do sistema autônomo legítimo no início do caminho para parecer um vizinho direto do dono. Torna o anúncio muito mais convincente e engana quem valida apenas a origem — inclusive o RPKI, como veremos.
+
+**Vazamento de rota.** Não é sequestro: é propagação de anúncios além do escopo pretendido, tipicamente quando um cliente multi-hospedado repassa a um provedor as rotas aprendidas de outro. O resultado é uma rede pequena virando trânsito para uma rede grande, com congestionamento imediato. O RFC 7908 classifica os tipos, e o mais comum decorre da ausência de filtro de saída no cliente e de filtro de entrada no provedor [@rfc7908].
+
+**Retirada acidental.** O oposto do sequestro, e a causa de algumas das maiores indisponibilidades já vistas: uma mudança de configuração faz a rede retirar seus próprios anúncios e desaparecer da internet. O caso agrava-se quando as ferramentas de gestão da própria organização dependem daquele caminho — a equipe perde inclusive o acesso remoto para corrigir.
+
+## As defesas, em camadas
+
+Nenhum controle isolado resolve. A prática consolidada empilha quatro.
+
+**Filtragem de prefixo.** O provedor aceita do cliente apenas os blocos que o cliente comprovadamente tem direito de anunciar, construindo a lista a partir dos registros de roteamento e do RPKI, e a atualizando automaticamente. É a defesa mais antiga e ainda a mais eficaz — e é onde a maioria dos incidentes históricos falhou.
+
+**Limite de prefixos.** Um teto no número de rotas aceitas de cada vizinho, com queda da sessão ao ultrapassar. Não impede um sequestro de um único bloco, mas contém o vazamento massivo antes que ele se propague.
+
+**Filtragem de origem de pacotes.** O BCP 38 e o BCP 84 tratam do plano de dados: não deixar sair da sua rede pacotes cuja origem não pertence a ela. É a base da mitigação de ataques com origem forjada (@sec-cap035) e um dever de vizinhança [@rfc2827; @rfc3704].
+
+**Validação de origem por RPKI.** É a novidade estrutural, e merece seção própria.
+
+## RPKI: assinar o direito de anunciar
+
+A infraestrutura de chaves públicas de recursos é uma PKI paralela à do @sec-cap019, na qual as autoridades são os registros regionais de endereçamento. Quem detém um bloco de endereços recebe um certificado que atesta esse direito, e com ele emite uma **autorização de origem de rota** — a ROA — declarando: *este bloco pode ser anunciado por este sistema autônomo, com prefixos até este tamanho* [@rfc6480].
+
+Os roteadores não validam assinaturas criptográficas diretamente. Um validador local baixa e verifica todo o conjunto de ROAs publicado, e alimenta os roteadores com uma lista simples de tuplas por um protocolo dedicado. Cada anúncio recebido é então classificado [@rfc6811]:
+
+- **Válido** — existe ROA cobrindo o bloco, com a origem correta e dentro do tamanho máximo.
+- **Inválido** — existe ROA para aquele bloco, mas a origem ou o tamanho não conferem. Este é o estado que importa: significa que alguém está anunciando algo que o titular declarou não autorizar.
+- **Não encontrado** — não há ROA. Ainda é a maioria do espaço de endereçamento global, e por isso não pode ser descartado.
+
+::: {#fig-rpki-decisao}
+```{.tikz}
+%%| filename: rpki-decisao
+%%| alt: Fluxo de decisão da validação de origem por RPKI, classificando o anúncio recebido em válido, inválido ou não encontrado, com a ação recomendada para cada estado
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.9cm, minimum height=0.85cm, font=\scriptsize},
+    dc/.style={draw=manualblue, very thick, fill=manualblue!10, align=center,
+               inner sep=4pt, font=\scriptsize, minimum width=3.4cm,
+               minimum height=0.9cm, rounded corners=3pt},
+    fx/.style={->, >=stealth, thick, manualgray}}
+
+  \node[cx, draw=manualgray, fill=manualgray!10] (ann) at (0,3.0)
+    {anúncio BGP recebido\\\tiny prefixo + origem};
+  \node[dc] (q1) at (0,1.2) {existe ROA cobrindo\\o prefixo?};
+
+  \node[cx, draw=manualyellow, fill=manualyellow!14] (nf) at (5.2,1.2)
+    {\textbf{não encontrado}\\\tiny aceitar (a maioria do\\espaço global ainda é assim)};
+
+  \node[dc] (q2) at (0,-0.9) {origem e tamanho\\conferem com a ROA?};
+  \node[cx, draw=manualgreen, fill=manualgreen!14] (ok) at (5.2,-0.9)
+    {\textbf{válido}\\\tiny aceitar, e preferir};
+  \node[cx, draw=manualred, fill=manualred!14] (no) at (0,-3.0)
+    {\textbf{inválido}\\\tiny \textbf{descartar} --- alguém anuncia\\o que o titular não autorizou};
+
+  \draw[fx] (ann) -- (q1);
+  \draw[fx] (q1) -- node[above, font=\tiny]{não} (nf);
+  \draw[fx] (q1) -- node[left, font=\tiny, xshift=-2pt]{sim} (q2);
+  \draw[fx] (q2) -- node[above, font=\tiny]{sim} (ok);
+  \draw[fx] (q2) -- node[left, font=\tiny, xshift=-2pt]{não} (no);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=6.4cm] at (7.2,-3.0)
+    {\textbf{O que o RPKI não faz:} ele valida apenas a \emph{origem}. Um adversário
+     que forje o caminho, colocando o AS legítimo como origem, produz um anúncio
+     \textbf{válido}. Validar o caminho é o problema que ASPA e BGPsec tentam
+     resolver --- e que ainda não está resolvido em escala.};
+\end{tikzpicture}
+```
+Validação de origem por RPKI: três estados, três ações, e um limite importante.
+:::
+
+Duas ressalvas honestas, porque o RPKI é frequentemente vendido como solução completa:
+
+**Ele valida a origem, não o caminho.** Um adversário que anuncie o bloco alheio *forjando* o sistema autônomo legítimo como origem produz um anúncio classificado como **válido**. A proteção do caminho depende de mecanismos ainda em maturação — a atestação de provedores autorizados e o BGPsec —, com implantação global incipiente. Dizer que RPKI "resolve o sequestro de BGP" é impreciso; ele elimina a forma mais comum e mais acidental.
+
+**O parâmetro de tamanho máximo é uma armadilha frequente.** Configurá-lo generosamente — declarar `/24` numa ROA de `/16` "para ter flexibilidade" — permite que um atacante anuncie qualquer `/24` dentro do bloco e seja classificado como válido. A recomendação operacional é declarar o tamanho máximo **igual ao que você efetivamente anuncia** [@rfc9319].
+
+A adoção, ainda assim, é o maior avanço prático em segurança de roteamento em duas décadas: os grandes trânsitos globais descartam inválidos, e a maioria dos pontos de troca de tráfego relevantes valida nos seus servidores de rotas. Um sequestro por origem hoje tem alcance muito menor do que teria em 2018.
+
+## MANRS: o mínimo que se espera de um operador
+
+O programa MANRS consolidou quatro ações que definem um operador de rede responsável, e elas viraram referência em contratos e em políticas de peering [@manrs2024]:
+
+1. **Filtragem** — garantir a correção dos próprios anúncios e dos anúncios dos clientes.
+2. **Antifalsificação** — impedir que pacotes com origem forjada saiam da sua rede.
+3. **Coordenação** — manter dados de contato atualizados e publicamente acessíveis.
+4. **Validação global** — publicar seus dados de roteamento em registros e emitir ROAs.
+
+Nenhuma exige tecnologia nova. Todas exigem disciplina operacional, e é essa a razão pela qual a adoção demorou.
+
+## Monitorar os próprios blocos
+
+Sequestro é detectável de fora, e a defesa mais barata de uma organização que não opera BGP é **observar quem anuncia seus endereços**. Serviços públicos de monitoramento de roteamento notificam quando um bloco aparece com origem inesperada, quando surge um mais específico não previsto ou quando o caminho muda de forma anômala.
+
+O tempo de detecção é o que determina o dano. O incidente do YouTube durou cerca de duas horas; sequestros voltados a fraude costumam durar minutos — tempo suficiente para obter um certificado por validação automatizada e servir um site clonado, exatamente o que aconteceu em 2018. Alerta configurado é a diferença entre reagir em minutos e descobrir pelo cliente.
+
+## ⚖️ Brasil em Foco
+
+**O NIC.br opera a autoridade de certificação RPKI para os recursos brasileiros.** Como registro nacional sob o LACNIC, ele distribui endereços e números de sistema autônomo no país e oferece, no mesmo painel, a emissão de ROAs. Isso significa que, para um provedor brasileiro, publicar ROA não envolve intermediário nem custo adicional — é uma tarefa administrativa de minutos, feita no mesmo lugar onde os blocos já são gerenciados. É a medida de melhor relação entre esforço e efeito de todo este capítulo [@nicbr2024ix; @rfc6480].
+
+**O IX.br tornou a validação parte da infraestrutura nacional.** Os servidores de rotas dos pontos de troca de tráfego brasileiros — a maior infraestrutura de troca de tráfego do mundo em número de participantes — aplicam validação de origem e filtragem baseada em registros de roteamento. Para o provedor regional, participar do IX significa herdar boa parte dessa proteção; e significa também que anúncios malformados ou não registrados simplesmente não propagam, o que é um incentivo de higiene mais eficaz que qualquer recomendação [@nicbr2024ix; @manrs2024].
+
+**A Anatel trata a integridade do roteamento como requisito de segurança de rede.** A Resolução 740/2020 estabelece obrigações de segurança cibernética para prestadoras, e a Resolução 614/2013 disciplina o Serviço de Comunicação Multimídia — no qual se enquadram os provedores de internet. Um vazamento de rotas que derrube a conectividade de uma região é incidente com efeito sobre a prestação do serviço, com implicações de qualidade e de comunicação ao regulador [@anatel740; @anatel614].
+
+**Filtrar origem forjada é a contribuição nacional mais concreta contra amplificação.** O CERT.br e o NIC.br promovem o BCP 38 há anos no Brasil, e a razão é direta: boa parte do tráfego de amplificação que castiga redes brasileiras nasce em redes brasileiras que não filtram. É um problema em que o custo é de quem implementa e o benefício é coletivo — o que explica a adoção lenta e reforça por que ele precisa entrar em contrato e em política de peering, não apenas em recomendação técnica [@rfc2827; @rfc3704; @cert2024ddos].
+
+**Sequestro de rota tem enquadramento penal.** Redirecionar tráfego alheio para obter dados ou aplicar fraude configura invasão de dispositivo informático (Lei 12.737/2012) e estelionato por meio eletrônico com pena agravada (Lei 14.155/2021). Para a organização vítima, há ainda o dever de comunicação sob a LGPD, se dados pessoais tiverem sido expostos no desvio — e a delimitação do que foi exposto durante um sequestro depende inteiramente de haver monitoramento com registro temporal [@lei12737; @lei14155; @anpd2024res15].
+
+## 🛠️ No Campo
+
+**1. Publique ROAs para todos os seus blocos, com tamanho máximo restrito.** É a tarefa de maior efeito do capítulo, e leva minutos no painel do NIC.br:
+
+```
+# Correto: declara exatamente o que voce anuncia
+203.0.113.0/22   origem AS64500   maxLength 22
+
+# Perigoso: autoriza qualquer /24 dentro do bloco a qualquer momento
+203.0.113.0/22   origem AS64500   maxLength 24
+```
+
+**2. Valide e descarte inválidos.** Um validador local alimentando os roteadores:
+
+```bash
+# Validador (routinator) publicando para os roteadores via RTR
+routinator server --rtr 0.0.0.0:3323 --http 127.0.0.1:8323
+```
+
+```
+! Cisco IOS-XR — descartar invalidos, preferir validos
+router bgp 64500
+ rpki server 10.0.0.9
+  transport tcp port 3323
+ !
+ route-policy RPKI-ENTRADA
+  if validation-state is invalid then
+    drop
+  endif
+  if validation-state is valid then
+    set local-preference 200
+  endif
+  pass
+ end-policy
+```
+
+**3. Filtre o que os clientes anunciam, sempre a partir de fonte autoritativa.** Lista construída de registros e RPKI, regenerada automaticamente:
+
+```bash
+# Gerar filtro a partir do objeto do cliente no registro de roteamento
+bgpq4 -Aj -l CLIENTE-64700 AS-CLIENTE64700 > /etc/bgp/filtros/as64700.json
+```
+
+Filtro escrito à mão e atualizado por chamado é filtro desatualizado.
+
+**4. Configure limite de prefixos em toda sessão.** Contém o vazamento antes que ele se propague:
+
+```
+neighbor 198.51.100.1 maximum-prefix 500 90 restart 15
+```
+
+**5. Implemente BCP 38 na borda do cliente.** Onde a topologia permitir, verificação estrita de caminho reverso; onde não, listas explícitas:
+
+```
+! Interface de cliente com rota unica
+interface GigabitEthernet0/1
+ ip verify unicast source reachable-via rx
+```
+
+**6. Monitore seus blocos e configure alerta.** Mesmo sem operar BGP, você é dono de endereços. Alerta para: origem inesperada, novo mais específico e mudança anômala de caminho. O tempo de detecção define o dano.
+
+**7. Proteja as sessões BGP.** Autenticação nas sessões, limite de saltos, e o próprio plano de controle filtrado:
+
+```
+neighbor 198.51.100.1 password <segredo-forte-unico-por-sessao>
+neighbor 198.51.100.1 ttl-security hops 1
+```
+
+**8. Tenha acesso fora de banda que não dependa do BGP.** É a lição das grandes retiradas acidentais: quando a rede desaparece, a equipe precisa alcançar os equipamentos por um caminho que não passe pela rede que caiu. Console serial, link de operadora distinta, ou ambos (@sec-cap028).
+
+**9. Trate mudanças de política de roteamento como mudanças de produção.** Revisão por par, janela definida, plano de reversão testado e verificação após a aplicação. A maioria dos vazamentos é erro de digitação em configuração aplicada às pressas.
+
+**10. Cumpra as quatro ações do MANRS e cobre-as dos seus parceiros.** Filtrar, impedir origem forjada, manter contato atualizado e publicar dados de roteamento. Colocá-las em contrato de trânsito e em política de peering é o que transforma recomendação em prática.
+
+## Resumo
+
+- **O BGP acredita no que os vizinhos dizem.** Não autentica origem, não verifica caminho e não conhece relacionamento comercial — a segurança do roteamento global é o resultado agregado dos filtros de cada operador.
+- Os incidentes se classificam em **sequestro de origem**, **sequestro por prefixo mais específico** (o mais eficaz, porque a regra do casamento mais longo decide sozinha), **manipulação de caminho**, **vazamento de rota** e **retirada acidental**.
+- As defesas se empilham: **filtragem de prefixo** a partir de fonte autoritativa, **limite de prefixos** por vizinho, **filtragem de origem de pacotes** (BCP 38/84) e **validação de origem por RPKI**.
+- **O RPKI assina o direito de anunciar**: a ROA declara bloco, origem e tamanho máximo, e os anúncios são classificados em válido, inválido ou não encontrado. Descartar inválidos é a ação que importa.
+- Dois limites precisam ser ditos: **o RPKI valida a origem, não o caminho** — um anúncio com origem forjada é classificado como válido —, e **o tamanho máximo generoso é uma armadilha** que autoriza o atacante a anunciar qualquer bloco menor.
+- As quatro ações do **MANRS** — filtrar, impedir falsificação de origem, coordenar e publicar dados de roteamento — não exigem tecnologia nova, apenas disciplina operacional.
+- **Monitorar os próprios blocos é a defesa mais barata** para quem não opera BGP. Sequestros voltados a fraude duram minutos, tempo suficiente para obter certificado e clonar um site.
+- No Brasil, o **NIC.br opera a autoridade RPKI nacional** e a emissão de ROA é tarefa de minutos, sem custo adicional; os **servidores de rotas do IX.br validam origem**, o que faz o provedor regional herdar proteção ao participar; e a filtragem de origem forjada continua sendo a contribuição coletiva mais concreta contra ataques de amplificação.
