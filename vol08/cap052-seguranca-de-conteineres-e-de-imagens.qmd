@@ -1,3 +1,255 @@
 # Segurança de contêineres e de imagens {#sec-cap052}
 
-*(em elaboracao)*
+Uma equipe empacota a aplicação em contêiner e comemora o isolamento: "agora cada serviço roda na própria caixa, separado do resto". No incidente que acontece oito meses depois, um atacante que obteve execução de código dentro de um dos contêineres lê a chave privada usada pelo host para se autenticar no repositório de artefatos — porque o diretório inteiro do host estava montado dentro do contêiner "para facilitar o desenvolvimento", e o processo rodava como raiz.
+
+A caixa nunca existiu como as pessoas imaginavam. **Contêiner não é máquina virtual.** Não há hipervisor, não há kernel separado, não há fronteira de virtualização. Há um processo comum do Linux, rodando no mesmo kernel de todos os outros, cuja visão do sistema foi restringida por três mecanismos do próprio kernel. É um isolamento real e útil — mas é isolamento por configuração, e configuração pode ser afrouxada com uma opção de linha de comando.
+
+Este capítulo trata de duas coisas: entender de que material a parede é feita e garantir que o que está dentro dela seja aquilo que você acha que é.
+
+## O que realmente isola um contêiner
+
+Três mecanismos do kernel Linux, mais dois opcionais, compõem a fronteira [@nistsp800190]:
+
+**Espaços de nomes** decidem **o que o processo enxerga**. Cada tipo cobre um recurso: processos (o contêiner vê a própria árvore, começando no PID 1), rede (interfaces e tabelas próprias), pontos de montagem, identificadores de usuário, hostname e comunicação entre processos. É o mecanismo que produz a ilusão de "máquina separada".
+
+**Grupos de controle** decidem **quanto o processo pode consumir**: CPU, memória, entrada e saída. Isolam desempenho e evitam que um contêiner derrube o host por esgotamento — o equivalente local do @sec-cap035.
+
+**Capacidades** decidem **o que o processo pode fazer**. O kernel fragmenta os poderes históricos do usuário raiz em dezenas de capacidades independentes: abrir porta baixa, alterar configuração de rede, montar sistemas de arquivos, carregar módulos. Um contêiner bem configurado descarta quase todas.
+
+Dois mecanismos adicionais estreitam o que sobra:
+
+**Filtro de chamadas de sistema** restringe quais chamadas o processo pode fazer ao kernel. O perfil padrão dos tempos de execução já bloqueia dezenas de chamadas perigosas, e reduzir a superfície do kernel é a defesa mais direta contra uma falha de escape.
+
+**Controle de acesso obrigatório** — SELinux ou AppArmor, o @sec-cap036 — impõe uma política que vale mesmo para processos privilegiados.
+
+A consequência prática de tudo isso é uma frase que vale memorizar: **a fronteira do contêiner é o kernel compartilhado**. Uma falha de elevação de privilégio no kernel é uma falha de fuga de contêiner, por construção. Quando a carga de trabalho é hostil ou multilocatária de verdade, a resposta não é apertar mais as opções: é colocar uma fronteira de virtualização real embaixo — máquinas virtuais leves ou tempos de execução com kernel próprio.
+
+::: {#fig-isolamento-conteiner}
+```{.tikz}
+%%| filename: isolamento-conteiner
+%%| alt: Comparação entre o isolamento de máquinas virtuais pelo hipervisor e o isolamento de contêineres por espaços de nomes, grupos de controle e capacidades sobre um kernel compartilhado
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+               inner sep=3pt, minimum width=1.7cm, minimum height=0.55cm},
+    lay/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                inner sep=3pt, minimum width=5.6cm, minimum height=0.55cm}}
+
+  \node[font=\scriptsize, manualblue] at (-3.3,4.5) {\textbf{Máquinas virtuais}};
+  \node[bx, draw=manualblue, fill=manualblue!12] at (-4.85,3.9) {app A};
+  \node[bx, draw=manualblue, fill=manualblue!12] at (-3.05,3.9) {app B};
+  \node[bx, draw=manualgray, fill=manualgray!12] at (-4.85,3.25) {kernel A};
+  \node[bx, draw=manualgray, fill=manualgray!12] at (-3.05,3.25) {kernel B};
+  \node[lay, draw=manualgreen, fill=manualgreen!16] at (-3.95,2.6)
+    {\textbf{hipervisor} --- fronteira de virtualização};
+  \node[lay, draw=manualgray, fill=manualgray!12] at (-3.95,1.95) {hardware};
+  \node[manualgreen, font=\tiny, align=center] at (-3.95,1.25)
+    {fronteira \textbf{estrutural}:\\ kernels distintos};
+
+  \node[font=\scriptsize, manualblue] at (3.3,4.5) {\textbf{Contêineres}};
+  \node[bx, draw=manualblue, fill=manualblue!12] at (1.75,3.9) {app A};
+  \node[bx, draw=manualblue, fill=manualblue!12] at (3.55,3.9) {app B};
+  \node[bx, draw=manualblue, fill=manualblue!12] at (5.35,3.9) {app C};
+  \node[lay, draw=manualyellow, fill=manualyellow!16, minimum width=5.6cm] at (3.55,3.25)
+    {espaços de nomes \quad grupos de controle \quad capacidades};
+  \node[lay, draw=manualred, fill=manualred!14, minimum width=5.6cm, very thick] at (3.55,2.6)
+    {\textbf{kernel COMPARTILHADO}};
+  \node[lay, draw=manualgray, fill=manualgray!12, minimum width=5.6cm] at (3.55,1.95) {hardware};
+  \node[manualred, font=\tiny, align=center] at (3.55,1.25)
+    {fronteira por \textbf{configuração}:\\ um kernel para todos};
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (0,0.0)
+    {\textbf{Uma falha de elevação de privilégio no kernel é uma falha de fuga de
+     contêiner.} O isolamento é real e útil, mas é configuração --- e opções como
+     modo privilegiado, montagem do soquete do tempo de execução ou compartilhamento
+     do espaço de nomes de processos do host o desligam com uma linha. Carga
+     realmente hostil pede fronteira de virtualização embaixo, não mais opções.};
+\end{tikzpicture}
+```
+Onde está a fronteira em cada modelo. A diferença não é de grau: é de natureza.
+:::
+
+## As opções que desligam o isolamento
+
+Algumas configurações removem a parede inteira. Aparecem em tutoriais, resolvem o problema imediato e sobrevivem até produção:
+
+**Modo privilegiado.** Devolve todas as capacidades e o acesso aos dispositivos do host. Um contêiner privilegiado é, para efeitos práticos, um processo raiz no host com um sistema de arquivos diferente. Não existe caso comum de aplicação que justifique.
+
+**Montar o soquete do tempo de execução dentro do contêiner.** Aparece em pipelines que precisam construir imagens. Quem fala com esse soquete cria contêineres — inclusive um privilegiado montando o disco do host. **É equivalente a conceder raiz no host.** Construção de imagem dentro de contêiner tem hoje alternativas sem privilégio.
+
+**Compartilhar espaços de nomes do host** — processos, rede ou identificadores de usuário. Cada um remove uma dimensão do isolamento; o de processos permite ler a memória de processos do host, e o de rede devolve acesso a serviços que escutam apenas no laço local, incluindo o serviço de metadados do @sec-cap051.
+
+**Montar diretórios sensíveis do host.** A raiz do sistema, o diretório de configuração, o diretório de chaves. Foi o que produziu o incidente da abertura.
+
+**Rodar como raiz.** É o padrão de muitas imagens públicas. Não é fuga por si só, mas transforma qualquer falha de escrita em controle do contêiner, e converte uma montagem malfeita em comprometimento do host.
+
+## A imagem é a cadeia de suprimentos
+
+Metade dos problemas de contêiner não está no tempo de execução: está no que foi empacotado. Uma imagem é um conjunto de camadas empilhadas, cada uma um conjunto de diferenças no sistema de arquivos, identificadas por resumo criptográfico [@ocispec]. Dessa estrutura decorrem duas propriedades importantes.
+
+**Camada não se apaga.** Se um segredo entrou em uma camada e foi removido na camada seguinte, ele continua na imagem — basta extrair a camada anterior. Um arquivo `.env` copiado e depois excluído está publicado. Vale a mesma regra do @sec-cap049: a correção não é remover, é **rotacionar**.
+
+**A imagem base decide a maior parte dos achados.** Uma imagem construída sobre uma distribuição completa carrega centenas de pacotes que a aplicação nunca usa, e cada um é uma linha em relatório de varredura. Reduzir a base é a intervenção de melhor retorno:
+
+- **Distribuição enxuta** com o gerenciador de pacotes limpo já corta a maior parte.
+- **Imagens mínimas sem shell** (o estilo "distroless") removem o interpretador de comandos, o gerenciador de pacotes e os utilitários. Além de cortar vulnerabilidades, dificultam a pós-exploração: sem shell, boa parte do ferramental de um atacante não funciona.
+- **Compilação estática em imagem vazia**, quando a linguagem permite, deixa apenas o binário.
+
+**Construção em múltiplos estágios** é o mecanismo que torna isso natural: o primeiro estágio compila, com todo o ferramental de construção; o estágio final copia apenas o artefato para uma base mínima. Compilador, dependências de desenvolvimento, chaves de acesso ao repositório privado e histórico ficam para trás.
+
+```dockerfile
+# estágio de construção: tem compilador e dependências de desenvolvimento
+FROM golang:1.22 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -o /bin/api ./cmd/api
+
+# estágio final: só o binário, sem shell e sem gerenciador de pacotes
+FROM gcr.io/distroless/static:nonroot
+COPY --from=build /bin/api /bin/api
+USER nonroot:nonroot
+ENTRYPOINT ["/bin/api"]
+```
+
+Três detalhes desse arquivo merecem atenção. A cópia dos arquivos de dependência **antes** do restante do código aproveita o cache de camadas e acelera a construção. O `USER nonroot` garante que o processo não comece como raiz. E a imagem final não tem shell — o que significa que `docker exec` para "dar uma olhada" não vai funcionar, e isso é o comportamento desejado, não um problema a contornar.
+
+Um erro correlato e comum: **fixar a etiqueta em vez do resumo**. Uma etiqueta como `latest` ou `1.22` aponta para conteúdos diferentes ao longo do tempo, o que quebra a reprodutibilidade e abre espaço para substituição silenciosa. Em produção, referencie a imagem pelo resumo criptográfico.
+
+::: {#fig-pipeline-imagem}
+```{.tikz}
+%%| filename: pipeline-imagem
+%%| alt: Ciclo de vida da imagem de contêiner do código ao tempo de execução, com o controle correspondente em cada etapa
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw=manualblue, fill=manualblue!14, very thick, rounded corners=3pt,
+               align=center, font=\tiny, inner sep=4pt, minimum width=2.0cm,
+               minimum height=0.75cm},
+    ct/.style={draw=manualgreen, fill=manualgreen!14, thick, rounded corners=3pt,
+               align=left, font=\tiny, inner sep=4pt, text width=2.0cm,
+               minimum height=1.5cm}}
+
+  \node[et] (e1) at (0,2.3)    {\textbf{código}\\ e Dockerfile};
+  \node[et] (e2) at (2.55,2.3) {\textbf{construção}\\ multiestágio};
+  \node[et] (e3) at (5.1,2.3)  {\textbf{registro}\\ de imagens};
+  \node[et] (e4) at (7.65,2.3) {\textbf{admissão}\\ no orquestrador};
+  \node[et] (e5) at (10.2,2.3) {\textbf{tempo de}\\ \textbf{execução}};
+
+  \foreach \a/\b in {e1/e2, e2/e3, e3/e4, e4/e5}
+    {\draw[->, >=stealth, very thick, manualblue] (\a) -- (\b);}
+
+  \node[ct] (c1) at (0,0.5)    {base mínima; sem segredo em camada; usuário não raiz};
+  \node[ct] (c2) at (2.55,0.5) {varredura da imagem; assinatura e registro de procedência};
+  \node[ct] (c3) at (5.1,0.5)  {registro privado; imutabilidade; varredura contínua};
+  \node[ct] (c4) at (7.65,0.5) {só imagem assinada e de registro confiável, por resumo};
+  \node[ct] (c5) at (10.2,0.5) {sem privilégio; sistema de arquivos somente leitura; capacidades descartadas};
+
+  \foreach \x in {0, 2.55, 5.1, 7.65, 10.2}
+    {\draw[->, >=stealth, thick, manualgreen] (\x,1.3) -- (\x,1.9);}
+
+  \node[draw=manualyellow, fill=manualyellow!14, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\scriptsize, text width=12.2cm] at (5.1,-1.5)
+    {\textbf{A varredura só tem valor se a admissão recusar o que ela reprovou.}
+     Varrer, publicar o relatório e implantar assim mesmo é o teatro descrito no
+     capítulo anterior --- com o agravante de que aqui existe um ponto natural de
+     aplicação da política, que é o controle de admissão.};
+\end{tikzpicture}
+```
+O ciclo de vida da imagem e o controle correspondente a cada etapa.
+:::
+
+## Varrer, assinar e admitir
+
+Varredura de imagem cruza os pacotes instalados com bases de vulnerabilidades conhecidas — é o SCA do @sec-cap049 aplicado ao sistema operacional dentro da imagem. Duas advertências mudam o resultado na prática:
+
+**Priorize pelo que é alcançável.** Uma vulnerabilidade em uma biblioteca de terceiros que a aplicação nunca carrega, dentro de uma imagem sem shell, tem risco muito diferente da mesma vulnerabilidade em um binário exposto na borda. A lógica do funil de triagem do capítulo anterior vale integralmente.
+
+**Varra continuamente, não só na construção.** A imagem não muda, mas o conhecimento sobre ela sim: a vulnerabilidade divulgada hoje afeta a imagem construída há três meses. Varredura contínua do registro e do que está efetivamente em execução é o que responde à pergunta "estamos expostos?" em minutos.
+
+A assinatura resolve um problema diferente: **procedência**. Assinar a imagem na construção e verificar a assinatura na admissão garante que o que está rodando saiu do seu pipeline, e não de um registro comprometido ou de um empurrão manual [@sigstore]. Junto com a assinatura vale gerar a **procedência** — a declaração verificável de qual código, em qual construção, produziu aquele artefato — e o inventário de componentes da imagem [@slsa; @cncfsupplychain].
+
+O elo que fecha tudo é a **admissão**: o orquestrador recusa a imagem que não estiver assinada, que não vier de um registro confiável ou que estiver reprovada na política de vulnerabilidades. Sem esse elo, varredura e assinatura são relatórios. É o tema do próximo capítulo.
+
+## Execução: o conjunto mínimo que resolve
+
+Na hora de rodar, um punhado de opções cobre a maior parte do risco:
+
+- **Usuário não raiz**, definido na imagem e reforçado na execução.
+- **Sistema de arquivos raiz somente leitura**, com volumes graváveis apenas onde é necessário. Quebra a etapa de "baixar ferramenta e gravar" de quase todo roteiro de pós-exploração.
+- **Descartar todas as capacidades** e devolver apenas as que a aplicação comprovadamente precisa — o que, para a maioria das aplicações web modernas, é nenhuma.
+- **Impedir elevação de privilégio**, bloqueando o efeito de binários com bit de permissão elevada dentro do contêiner.
+- **Perfil de filtro de chamadas de sistema** ativo, no mínimo o padrão do tempo de execução.
+- **Limites de CPU e memória** sempre definidos.
+- **Sem soquete do tempo de execução montado**, sem modo privilegiado, sem espaços de nomes do host.
+
+```bash
+docker run \
+  --user 10001:10001 \
+  --read-only --tmpfs /tmp:rw,noexec,nosuid \
+  --cap-drop=ALL \
+  --security-opt no-new-privileges:true \
+  --memory=512m --cpus=1 \
+  --network minha-rede-interna \
+  registry.exemplo.com.br/api@sha256:3f8a...  # por resumo, não por etiqueta
+```
+
+Dois hábitos complementam a lista. **Contêiner é imutável**: não se corrige um contêiner em execução, constrói-se uma imagem nova e substitui-se. E **contêiner é efêmero**: se ele acumula estado local, o desenho está errado — e a resposta a incidente fica muito mais difícil, porque o artefato de investigação some no próximo reinício.
+
+Vale ainda registrar o modo **sem raiz** dos tempos de execução modernos: o próprio serviço roda sob um usuário comum, de forma que mesmo uma fuga do contêiner cai em um usuário sem privilégio no host. É a mudança estrutural mais efetiva disponível hoje sem trocar a tecnologia de isolamento.
+
+## ⚖️ Brasil em Foco
+
+**Imagem com dado pessoal embutido é tratamento de dados.** Acontece mais do que se imagina: massa de teste copiada de produção para dentro da imagem, dump de banco em uma camada, arquivo de configuração com dados reais. Como a camada não se apaga, essa imagem no registro é um repositório persistente de dados pessoais, sujeito aos princípios da LGPD — incluindo necessidade, finalidade e prazo de retenção. Anonimizar massa de teste deixa de ser preferência do time e vira controle de conformidade [@lgpd2018].
+
+**O art. 46 e a defesa por configuração padrão.** A LGPD fala em medidas técnicas aptas a proteger dados pessoais, e o art. 46, §2º, estende a exigência desde a fase de concepção. Um padrão organizacional que proíbe contêiner privilegiado, exige usuário não raiz e bloqueia imagem não assinada é exatamente "segurança desde a concepção" em forma auditável — e é infinitamente mais fácil de demonstrar do que uma política em PDF [@lgpd2018].
+
+**PCI-DSS v4 cobra isolamento e inventário.** Para quem processa cartão, os requisitos de segmentação, de inventário de componentes de software e de gestão de vulnerabilidades se aplicam integralmente ao ambiente de contêineres. Na prática, isso significa demonstrar quais imagens existem, de onde vieram, o que contêm e como são atualizadas — o inventário de componentes por imagem deixa de ser opcional [@pcidss4].
+
+**Benchmarks públicos são o piso aceito em auditoria brasileira.** Os benchmarks do CIS para tempo de execução de contêineres e o guia do NIST para segurança de contêineres de aplicação são as referências que auditores e clientes corporativos no Brasil costumam usar como régua. Adotá-los como base do padrão interno economiza discussão em toda auditoria futura [@cisbenchmarks; @nistsp800190].
+
+**Registro público de imagens é vetor de cadeia de suprimentos, e o alvo brasileiro é o mesmo do resto do mundo.** Imagens públicas com nomes semelhantes aos oficiais, ou com mineradores embutidos, são um problema recorrente registrado pela comunidade — inclusive pelo CERT.br em incidentes de uso indevido de recursos computacionais. Espelhar as imagens usadas em um registro privado controlado é uma medida barata que corta essa classe inteira [@cert2024praticas].
+
+**Contratações públicas e o rastro do artefato.** Com a Lei nº 14.133/2021 e as instruções normativas de segurança da informação, contratos de desenvolvimento e sustentação no setor público passaram a pedir rastreabilidade do artefato entregue. Assinatura de imagem e declaração de procedência atendem a esse requisito de forma direta e verificável [@lei14133; @ingsi5].
+
+## 🛠️ No Campo
+
+**1. Proíba o modo privilegiado por política**, não por recomendação. É a única opção que remove o isolamento inteiro de uma vez.
+
+**2. Elimine a montagem do soquete do tempo de execução.** Onde houver construção de imagem dentro de contêiner, migre para as ferramentas de construção sem privilégio.
+
+**3. Reconstrua as imagens sobre base mínima.** Comece pelas duas ou três imagens mais implantadas; a queda no número de achados costuma ser de uma ordem de grandeza.
+
+**4. Adote construção em múltiplos estágios em tudo.** Elimina compilador, ferramentas de construção e — o mais importante — as credenciais usadas para baixar dependências privadas.
+
+**5. Defina usuário não raiz na imagem**, com identificador numérico explícito, e reforce na execução.
+
+**6. Referencie imagens por resumo em produção.** Etiqueta é conveniência de desenvolvimento; resumo é reprodutibilidade.
+
+**7. Varra na construção e continuamente no registro.** O risco de uma imagem muda sem que a imagem mude.
+
+**8. Assine na construção e verifique na admissão.** Assinatura sem verificação é ritual.
+
+**9. Gere o inventário de componentes por imagem** e guarde-o junto ao artefato. É o que responde "usamos essa biblioteca?" em minutos em vez de em um fim de semana.
+
+**10. Trate segredo em imagem como vazado.** Rotacione. Reconstruir a imagem sem o arquivo não desfaz a publicação da camada anterior.
+
+**11. Aplique o conjunto mínimo de execução:** somente leitura, capacidades descartadas, sem elevação de privilégio, limites de recurso, perfil de filtro de chamadas ativo.
+
+**12. Ligue o modo sem raiz do tempo de execução** onde a plataforma permitir. É a melhoria estrutural de maior efeito sem trocar de tecnologia.
+
+**13. Considere isolamento reforçado para carga não confiável.** Execução de código enviado por cliente, multilocação real ou processamento de amostra suspeita pedem máquina virtual leve ou tempo de execução com kernel próprio — não um contêiner com mais opções.
+
+**14. Colete registro do tempo de execução.** Processo iniciado dentro do contêiner, escrita em caminho inesperado, conexão de saída não prevista. Como o contêiner é efêmero, o que não foi enviado para fora no momento do evento não existe mais depois.
+
+## Resumo
+
+- **Contêiner não é máquina virtual.** O isolamento vem de espaços de nomes (o que se vê), grupos de controle (quanto se consome) e capacidades (o que se pode fazer), reforçados por filtro de chamadas de sistema e controle de acesso obrigatório — tudo sobre um **kernel compartilhado**.
+- Como a fronteira é o kernel, **falha de elevação de privilégio no kernel é fuga de contêiner**. Carga realmente hostil pede fronteira de virtualização, não mais opções de configuração.
+- Quatro configurações desligam o isolamento: **modo privilegiado**, **soquete do tempo de execução montado** (equivalente a raiz no host), **espaços de nomes do host** e **montagem de diretórios sensíveis** — com rodar como raiz agravando todas.
+- Na imagem, **camada não se apaga**: segredo empacotado está publicado, e a correção é rotacionar. Base mínima e **construção em múltiplos estágios** cortam a maior parte dos achados e deixam credenciais de construção para trás.
+- **Etiqueta não é referência estável.** Em produção, use o resumo criptográfico.
+- Varredura vale pouco isolada: o valor aparece com **varredura contínua**, **assinatura verificada** e **procedência**, tudo aplicado no ponto de **admissão** — sem esse elo, tudo isso é relatório.
+- Na execução, um conjunto curto resolve a maior parte: **não raiz, somente leitura, capacidades descartadas, sem elevação de privilégio, limites definidos** — e contêiner tratado como imutável e efêmero.
+- No Brasil, imagem com massa de produção é tratamento de dados pessoais sob a LGPD; padrão organizacional que bloqueia privilégio e imagem não assinada é "segurança desde a concepção" auditável; e os benchmarks do CIS com o guia do NIST são a régua que clientes e auditores usam.
