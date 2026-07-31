@@ -1,3 +1,284 @@
 # SAST, DAST, SCA e automação de testes de segurança {#sec-cap049}
 
-*(em elaboracao)*
+Uma equipe de desenvolvimento decide levar segurança a sério. Contrata uma ferramenta de análise estática, liga a varredura de dependências, adiciona um scanner dinâmico no ambiente de homologação e configura tudo para bloquear a entrega em caso de achado de severidade alta.
+
+Na primeira execução completa: 4.212 achados, sendo 380 de severidade alta ou crítica. O pipeline fica vermelho. Ninguém consegue entregar nada.
+
+Na segunda semana, alguém cria a variável que pula o portão "só desta vez". No mês seguinte, a variável está em todos os projetos. Seis meses depois, a ferramenta continua sendo paga, continua rodando, continua acumulando achados que ninguém lê — e a equipe está convencida de que segurança de aplicação é teatro caro.
+
+**O modo de falha da automação de testes de segurança não é a ausência de ferramentas. É o ruído.** Uma ferramenta que produz mil achados sem contexto é pior do que nenhuma, porque consome o orçamento político da equipe e queima a credibilidade do próximo controle que alguém propuser. Este capítulo trata de escolher a ferramenta certa para cada coisa, entender o que cada uma **não** vê, e transformar achado em correção sem parar a entrega.
+
+## Cada ferramenta enxerga um recorte
+
+A confusão mais comum é tratar as siglas como concorrentes. Elas não são: cada uma observa o software de um ângulo diferente, e os ângulos são complementares por construção.
+
+**Análise estática (SAST).** Lê o código-fonte sem executá-lo, rastreando o caminho de um dado desde uma fonte não confiável até um ponto perigoso. É o que encontra concatenação de SQL (@sec-cap044), escrita em `innerHTML` (@sec-cap045) e uso de função criptográfica obsoleta.
+
+Roda cedo — no editor, no commit, no pedido de mesclagem —, aponta a linha exata e cobre caminhos que nenhum teste exercita. Em compensação, **produz falsos positivos em volume**, porque vê o código e não o contexto: não sabe que aquela entrada já foi validada três camadas acima, nem que aquele endpoint só existe em ambiente interno. Não enxerga configuração, não enxerga a interação entre serviços e, principalmente, **não enxerga regra de negócio**.
+
+**Análise dinâmica (DAST).** Ataca a aplicação em execução, de fora, como um cliente. Encontra o que só existe quando o sistema está montado: cabeçalho ausente, configuração de servidor, TLS mal ajustado, comportamento de sessão, erro que vaza informação. Tem pouquíssimo falso positivo — se a ferramenta explorou, existe [@owaspzap].
+
+O custo é a cobertura. Só alcança o que consegue navegar, e é por isso que **DAST sem autenticação configurada vê a página de login e mais nada**. Configurar credenciais, manter a sessão viva e alimentar a ferramenta com a lista real de endpoints — o contrato do @sec-cap048 — é a diferença entre um relatório de cinco páginas irrelevantes e uma varredura útil.
+
+**Análise de composição (SCA).** Inventaria as bibliotecas de terceiros e cruza com bases de vulnerabilidades conhecidas. É a ferramenta de melhor retorno imediato, porque a maior parte do código que uma aplicação executa não foi escrita pela equipe.
+
+**Varredura de segredos.** Procura chave, token e senha no código e — crucialmente — **no histórico do repositório**. Deve rodar como gancho de pré-commit, para impedir a entrada, e como varredura do histórico, para encontrar o que já entrou. Um ponto que todo mundo aprende da forma cara: **remover o segredo em um commit novo não o remove do histórico**, e a única resposta correta a um segredo publicado é a rotação. Reescrever o histórico é higiene; rotacionar é a correção.
+
+**Varredura de infraestrutura como código e de imagens.** Analisa arquivos de definição de infraestrutura e camadas de contêiner antes da implantação. Pertence tecnicamente ao mesmo grupo da estática — lê texto sem executar — e é assunto do Volume 8.
+
+**Teste manual.** Não é sigla e não sai de moda. Falha de lógica de negócio, cadeia de fraquezas menores que juntas viram comprometimento, e a categoria inteira do @sec-cap047 — controle de acesso — exigem alguém que entenda o que a aplicação *deveria* fazer. Nenhuma ferramenta sabe que aquela resposta 200 estava errada.
+
+| Técnica | Enxerga | Não enxerga | Ruído |
+|---|---|---|---|
+| Estática | Caminho do dado no código, padrão inseguro, criptografia fraca | Configuração, integração, regra de negócio | Alto |
+| Dinâmica | Comportamento real, configuração, cabeçalhos, sessão | O que não conseguiu navegar; código não exercitado | Baixo |
+| Composição | Biblioteca vulnerável, licença, dependência transitiva | Código próprio | Médio |
+| Segredos | Credencial no código e no histórico | Segredo fora do repositório | Médio |
+| Manual | Lógica de negócio, controle de acesso, cadeias | O que não coube no tempo contratado | Muito baixo |
+
+::: {#fig-cobertura-ferramentas}
+```{.tikz}
+%%| filename: cobertura-ferramentas
+%%| alt: Mapa de cobertura das técnicas de teste sobre as categorias do OWASP Top 10, destacando controle de acesso e lógica de negócio como o ponto cego comum
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cat/.style={draw, thick, rounded corners=2pt, align=left, inner sep=4pt,
+                minimum width=4.4cm, minimum height=0.62cm, font=\tiny,
+                anchor=west, fill=white},
+    mk/.style={font=\tiny, anchor=center}}
+
+  \node[font=\scriptsize, manualblue, anchor=west] at (0,4.4) {\textbf{CATEGORIA}};
+  \node[mk, manualblue] at (5.4,4.4) {\textbf{estática}};
+  \node[mk, manualblue] at (7.0,4.4) {\textbf{dinâmica}};
+  \node[mk, manualblue] at (8.7,4.4) {\textbf{composição}};
+  \node[mk, manualblue] at (10.5,4.4) {\textbf{manual}};
+
+  \node[cat, draw=manualgray] at (0,3.7) {injeção};
+  \node[mk, manualgreen] at (5.4,3.7) {forte};
+  \node[mk, manualgreen] at (7.0,3.7) {forte};
+  \node[mk, manualgray]  at (8.7,3.7) {---};
+  \node[mk, manualgreen] at (10.5,3.7) {forte};
+
+  \node[cat, draw=manualgray] at (0,2.95) {XSS e lado do cliente};
+  \node[mk, manualyellow] at (5.4,2.95) {parcial};
+  \node[mk, manualgreen]  at (7.0,2.95) {forte};
+  \node[mk, manualgray]   at (8.7,2.95) {---};
+  \node[mk, manualgreen]  at (10.5,2.95) {forte};
+
+  \node[cat, draw=manualgray] at (0,2.2) {configuração e cabeçalhos};
+  \node[mk, manualgray]   at (5.4,2.2) {---};
+  \node[mk, manualgreen]  at (7.0,2.2) {forte};
+  \node[mk, manualgray]   at (8.7,2.2) {---};
+  \node[mk, manualgreen]  at (10.5,2.2) {forte};
+
+  \node[cat, draw=manualgray] at (0,1.45) {componente desatualizado};
+  \node[mk, manualgray]   at (5.4,1.45) {---};
+  \node[mk, manualyellow] at (7.0,1.45) {parcial};
+  \node[mk, manualgreen]  at (8.7,1.45) {forte};
+  \node[mk, manualyellow] at (10.5,1.45) {parcial};
+
+  \node[cat, draw=manualred, fill=manualred!12, very thick] at (0,0.7)
+    {\textbf{controle de acesso e IDOR}};
+  \node[mk, manualred] at (5.4,0.7) {\textbf{não}};
+  \node[mk, manualred] at (7.0,0.7) {\textbf{não}};
+  \node[mk, manualred] at (8.7,0.7) {\textbf{não}};
+  \node[mk, manualgreen, font=\tiny] at (10.5,0.7) {\textbf{forte}};
+
+  \node[cat, draw=manualred, fill=manualred!12, very thick] at (0,-0.05)
+    {\textbf{lógica de negócio}};
+  \node[mk, manualred] at (5.4,-0.05) {\textbf{não}};
+  \node[mk, manualred] at (7.0,-0.05) {\textbf{não}};
+  \node[mk, manualred] at (8.7,-0.05) {\textbf{não}};
+  \node[mk, manualgreen, font=\tiny] at (10.5,-0.05) {\textbf{forte}};
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.4cm] at (6.2,-1.5)
+    {\textbf{As duas linhas vermelhas são a categoria A01 e a mais cara delas.}
+     Nenhuma ferramenta automatizada sabe que aquela resposta 200 estava errada ---
+     é preciso conhecer a regra de negócio. Automatizar tudo o que é automatizável
+     existe justamente para \emph{liberar} o tempo humano para essas duas linhas.};
+\end{tikzpicture}
+```
+Cobertura por categoria. O ponto cego comum a todas as ferramentas é exatamente a categoria que lidera o OWASP Top 10.
+:::
+
+## A dependência é a maior parte do código
+
+Uma aplicação típica executa muito mais código de terceiros do que código próprio. A árvore de dependências desce vários níveis, e as vulnerabilidades chegam predominantemente pelas **dependências transitivas** — a biblioteca que sua biblioteca usa, que você nunca escolheu e provavelmente não sabe que existe.
+
+Três conceitos organizam o trabalho:
+
+**Inventário de componentes (SBOM).** A lista de tudo o que compõe o software, com versão e procedência, em formato legível por máquina [@cyclonedx; @ntiasbom]. Deixou de ser burocracia no dia em que uma vulnerabilidade crítica apareceu numa biblioteca de registro de eventos e o mundo inteiro passou o fim de semana tentando responder à pergunta "nós usamos isso?". Com inventário gerado a cada build e armazenado junto ao artefato, a resposta leva minutos.
+
+**Alcançabilidade.** Nem toda vulnerabilidade em dependência é explorável na sua aplicação. Se a função vulnerável nunca é chamada por nenhum caminho do seu código, o risco real é próximo de zero. Ferramentas modernas de composição fazem essa análise e ela **corta o volume de achados de forma dramática** — costuma eliminar a maioria. É o único filtro que reduz ruído sem reduzir segurança, e vale mais do que qualquer outro recurso na hora de escolher a ferramenta.
+
+**Fixação de versão e integridade.** Arquivo de bloqueio com versões exatas e resumo criptográfico, para que a build de hoje instale exatamente o que a build de ontem instalou. Sem isso, a cadeia de suprimentos fica aberta a um pacote que muda de conteúdo sem mudar de versão. E vale a atenção ao **erro de digitação em nome de pacote** e à **confusão de repositório**, em que um pacote público com o nome do seu pacote interno é instalado preferencialmente. Essas são as portas de entrada mais usadas hoje — o tema completo é do Volume 16 [@slsa].
+
+## Priorizar: severidade não é prioridade
+
+Aqui está o nó do problema do capítulo. A pontuação de severidade mede o **quanto seria ruim se explorada**, em abstrato. Ela não sabe se a sua instância é alcançável pela internet, se a função vulnerável é chamada, se há exploração acontecendo no mundo real, nem se o dado atrás daquele serviço tem valor [@cvss40].
+
+Ordenar por severidade produz exatamente a lista de 380 achados críticos do começo do capítulo — lista que ninguém consegue trabalhar e que, por isso, não é trabalhada.
+
+Quatro fatores transformam severidade em prioridade:
+
+**Existe exploração no mundo real?** O catálogo de vulnerabilidades sabidamente exploradas mantido pela agência americana de segurança cibernética lista o que está sendo usado em ataques reais. Estar nessa lista muda tudo: sai da fila e vira urgência [@cisakev].
+
+**Qual a probabilidade de exploração?** O sistema de pontuação de probabilidade de exploração estima, a partir de dados observados, a chance de uma vulnerabilidade ser explorada nos próximos trinta dias. Combinado com severidade, reduz a fila em uma ordem de grandeza — a maioria das vulnerabilidades críticas nunca é explorada [@epss2024].
+
+**É alcançável?** A função vulnerável é chamada pelo seu código? O componente está exposto à internet ou vive numa sub-rede interna? O @sec-cap039 já tratou dessa lógica para infraestrutura; ela vale igual para aplicação.
+
+**O que está atrás?** Dado pessoal, dado financeiro, credencial ou nada relevante. A mesma vulnerabilidade tem impactos incomparáveis em dois sistemas distintos.
+
+A ordem operacional que sai disso: **explorada no mundo real e alcançável** primeiro, depois **alta probabilidade e exposta**, depois o resto por severidade — e o resto entra no fluxo normal de manutenção, não na fila de urgência.
+
+::: {#fig-funil-triagem}
+```{.tikz}
+%%| filename: funil-triagem
+%%| alt: Funil de triagem que reduz milhares de achados brutos a uma dezena de itens acionáveis por meio de filtros sucessivos
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fx/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               font=\tiny, minimum height=0.8cm},
+    nt/.style={font=\tiny, anchor=west, align=left, text width=6.2cm}}
+
+  \node[fx, draw=manualred,    fill=manualred!12,    minimum width=9.4cm] (f1) at (0,3.4)
+    {\textbf{4.212 achados brutos} --- a saída de todas as ferramentas somadas};
+  \node[fx, draw=manualyellow, fill=manualyellow!14, minimum width=7.6cm] (f2) at (0,2.3)
+    {\textbf{1.180} --- após remover falso positivo e o que não é alcançável};
+  \node[fx, draw=manualyellow, fill=manualyellow!16, minimum width=5.8cm] (f3) at (0,1.2)
+    {\textbf{190} --- apenas o que está exposto};
+  \node[fx, draw=manualblue,   fill=manualblue!14,   minimum width=4.0cm] (f4) at (0,0.1)
+    {\textbf{34} --- alta probabilidade de exploração};
+  \node[fx, draw=manualgreen,  fill=manualgreen!16,  minimum width=2.6cm] (f5) at (0,-1.0)
+    {\textbf{9} --- explorados no mundo real};
+
+  \foreach \a/\b in {f1/f2, f2/f3, f3/f4, f4/f5}
+    {\draw[->, >=stealth, thick, manualgray] (\a) -- (\b);}
+
+  \node[nt, manualgray]   at (5.2,3.4)  {tudo o que as ferramentas conseguem dizer};
+  \node[nt, manualgray]   at (4.4,2.3)  {a função vulnerável é chamada por algum
+                                          caminho do seu código?};
+  \node[nt, manualgray]   at (3.4,1.2)  {alcançável pela internet, ou vive numa
+                                          sub-rede interna?};
+  \node[nt, manualgray]   at (2.5,0.1)  {probabilidade estimada de exploração
+                                          nos próximos trinta dias};
+  \node[nt, manualgreen]  at (1.8,-1.0) {\textbf{catálogo de vulnerabilidades
+                                          sabidamente exploradas --- estas saem
+                                          da fila e viram urgência}};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.4cm] at (3.6,-2.6)
+    {\textbf{Severidade mede o quanto seria ruim; prioridade mede o que fazer na
+     segunda-feira.} Uma fila de nove itens é trabalhada. Uma fila de 380 vira
+     uma variável de ambiente que pula o portão --- e ela vai aparecer em todos os
+     projetos dentro de um mês.};
+\end{tikzpicture}
+```
+O funil de triagem. Cada filtro corta uma ordem de grandeza sem reduzir a segurança efetiva.
+:::
+
+## Portões que não param a entrega
+
+O @sec-cap042 estabeleceu o princípio: deslocar a verificação para a esquerda, colocando-a onde a correção é barata. Falta a parte operacional — **o que bloqueia e o que apenas avisa**.
+
+A regra que funciona na prática é estreita e defensável:
+
+**Bloqueia:** segredo detectado (sem exceção — o custo de um segredo publicado é rotação de credencial em produção); vulnerabilidade crítica **e alcançável** em dependência; e regressão em teste de segurança específico, como o teste do @sec-cap047 em que o usuário B pede o objeto de A.
+
+**Avisa e cria tarefa:** todo o resto, com prazo por severidade e responsável definido.
+
+Duas ideias fazem essa política sobreviver ao encontro com uma base legada:
+
+**Linha de base.** Congela os achados existentes como dívida conhecida, com plano de redução, e o portão passa a valer **apenas para o que é novo**. Sem isso, qualquer política aplicada a um sistema com dez anos de idade nasce ignorada. Com isso, a base para de piorar no primeiro dia — e parar de piorar é o pré-requisito de melhorar.
+
+**Achado onde o desenvolvedor já está.** Comentário no pedido de mesclagem, apontando o arquivo e a linha, com explicação e sugestão de correção. Não painel separado, não relatório mensal em PDF, não e-mail. **A distância entre o achado e a pessoa que pode corrigi-lo é o melhor previsor de correção**, e o painel que exige um segundo login já perdeu.
+
+E um cuidado que economiza meses: **ligue uma ferramenta de cada vez**. Comece pela varredura de segredos, que tem quase zero falso positivo e valor imediato. Depois a composição, com alcançabilidade ligada. Depois a estática, com o conjunto de regras reduzido ao que importa — desligar regra ruidosa é ajuste legítimo, não fraude. Só então a dinâmica, com autenticação configurada. Ligar tudo junto é a receita exata do começo deste capítulo.
+
+Vale registrar o limite honesto de tudo isso: nenhum arranjo de ferramentas encontra falha de lógica de negócio ou de controle de acesso. Automatizar o automatizável existe para **liberar tempo humano** — revisão de código com foco em autorização, modelagem de ameaças (@sec-cap005) nas mudanças de arquitetura, e teste de invasão periódico em aplicação com dado sensível, que é assunto do Volume 9.
+
+## Erros que se repetem
+
+- **Ligar todas as ferramentas de uma vez**, no modo mais barulhento, com bloqueio ativado.
+- **Ordenar por severidade** e chamar isso de priorização.
+- **Ignorar alcançabilidade**, trabalhando achados de código que nunca é chamado.
+- **DAST sem autenticação**, que varre a página de login e devolve um relatório inútil.
+- **Bloquear a entrega por achado informativo**, ensinando a equipe a pular o portão.
+- **Nenhuma linha de base em sistema legado**, o que faz a política nascer ignorada.
+- **Relatório em painel separado** em vez de comentário no pedido de mesclagem.
+- **Remover segredo em commit novo** e considerar resolvido, sem rotacionar a credencial.
+- **Sem arquivo de bloqueio de versões**, deixando a build à mercê do que o repositório servir hoje.
+- **Sem inventário de componentes**, o que transforma "nós usamos essa biblioteca?" em um fim de semana de trabalho.
+- **Confundir cobertura de ferramenta com cobertura de risco**, esquecendo que a categoria que lidera o Top 10 não é encontrada por nenhuma delas.
+
+## ⚖️ Brasil em Foco
+
+**O art. 46 da LGPD exige medidas técnicas de segurança, e o teste automatizado é a evidência mais barata de que elas existem.** A lei não enumera ferramentas, mas fala em medidas aptas a proteger os dados pessoais. Numa fiscalização ou numa investigação de incidente, a diferença entre uma organização que demonstra varredura contínua, fila de correção com prazo e portões no pipeline e outra que não demonstra nada é a diferença entre negligência afastada e negligência presumida. **O registro do processo vale tanto quanto o processo** — histórico de execuções, achados, decisões de aceitação de risco e prazos cumpridos [@lgpd2018].
+
+**Compras públicas passaram a exigir requisitos de segurança em software.** Contratações de desenvolvimento e de sustentação no setor público brasileiro incorporam cada vez mais exigências de teste de segurança, entrega de relatório de varredura e correção de achados dentro de prazo contratual. Para fornecedores — inclusive as muitas empresas pequenas e médias que atendem prefeituras, autarquias e estatais —, isso significa que o custo da automação deixou de ser opcional e virou condição de participação. A boa notícia é que o conjunto de ferramentas livres cobre bem o essencial: análise estática por linguagem, varredura de dependências, detecção de segredos e varredura dinâmica básica saem sem licença.
+
+**PCI-DSS v4 é explícito e auditável.** O Requisito 6.2 trata de desenvolvimento seguro e revisão de código, o 6.3 exige a identificação e o gerenciamento de vulnerabilidades em software, incluindo componentes de terceiros, e o 11.3 exige testes periódicos. Para o ecossistema brasileiro de meios de pagamento — adquirentes, subadquirentes, gateways e as plataformas de comércio eletrônico —, o inventário de componentes e a fila de correção com prazo são itens de auditoria, não boas intenções [@pcidss4].
+
+**A ISO/IEC 27001 dá o encaixe formal.** Os controles de codificação segura e de gestão de vulnerabilidades técnicas pedem exatamente o que este capítulo descreve, e uma organização certificada precisa demonstrar o ciclo funcionando. Como boa parte das organizações brasileiras busca a certificação por exigência de cliente ou de licitação, a automação de testes costuma ser o caminho mais econômico de atender ao requisito [@iso27001].
+
+**O inventário de componentes vira exigência de cadeia.** A prática de exigir SBOM do fornecedor, que começou em contratos governamentais no exterior, já aparece em contratos de grandes empresas brasileiras e no setor financeiro. Para quem desenvolve software vendido a terceiros, gerar e manter o inventário deixou de ser diferencial técnico e virou requisito comercial — e é barato quando gerado automaticamente na build, e caro quando reconstruído sob pressão depois de uma vulnerabilidade crítica ser anunciada numa sexta-feira [@ntiasbom; @cyclonedx].
+
+**Recursos nacionais ajudam na priorização.** O CERT.br publica alertas e estatísticas com recorte brasileiro, úteis para calibrar o que efetivamente está sendo explorado contra alvos no país — informação que não aparece em base internacional e que muda a ordem da fila. Combinar o catálogo internacional de vulnerabilidades exploradas com o panorama nacional dá uma priorização melhor do que qualquer um dos dois isolado [@cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Comece pela varredura de segredos.** Menor ruído, maior valor imediato, e o único portão que pode bloquear desde o primeiro dia:
+
+```bash
+gitleaks detect --source . --redact --log-opts="--all"
+```
+
+E instale como gancho de pré-commit, para impedir a entrada além de encontrar o que já entrou.
+
+**2. Rotacione todo segredo encontrado.** Reescrever o histórico é higiene; **rotacionar é a correção**. Se esteve no repositório, considere-o público.
+
+**3. Ligue a composição com alcançabilidade.** É o recurso que decide o volume da fila. Sem ele, a lista é impraticável; com ele, costuma cair para uma fração.
+
+**4. Gere o inventário de componentes a cada build** e guarde-o junto ao artefato:
+
+```bash
+syft dir:. -o cyclonedx-json > sbom.json
+grype sbom:sbom.json --fail-on critical
+```
+
+**5. Priorize por exploração real, não por severidade.** Cruze a fila com o catálogo de vulnerabilidades sabidamente exploradas e com a probabilidade estimada de exploração. O que estiver nos dois vira urgência; o resto entra na manutenção.
+
+**6. Estabeleça a linha de base do legado.** Congele o existente como dívida conhecida com plano de redução, e aplique o portão apenas ao que é novo. Sem isso, a política nasce ignorada.
+
+**7. Ajuste o conjunto de regras da análise estática antes de exigir qualquer coisa.** Rode em modo informativo por duas ou três semanas, meça a taxa de falso positivo por regra, desligue as ruidosas. Uma regra com 80% de falso positivo custa mais atenção do que entrega.
+
+**8. Configure autenticação no scanner dinâmico** e alimente-o com o contrato da API (@sec-cap048), em vez de deixá-lo descobrir sozinho:
+
+```bash
+zap-api-scan.py -t https://homolog.exemplo.com.br/openapi.json -f openapi \
+                -z "-config replacer.full_list(0).replacement=Bearer $TOKEN" \
+                -r relatorio.html
+```
+
+**9. Entregue o achado no pedido de mesclagem.** Arquivo, linha, explicação e sugestão de correção — não painel, não PDF mensal.
+
+**10. Escreva o teste de regressão do achado corrigido.** Toda vulnerabilidade fechada vira um teste automatizado. É o que impede o retorno e o que constrói, com o tempo, uma suíte de segurança específica da sua aplicação — mais valiosa do que qualquer ferramenta genérica.
+
+**11. Automatize a atualização de dependências** com pedidos de mesclagem automáticos e suíte de testes decente por trás. O gargalo da correção quase nunca é descobrir; é a coragem de atualizar.
+
+**12. Meça três coisas, e só três.** Tempo mediano entre a descoberta e a correção por severidade, quantidade de achados novos por entrega, e proporção da fila que é dívida antiga. **Quantidade total de achados não é métrica** — é ansiedade com aparência de dado.
+
+**13. Reserve o tempo humano para o ponto cego.** Revisão de código focada em autorização, modelagem de ameaças nas mudanças de arquitetura e teste manual dos fluxos que movimentam dinheiro ou expõem dado pessoal. É o que nenhuma ferramenta faz, e é a categoria que lidera o Top 10.
+
+## Resumo
+
+- **O modo de falha da automação não é a ausência de ferramentas: é o ruído.** Mil achados sem contexto queimam o orçamento político da equipe e ensinam a pular o portão.
+- As técnicas são complementares, não concorrentes: **estática** vê o caminho do dado no código e produz muito falso positivo; **dinâmica** vê comportamento real com pouquíssimo falso positivo, mas só onde consegue navegar; **composição** cobre a maior parte do código executado, que é de terceiros; **segredos** exige varrer o histórico, não só o estado atual.
+- **O ponto cego é comum a todas**: controle de acesso e lógica de negócio — exatamente a categoria que lidera o OWASP Top 10. Automatizar o automatizável existe para liberar tempo humano para isso.
+- Na cadeia de dependências, três coisas resolvem: **inventário de componentes** gerado na build, **alcançabilidade** (o único filtro que corta ruído sem cortar segurança) e **fixação de versão com verificação de integridade**.
+- **Severidade não é prioridade.** Ordenar por severidade produz a lista que ninguém trabalha. Prioridade vem de exploração observada no mundo real, probabilidade estimada, alcançabilidade e valor do dado atrás do sistema.
+- Portão estreito e defensável: **bloqueia** segredo detectado, crítico alcançável em dependência e regressão em teste de segurança; **avisa** todo o resto, com prazo e responsável.
+- **Linha de base** é o que faz a política sobreviver ao legado — o sistema para de piorar no primeiro dia, e parar de piorar é pré-requisito de melhorar.
+- **Ligue uma ferramenta por vez**: segredos, composição, estática com regras ajustadas, dinâmica com autenticação. E entregue o achado onde a pessoa que corrige já está — a distância entre o achado e o desenvolvedor é o melhor previsor de correção.
+- No Brasil, o art. 46 da LGPD faz do registro do processo a evidência de diligência; PCI-DSS e ISO/IEC 27001 tornam a fila com prazo item auditável; e o inventário de componentes já aparece como exigência contratual — barato quando gerado na build, caro quando reconstruído sob pressão.

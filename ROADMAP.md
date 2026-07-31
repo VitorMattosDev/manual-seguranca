@@ -79,7 +79,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 046** - Falhas de autenticação e gestão de sessão - `vol07/cap046-falhas-de-autenticacao-e-gestao-de-sessao.qmd`
 - [x] **cap 047** - Falhas de controle de acesso: IDOR, SSRF e escalonamento - `vol07/cap047-falhas-de-controle-de-acesso-idor-ssrf-e.qmd`
 - [x] **cap 048** - Segurança de APIs REST e GraphQL - `vol07/cap048-seguranca-de-apis-rest-e-graphql.qmd`
-- [ ] **cap 049** - SAST, DAST, SCA e automação de testes de segurança - `vol07/cap049-sast-dast-sca-e-automacao-de-testes-de.qmd`
+- [x] **cap 049** - SAST, DAST, SCA e automação de testes de segurança - `vol07/cap049-sast-dast-sca-e-automacao-de-testes-de.qmd`
 
 ### Volume 8 — Nuvem e Contêineres
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (45 concluidos).
+**Total:** 107 capitulos em 16 volumes (49 concluidos).
 
