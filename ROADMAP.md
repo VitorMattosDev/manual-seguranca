@@ -52,7 +52,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 5 — Segurança de Redes
 
-- [ ] **cap 028** - Arquitetura segura e segmentação de redes - `vol05/cap028-arquitetura-segura-e-segmentacao-de-redes.qmd`
+- [x] **cap 028** - Arquitetura segura e segmentação de redes - `vol05/cap028-arquitetura-segura-e-segmentacao-de-redes.qmd`
 - [ ] **cap 029** - Firewalls: tipos, políticas e boas práticas - `vol05/cap029-firewalls-tipos-politicas-e-boas-praticas.qmd`
 - [ ] **cap 030** - VPNs: IPsec, WireGuard e acesso remoto seguro - `vol05/cap030-vpns-ipsec-wireguard-e-acesso-remoto-seguro.qmd`
 - [ ] **cap 031** - IDS, IPS e detecção em rede - `vol05/cap031-ids-ips-e-deteccao-em-rede.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (27 concluidos).
+**Total:** 107 capitulos em 16 volumes (28 concluidos).
 

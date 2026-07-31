@@ -1,3 +1,317 @@
 # Arquitetura segura e segmentação de redes {#sec-cap028}
 
-*(em elaboracao)*
+Em novembro de 2013, atacantes obtiveram credenciais de um fornecedor de refrigeração que prestava serviço à rede Target, nos Estados Unidos. Aquele fornecedor tinha acesso legítimo a um portal de faturamento — nada além disso. O que aconteceu em seguida define este capítulo: a partir do portal de faturamento, os atacantes alcançaram a rede corporativa, e da rede corporativa alcançaram os terminais de ponto de venda. Quarenta milhões de cartões saíram por um caminho que começou no ar-condicionado.
+
+Nenhuma etapa dessa cadeia exigiu uma falha exótica. Exigiu apenas que a rede fosse **plana o suficiente** para que um sistema de faturamento conseguisse falar com um caixa de loja. A pergunta que a arquitetura de rede precisa responder não é "o atacante consegue entrar?" — a resposta é sim, eventualmente, por algum caminho. A pergunta é: **quando ele entrar naquele ponto, o que ele alcança?**
+
+Este capítulo abre o Volume 5 e trata do controle mais antigo e mais mal implementado da segurança de redes. Ele é o pilar "Rede" que o modelo de maturidade do @sec-cap027 pressupõe, e depende da pilha construída no @sec-cap008 e no @sec-cap009.
+
+## O raio de alcance é a métrica
+
+Segmentação existe para limitar uma única grandeza: o **raio de alcance** de um comprometimento. Não impede a intrusão — impede que a intrusão vire desastre.
+
+O adversário que consegue execução de código numa estação de trabalho precisa, para chegar ao dado que interessa, atravessar a distância entre aquela estação e o servidor de banco de dados. Numa rede plana, essa distância é zero: qualquer máquina alcança qualquer porta de qualquer outra. Numa rede segmentada, cada salto exige atravessar um ponto de controle que pode negar, registrar e alertar.
+
+Isso muda três coisas de uma vez:
+
+- **Reduz o alcance.** O que não é alcançável não é atacável por rede.
+- **Cria oportunidade de detecção.** Tráfego negado num ponto de controle é sinal; numa rede plana, movimentação lateral é indistinguível de operação normal, porque tudo é permitido.
+- **Diminui o custo da resposta.** Isolar um segmento é uma ação cirúrgica; isolar "a rede" é parar a empresa. Quem já conduziu uma resposta a ransomware sabe que a segmentação prévia é o que decide entre desligar um andar e desligar a operação.
+
+Existe ainda o efeito de escopo regulatório, que costuma ser o argumento que aprova o orçamento: o PCI-DSS reconhece explicitamente a segmentação como forma de reduzir o ambiente sujeito a auditoria. Onde o dado de cartão não circula, o requisito não se aplica [@pcidss4].
+
+## Zonas: agrupar por confiança, não por andar
+
+O erro de partida mais comum é segmentar por geografia ou por organograma — uma VLAN por andar, uma por departamento. Isso produz muitas sub-redes e nenhuma segurança, porque a política entre elas acaba sendo `permitir tudo`.
+
+O critério que funciona é agrupar ativos que compartilham **nível de confiança, exposição e sensibilidade do dado**, e depois escrever a política *entre* os grupos. Uma decomposição que se sustenta na maioria das organizações:
+
+| Zona | O que contém | Exposição | Regra de ouro |
+|---|---|---|---|
+| Externa | Internet, parceiros, fornecedores | Total | Nada é confiável |
+| DMZ | Serviços publicados: web, e-mail, DNS autoritativo, VPN | Alta | Nunca inicia conexão para dentro |
+| Corporativa | Estações, impressoras, telefonia, BYOD | Média | A zona mais comprometida na prática |
+| Servidores | Aplicações internas, middleware | Baixa | Acesso por serviço, não por sub-rede |
+| Dados | Bancos, arquivos, backup | Mínima | Só responde à camada de aplicação |
+| Gestão | iDRAC/iLO, switches, hipervisores, consoles | Nenhuma | Fora de banda, sem rota para o resto |
+| Restrita | Cartão, saúde, industrial, jurídico | Nenhuma | Escopo regulatório isolado |
+
+: Zonas por nível de confiança e a regra que define cada uma. {#tbl-zonas-rede}
+
+A zona corporativa merece um comentário honesto: ela é, estatisticamente, por onde o comprometimento entra — phishing, dispositivo pessoal, mídia removível, visitante. Projetar a arquitetura tratando a rede de estações como **semiconfiável** não é pessimismo, é aderência ao que os dados de incidentes mostram [@verizondbir2024].
+
+::: {#fig-zonas-rede}
+```{.tikz}
+%%| filename: zonas-de-rede
+%%| alt: Arquitetura de rede em zonas mostrando internet, DMZ, rede corporativa, camada de servidores, camada de dados e rede de gestão fora de banda, com pontos de aplicação de política entre cada par de zonas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    zona/.style={draw, very thick, rounded corners=4pt, align=center, inner sep=5pt,
+                 minimum width=4.6cm, minimum height=0.9cm, font=\scriptsize},
+    fw/.style={draw=manualred, very thick, fill=manualred!12, rounded corners=2pt,
+               minimum width=0.9cm, minimum height=0.42cm, font=\tiny\bfseries,
+               inner sep=1pt},
+    fx/.style={<->, >=stealth, thick, manualgray}}
+
+  \node[zona, draw=manualred, fill=manualred!10]       (net)  at (0,6.4)
+    {\textbf{INTERNET}\\\scriptsize não confiável};
+  \node[zona, draw=manualyellow, fill=manualyellow!14] (dmz)  at (0,4.6)
+    {\textbf{DMZ}\\\scriptsize web, e-mail, DNS autoritativo, VPN};
+  \node[zona, draw=manualblue, fill=manualblue!10]     (corp) at (0,2.8)
+    {\textbf{CORPORATIVA}\\\scriptsize estações, impressoras, VoIP, BYOD};
+  \node[zona, draw=manualgreen, fill=manualgreen!10]   (srv)  at (0,1.0)
+    {\textbf{SERVIDORES}\\\scriptsize aplicações internas};
+  \node[zona, draw=manualgreen, fill=manualgreen!18]   (dad)  at (0,-0.8)
+    {\textbf{DADOS}\\\scriptsize bancos, arquivos, backup};
+
+  \foreach \a/\b in {net/dmz, dmz/corp, corp/srv, srv/dad} {
+    \draw[fx] (\a) -- (\b);}
+
+  \node[fw] at (1.55,5.5) {PEP};
+  \node[fw] at (1.55,3.7) {PEP};
+  \node[fw] at (1.55,1.9) {PEP};
+  \node[fw] at (1.55,0.1) {PEP};
+
+  \draw[manualgray, dashed, very thick] (4.3,-2.4) -- (4.3,7.0);
+
+  \node[zona, draw=manualgray, fill=manualgray!8, minimum width=3.6cm]
+    (mgmt) at (6.8,2.9) {\textbf{GESTÃO}\\\scriptsize iLO/iDRAC, switches,\\hipervisores, consoles};
+  \node[align=center, font=\tiny, manualgray, text width=3.8cm] at (6.8,1.5)
+    {fora de banda: \textbf{sem rota}\\para as demais zonas};
+
+  \node[align=left, font=\scriptsize, text width=3.8cm, draw=manualyellow,
+        fill=manualyellow!8, thick, rounded corners=3pt, inner sep=5pt] at (6.8,5.4)
+    {\textbf{Regra da DMZ:} ela \emph{responde}, nunca \emph{inicia}.
+     Conexão saindo da DMZ para dentro é sinal de comprometimento.};
+
+  \node[align=left, font=\scriptsize, text width=3.8cm, draw=manualred,
+        fill=manualred!8, thick, rounded corners=3pt, inner sep=5pt] at (6.8,-0.9)
+    {\textbf{Sem salto duplo:} a zona corporativa não fala com a de dados.
+     Se falar, as zonas intermediárias são decorativas.};
+\end{tikzpicture}
+```
+Zonas por confiança, com um ponto de aplicação de política entre cada par adjacente e a rede de gestão fora de banda.
+:::
+
+Duas regras estruturais valem mais que a topologia:
+
+**A DMZ responde, não inicia.** Um servidor web publicado atende requisições que chegam de fora e, se precisar, consulta um serviço interno específico por uma porta específica. Ele não navega na internet, não resolve nomes arbitrários e não varre a rede interna. Toda conexão iniciada a partir da DMZ em direção ao núcleo é candidata a alerta de alta prioridade — é assim que a exploração de uma aplicação web vira detecção em minutos, em vez de meses.
+
+**Não existe salto que pule zonas.** Se a estação do analista financeiro conecta direto no banco de dados de produção "porque o relatório precisa", a camada de aplicação virou enfeite. O caminho legítimo é estação → aplicação → banco, com autenticação em cada salto.
+
+## Os mecanismos, e o que cada um realmente garante
+
+Segmentação não é uma tecnologia; é uma propriedade que várias tecnologias ajudam a produzir — em camadas diferentes e com garantias muito diferentes.
+
+**VLAN (camada 2).** Separa domínios de difusão. É barata, é o ponto de partida universal e é **a mais superestimada**: VLAN separa, mas não filtra. Se dois segmentos estão em VLANs distintas e existe um roteador entre eles sem lista de controle de acesso, a separação é apenas administrativa. VLAN sem política de camada 3 é organização, não controle.
+
+Além disso, VLAN tem superfície própria. O **VLAN hopping por dupla marcação** explora a porta configurada como tronco cuja VLAN nativa coincide com a VLAN do atacante: o quadro carrega duas etiquetas, o primeiro switch remove uma e encaminha, e o segundo entrega o quadro na VLAN alvo. A contramedida é conhecida e raramente aplicada: desabilitar a negociação automática de tronco nas portas de acesso e usar uma VLAN nativa sem hosts.
+
+**Sub-rede e listas de controle de acesso (camada 3).** É onde a política começa a existir de fato. Simples, rápido, sem estado na maioria das implementações — e por isso limitado: uma ACL sem estado não distingue uma resposta legítima de um pacote forjado com a flag certa. Serve para filtragem grosseira em alto volume.
+
+**Firewall com estado.** Acompanha a conexão, permite política direcional real ("A inicia para B; B nunca inicia para A") e é o instrumento principal entre zonas. É o tema do @sec-cap029.
+
+**VRF e roteamento separado.** Instâncias de tabela de roteamento independentes no mesmo equipamento. Ferramenta forte para isolamento verdadeiro entre clientes ou ambientes, muito usada por provedores: sem rota importada, não existe caminho — nem por engano de ACL.
+
+**Sobreposição (VXLAN, EVPN).** Desacopla o segmento lógico da topologia física, o que torna a segmentação viável em ambientes virtualizados e multi-datacenter. Duas ressalvas: a sobreposição frequentemente **não é cifrada** por padrão, e seu plano de controle vira um alvo de altíssimo valor.
+
+**Microssegmentação.** Política aplicada na borda da carga de trabalho — hipervisor, agente ou malha de serviços — com identidade em vez de endereço. É o único modelo que sobrevive a endereços efêmeros de contêiner, e foi introduzido no @sec-cap027.
+
+**802.1X e controle de admissão.** Autentica o dispositivo **antes** de conceder acesso à porta e atribui a VLAN dinamicamente conforme identidade e postura. Resolve o problema que nenhuma topologia resolve: a tomada de rede da sala de reunião [@ieee8021x].
+
+| Mecanismo | Camada | Separa | Filtra | Sobrevive a IP dinâmico |
+|---|---|---|---|---|
+| VLAN | 2 | Sim | Não | Sim |
+| Sub-rede + ACL | 3 | Sim | Grosseiramente | Não |
+| Firewall com estado | 3–4 | Sim | Sim | Não |
+| VRF | 3 | Sim (forte) | Não se aplica | Sim |
+| Microssegmentação | 3–7 | Sim | Sim | Sim |
+| 802.1X / NAC | 2 (admissão) | Sim | Na admissão | Sim |
+
+: O que cada mecanismo entrega de fato. {#tbl-mecanismos-segmentacao}
+
+## A rede de gestão é a zona que ninguém segmenta
+
+Interfaces de gerenciamento fora de banda — iDRAC, iLO, IPMI, consoles de switch, interfaces de hipervisor, controladoras de armazenamento — concentram um poder que nenhum servidor de aplicação tem: elas ligam, desligam, montam mídia virtual e acessam o console como se alguém estivesse fisicamente diante do equipamento. Muitas rodam firmware antigo, com autenticação fraca e sem qualquer ciclo de atualização.
+
+Essas interfaces precisam viver numa rede sem rota para o restante, acessível apenas por um bastião com autenticação forte. É provavelmente a segmentação com melhor relação entre esforço e risco evitado de toda esta lista — e a que mais aparece pendente nos relatórios de incidente. Quem alcança o IPMI não precisa explorar o sistema operacional: monta uma imagem e inicia a máquina a partir dela.
+
+## Escrever a política: da topologia à matriz de fluxos
+
+O artefato central da segmentação não é o diagrama — é a **matriz de fluxos**: origem, destino, porta, protocolo, justificativa e dono. Sem ela, a política vira um acúmulo de regras que ninguém ousa remover.
+
+::: {#fig-matriz-fluxos}
+```{.tikz}
+%%| filename: matriz-de-fluxos
+%%| alt: Matriz de fluxos permitidos entre zonas de rede, com a maioria das combinações negada por padrão e poucas permissões explícitas por porta e serviço
+\begin{tikzpicture}[font=\footnotesize, x=1.72cm, y=0.8cm]
+  \tikzset{
+    cel/.style={draw=manualgray, thin, minimum width=1.68cm, minimum height=0.78cm,
+                font=\tiny, align=center, inner sep=1pt},
+    hd/.style={font=\scriptsize\bfseries, align=center},
+    ok/.style={cel, fill=manualgreen!22, draw=manualgreen},
+    no/.style={cel, fill=manualred!12, draw=manualred!60},
+    na/.style={cel, fill=manualgray!12}}
+
+  \node[hd, manualgray, align=center] at (-1.25,4.15) {origem $\downarrow$\\destino $\rightarrow$};
+  \foreach \x/\t in {0/DMZ, 1/Corporat., 2/Servidor., 3/Dados, 4/Gestão} {
+    \node[hd] at (\x,4.15) {\t};}
+  \foreach \y/\t in {3/DMZ, 2/Corporat., 1/Servidor., 0/Dados, -1/Gestão} {
+    \node[hd, anchor=east] at (-0.95,\y) {\t};}
+
+  \node[na] at (0,3){---};
+  \node[no] at (1,3){negado};
+  \node[ok] at (2,3){tcp/8443\\app interna};
+  \node[no] at (3,3){negado};
+  \node[no] at (4,3){negado};
+
+  \node[ok] at (0,2){tcp/443};
+  \node[na] at (1,2){---};
+  \node[ok] at (2,2){tcp/443\\tcp/445};
+  \node[no] at (3,2){negado};
+  \node[no] at (4,2){negado};
+
+  \node[no] at (0,1){negado};
+  \node[no] at (1,1){negado};
+  \node[na] at (2,1){---};
+  \node[ok] at (3,1){tcp/5432\\tcp/1433};
+  \node[no] at (4,1){negado};
+
+  \node[no] at (0,0){negado};
+  \node[no] at (1,0){negado};
+  \node[no] at (2,0){negado};
+  \node[na] at (3,0){---};
+  \node[no] at (4,0){negado};
+
+  \node[no] at (0,-1){negado};
+  \node[ok] at (1,-1){bastião\\tcp/22 + MFA};
+  \node[ok] at (2,-1){bastião};
+  \node[no] at (3,-1){negado};
+  \node[na] at (4,-1){---};
+
+  \node[align=left, font=\scriptsize, text width=8.8cm, draw=manualblue,
+        fill=manualblue!8, thick, rounded corners=3pt, inner sep=6pt] at (1.7,-2.7)
+    {\textbf{Leitura:} a zona de dados não inicia nada --- apenas responde.
+     A corporativa nunca alcança dados diretamente. O acesso de gestão entra
+     por bastião com autenticação forte, jamais por rota direta.
+     \textbf{O padrão é negar}; cada permissão é uma linha com dono e justificativa.};
+\end{tikzpicture}
+```
+Matriz de fluxos entre zonas: o artefato que a política implementa e que a auditoria verifica.
+:::
+
+O processo que evita interromper a produção é sempre o mesmo, e vale repeti-lo porque a tentação de pular etapas é grande:
+
+1. **Inventariar** o que existe e a que zona pertence. Descobrir ativos desconhecidos é resultado esperado desta etapa, não sinal de fracasso.
+2. **Observar** os fluxos reais por semanas — registros de fluxo, logs de firewall, captura na borda. Escrever política a partir da documentação produz interrupção, porque a documentação está desatualizada.
+3. **Escrever** a matriz a partir do observado, questionando cada fluxo: existe justificativa? Ele tem dono?
+4. **Aplicar em modo de alerta**, medindo o que *seria* bloqueado, por um ciclo completo de negócio — incluindo o fechamento mensal, que é onde mora o fluxo de que ninguém lembrou.
+5. **Bloquear**, começando pela zona mais crítica, com plano de reversão pronto.
+6. **Revisar** periodicamente, com prazo de validade nas exceções.
+
+## Modelos de referência: Purdue e o mundo industrial
+
+Onde há automação industrial — indústria, energia, saneamento e também data centers com sistemas prediais — o modelo de referência é o **Purdue**, que organiza a arquitetura em níveis: do processo físico (nível 0) e dos controladores (níveis 1 e 2), passando pelas operações de manufatura (nível 3), até a rede corporativa (níveis 4 e 5), com uma **zona desmilitarizada industrial** mediando o contato entre o mundo de TI e o de automação [@purdue1992].
+
+A tradução prática é direta: o histórico de processo fica na DMZ industrial, e é *ele* que a rede corporativa consulta. Não existe caminho de uma planilha no escritório até um controlador lógico programável. O incidente da Target, com o fornecedor de refrigeração, é exatamente a violação dessa fronteira.
+
+Vale a ressalva: nuvem e conectividade remota pressionam o modelo, e Purdue é hoje um ponto de partida a ser complementado com identidade e mediação por aplicação — não um dogma. O tema volta no Volume 16.
+
+## Os erros que anulam o investimento
+
+**Rede plana com muitas VLANs.** Vinte segmentos e uma regra `any/any` entre eles. É comum, e é pior que uma rede plana honesta, porque produz a sensação de estar segmentado.
+
+**Regras acumuladas por medo.** Ninguém remove uma regra antiga por não saber o que ela sustenta. Em cinco anos a base tem milhares de linhas e a política efetiva é desconhecida. A cura é atribuir dono e prazo desde a primeira regra.
+
+**A exceção permanente.** A liberação "temporária" para o consultor em 2022 continua ativa. Exceção sem data de expiração não é exceção — é política.
+
+**Acesso remoto que desemboca no núcleo.** Uma VPN que coloca o notebook doméstico na VLAN de servidores anula todo o desenho. É o argumento central do @sec-cap027 e o tema do @sec-cap030.
+
+**Segmentar a produção e esquecer a homologação.** O ambiente de teste tem cópia do dado real, senha fraca, sistema desatualizado — e uma rota livre para produção. É um trampolim conhecido e frequentemente explorado.
+
+**Backup alcançável de todo lugar.** Numa campanha de ransomware, a rede de backup é alvo prioritário. Ela precisa ser zona própria, com credencial própria e cópia imutável. O assunto é aprofundado no Volume 14.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD transforma segmentação em medida técnica exigível.** O art. 46 fala em medidas aptas a proteger dados pessoais de acessos não autorizados, e o art. 6º, VII, impõe o princípio da segurança. Quando ocorre um incidente, a diferença entre comunicar "houve acesso a um segmento contendo os dados de 300 clientes" e "não é possível descartar acesso à base inteira" é, em grande medida, uma diferença de arquitetura de rede. Delimitar o escopo é a primeira coisa que a ANPD pergunta, e é a segmentação — somada ao registro nos pontos de controle — que permite responder com evidência em vez de estimativa [@lgpd2018; @anpd2024res15].
+
+**Para provedores de internet, a rede de gestão é obrigação, não boa prática.** O Marco Civil impõe a guarda de registros de conexão por um ano, sob sigilo, acessíveis mediante ordem judicial. Os sistemas que armazenam esses registros — servidores RADIUS, coletores de log, bases de CGNAT — precisam viver numa zona restrita, com acesso individualizado e auditável. Uma base de registros alcançável a partir da rede administrativa do provedor é um problema de conformidade, não apenas de segurança [@marcocivil2014; @lei9296].
+
+**O Regulamento de Segurança Cibernética da Anatel converge com o modelo de zonas.** A Resolução 740/2020 estabelece requisitos para produtos e redes de telecomunicações, entre eles a separação entre plano de gerência e plano de usuário e o controle de acesso às interfaces de administração. Para prestadoras de SCM, isso é exatamente a zona de gestão fora de banda descrita aqui — inclusive nos equipamentos instalados na casa do assinante, cuja interface de gerência jamais deve ser alcançável a partir da internet [@anatel740; @anatel614].
+
+**O setor financeiro tem exigência explícita de segregação.** A Resolução BCB 4.893/2021 requer controles proporcionais ao risco, com segregação de ambientes e rastreabilidade de acessos; instituições participantes do Pix e do Open Finance operam sob requisitos adicionais de isolamento dos ambientes que tocam a infraestrutura do Banco Central. Na prática, a rede que conversa com o sistema de pagamentos instantâneos é uma zona restrita, com política própria e monitoramento dedicado [@bcb4893; @bcbopenfinance].
+
+**O CERT.br mantém a referência nacional de boas práticas para administradores de rede**, com recomendações de filtragem, separação de serviços e proteção de interfaces de gerência que se aplicam diretamente ao desenho descrito neste capítulo — e que constituem, para o pequeno provedor regional, o material de partida mais adequado ao contexto brasileiro [@cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Comece pelo mapa real, não pelo desejado.** Colete fluxos por semanas antes de escrever qualquer regra:
+
+```bash
+# Fluxos observados na borda, agregados por volume
+nfdump -R /var/cache/nfdump -o "fmt:%sa %da %dp %pr %byt" -n 50 -s record/bytes
+
+# Quem fala com o banco de dados, de verdade
+ss -tnp state established '( dport = :5432 or sport = :5432 )'
+
+# Hosts vivos num segmento supostamente vazio
+nmap -sn 10.20.30.0/24 -oG -
+```
+
+**2. Trate a rede de gestão como prioridade zero.** Um bastião, autenticação forte e nenhuma rota vinda das demais zonas. Verifique se a promessa é verdadeira a partir de uma estação comum:
+
+```bash
+# A partir da rede corporativa: TODAS estas devem falhar
+for h in 10.99.0.10 10.99.0.11 10.99.0.20; do
+  nc -z -w2 "$h" 22 443 623 && echo "FALHA DE ISOLAMENTO: $h"
+done
+```
+
+A porta 623/udp (IPMI) alcançável a partir da rede de estações é um dos achados mais graves e mais comuns de uma avaliação interna.
+
+**3. Feche a negociação automática de tronco.** É a contramedida do VLAN hopping e leva minutos:
+
+```
+! Cisco IOS — em toda porta de acesso
+interface range GigabitEthernet1/0/1-46
+ switchport mode access
+ switchport nonegotiate
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+!
+! VLAN nativa dedicada, sem hosts
+interface GigabitEthernet1/0/48
+ switchport trunk native vlan 999
+ switchport trunk allowed vlan 10,20,30
+```
+
+**4. Verifique a regra da DMZ com um teste, não com uma afirmação.** A partir de um servidor da DMZ, tentativas de conexão para dentro devem falhar e, mais importante, **gerar alerta**. Se a tentativa falha silenciosamente, metade do valor do controle foi perdida: o bloqueio protegeu, mas ninguém ficou sabendo que alguém tentou.
+
+**5. Escreva a política com nome, não com endereço.** Objetos e grupos nomeados (`grp-servidores-app`, `srv-banco-financeiro`) sobrevivem a mudanças de endereçamento; regras com IP literal viram lixo indecifrável em dois anos. Onde a plataforma suportar, prefira identidade de carga de trabalho a endereço.
+
+**6. Toda regra tem dono, justificativa e prazo.** Registre-os no próprio comentário da regra, para que sobrevivam à rotatividade da equipe:
+
+```
+# chamado=INC-4821 dono=equipe-financeiro validade=2026-12-31
+# justificativa: coleta noturna do ERP para o data warehouse
+allow from grp-etl to srv-erp port 1521 proto tcp
+```
+
+**7. Meça a segmentação com evidência.** As métricas que dizem se ela existe: número de pares de zonas com regra `any/any` (alvo: zero), percentual de regras sem dono, idade da regra mais antiga sem revisão, número de caminhos que alcançam a zona de dados a partir da corporativa (alvo: zero) e alcance efetivo medido em exercício de time vermelho.
+
+**8. Segmente o backup e a homologação junto com a produção.** São as duas zonas sistematicamente esquecidas e as duas mais exploradas — a primeira em ataques de ransomware, a segunda como trampolim.
+
+**9. Implante 802.1X onde há tomada acessível.** Salas de reunião, recepção, lojas e fábricas. Comece em modo de monitoramento para descobrir o que não suporta autenticação — impressoras, catracas, câmeras — e trate esses casos com perfis dedicados, não com exceções abertas.
+
+**10. Ensaie o isolamento antes de precisar dele.** Tenha o procedimento pronto para cortar uma zona: qual comando, quem autoriza, o que para de funcionar. Descobrir isso às três da manhã, com ransomware se propagando, é o cenário que a preparação existe para evitar.
+
+## Resumo
+
+- **Segmentação não impede a intrusão; ela limita o raio de alcance.** A pergunta certa não é se o atacante entra, mas o que ele consegue tocar quando entrar — como no caso Target, em que o acesso de um fornecedor de refrigeração chegou aos terminais de pagamento.
+- **Agrupe por confiança, exposição e sensibilidade do dado**, não por andar ou departamento. Segmentar por organograma gera muitas VLANs e nenhuma política.
+- Duas regras estruturais definem o desenho: **a DMZ responde e nunca inicia** conexões para dentro, e **nenhum salto pula zonas** — a estação não fala diretamente com o banco de dados.
+- **VLAN separa, mas não filtra.** Sem política de camada 3, é organização administrativa; e tem superfície própria, como o VLAN hopping por dupla marcação, cuja contramedida é desabilitar a negociação de tronco.
+- **A rede de gestão fora de banda é a segmentação de melhor retorno** e a mais negligenciada: quem alcança IPMI, iLO ou console de hipervisor não precisa explorar o sistema operacional.
+- O artefato central é a **matriz de fluxos** — origem, destino, porta, justificativa e dono —, com padrão de negar e implantação em seis passos: inventariar, observar, escrever, alertar, bloquear, revisar.
+- Os erros que anulam o investimento: **regras `any/any` entre segmentos**, regras acumuladas sem dono, exceções sem prazo, VPN que desemboca no núcleo, homologação com rota livre para produção e backup alcançável de qualquer lugar.
+- No Brasil, a segmentação é o que permite **delimitar o escopo de um incidente** perante a ANPD, é requisito implícito na guarda de registros do Marco Civil, e aparece na separação entre plano de gerência e plano de usuário da Resolução 740 da Anatel e na segregação de ambientes exigida pelo BCB.
