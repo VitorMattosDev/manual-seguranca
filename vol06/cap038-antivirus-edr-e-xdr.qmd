@@ -1,3 +1,235 @@
 # Antivírus, EDR e XDR {#sec-cap038}
 
-*(em elaboracao)*
+Depois de um incidente de ransomware numa rede de clínicas, a pergunta da diretoria foi previsível: "mas nós não tínhamos antivírus?". Tinham. Estava instalado em todas as máquinas, com assinaturas do dia, painel verde. O que ele nunca viu foi o essencial: uma credencial legítima usada por acesso remoto às três da manhã, uma ferramenta administrativa nativa do sistema copiando arquivos entre servidores, e o utilitário de cópia de sombra do próprio Windows sendo usado para apagar os pontos de restauração — tudo isso executado com binários assinados pelo fabricante do sistema operacional, que nenhuma assinatura de malware jamais marcaria como suspeitos.
+
+O antivírus não falhou naquilo que ele faz. Ele foi usado para responder a uma pergunta que não é a dele. Este capítulo trata da diferença entre **impedir a execução de arquivo malicioso conhecido** e **perceber que uma máquina está sendo usada de forma anômala** — e de por que a segunda pergunta exige uma categoria de ferramenta distinta, com custo operacional que raramente é considerado antes da compra.
+
+## A evolução do problema, e por que a assinatura ficou insuficiente
+
+O antivírus clássico nasceu de uma premissa razoável para a época: o malware é um **arquivo**, arquivos podem ser identificados por características fixas, logo basta manter uma lista de características conhecidas e comparar. Funciona muito bem para o que é conhecido, é barato de operar e ainda hoje bloqueia um volume enorme de ameaças comuns.
+
+Três mudanças a tornaram insuficiente sozinha:
+
+**O ataque deixou de ser um arquivo.** Boa parte das intrusões atuais usa apenas ferramentas legítimas já presentes no sistema — interpretadores de script, utilitários administrativos, clientes de gestão remota. Não há arquivo malicioso para detectar, porque não há arquivo novo. O que existe é **uso anômalo de programa legítimo**, e isso não tem assinatura possível.
+
+**A credencial substituiu o exploit.** Quando o atacante entra com usuário e senha válidos (@sec-cap023), nenhuma ferramenta de inspeção de arquivo tem o que dizer. O sinal, se existir, está no comportamento: horário, origem, sequência de ações, volume de acesso.
+
+**A variação ficou automática.** Gerar milhares de variantes funcionalmente idênticas com características distintas é trivial. A lista de conhecidos sempre chega depois, e o intervalo entre o primeiro uso e a assinatura correspondente é justamente a janela que interessa ao atacante.
+
+A consequência prática: **a prevenção baseada em conhecido continua necessária e deixou de ser suficiente.** As duas afirmações são verdadeiras ao mesmo tempo, e é o segundo termo que justifica a existência de EDR.
+
+## O que cada categoria realmente faz
+
+Os três nomes são vendidos como uma escada de evolução, o que confunde. É mais útil entendê-los pela **pergunta que cada um responde**.
+
+**Antivírus / EPP — "este arquivo ou processo é reconhecidamente malicioso?"** Bloqueia na hora, com pouca intervenção humana. Combina assinaturas, heurística, análise estática por aprendizado de máquina, reputação de arquivo e monitoramento comportamental básico. É prevenção: o valor está em impedir, não em contar.
+
+**EDR — "o que aconteceu nesta máquina, e isso faz sentido?"** Registra continuamente eventos de endpoint — criação de processo com linha de comando e origem, conexões de rede por processo, escrita em arquivo, alteração de registro, carregamento de módulo, autenticação — e os mantém disponíveis para consulta e correlação. Detecta padrões de comportamento e, sobretudo, **permite investigar e responder**: isolar a máquina da rede mantendo o acesso do analista, matar processo, coletar artefato, executar comando remoto. É detecção e resposta: o valor está na visibilidade e na capacidade de agir.
+
+**XDR — "esta atividade em várias camadas é o mesmo incidente?"** Correlaciona endpoint com identidade, e-mail, rede e nuvem, para transformar sinais fracos e dispersos num incidente único. O ganho real é reduzir o número de alertas isolados que um analista precisa juntar mentalmente. O risco real é o nome virar rótulo de marketing para um painel que agrega sem correlacionar de fato.
+
+::: {#fig-camadas-endpoint}
+```{.tikz}
+%%| filename: camadas-endpoint
+%%| alt: Comparação entre antivírus, EDR e XDR pela pergunta que cada um responde, pelo tipo de sinal que consome e pelo custo operacional que impõe
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, very thick, rounded corners=3pt, align=left, inner sep=6pt,
+               minimum width=10.6cm, minimum height=1.5cm, font=\scriptsize, anchor=west},
+    tag/.style={draw, thick, rounded corners=2pt, font=\tiny, inner sep=3pt, align=center,
+                minimum width=2.0cm}}
+
+  \node[bx, draw=manualgreen, fill=manualgreen!10] at (0,3.7)
+    {\textbf{Antivírus / EPP} --- \emph{``este arquivo é reconhecidamente malicioso?''}\\[2pt]
+     \tiny assinatura, reputação, análise estática, heurística de comportamento\\
+     \tiny \textbf{age sozinho} $\cdot$ bloqueia e registra $\cdot$ cego para uso anômalo de ferramenta legítima};
+  \node[tag, draw=manualgreen, fill=white, manualgreen] at (11.9,3.7) {custo operacional\\\textbf{baixo}};
+
+  \node[bx, draw=manualblue, fill=manualblue!10] at (0,1.7)
+    {\textbf{EDR} --- \emph{``o que aconteceu nesta máquina, e isso faz sentido?''}\\[2pt]
+     \tiny telemetria contínua: processo com linha de comando, rede, arquivo, registro, autenticação\\
+     \tiny \textbf{exige analista} $\cdot$ investiga, isola, coleta, responde $\cdot$ produz alerta que alguém precisa ler};
+  \node[tag, draw=manualblue, fill=white, manualblue] at (11.9,1.7) {custo operacional\\\textbf{alto}};
+
+  \node[bx, draw=manualyellow, fill=manualyellow!14] at (0,-0.3)
+    {\textbf{XDR} --- \emph{``esta atividade em várias camadas é o mesmo incidente?''}\\[2pt]
+     \tiny endpoint + identidade + e-mail + rede + nuvem, correlacionados\\
+     \tiny \textbf{reduz alertas isolados} $\cdot$ risco: agregar sem correlacionar de verdade};
+  \node[tag, draw=manualyellow, fill=white, manualyellow!70!black] at (11.9,-0.3) {custo operacional\\\textbf{alto + integração}};
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=12.6cm] at (6.4,-2.2)
+    {\textbf{A escada não é de qualidade, é de pergunta --- e de custo humano.}
+     Antivírus entrega valor sozinho. EDR sem alguém para ler o que ele produz é
+     um gravador caro: registra o incidente inteiro e ninguém assiste. Antes de
+     comprar, a pergunta decisiva não é ``qual detecta mais'', e sim
+     \textbf{``quem vai olhar isso na terça-feira?''}};
+\end{tikzpicture}
+```
+As três categorias pela pergunta que respondem — e pelo custo humano que impõem.
+:::
+
+## O custo que não aparece na proposta comercial
+
+Este é o ponto em que projetos de EDR fracassam com mais frequência, e ele merece ser dito sem rodeio: **EDR gera alertas que precisam ser lidos por alguém que saiba decidir**.
+
+Um parque de trezentas máquinas produz um fluxo contínuo de detecções de severidade média — script legítimo que parece suspeito, ferramenta administrativa usada pelo próprio time de TI, software interno com comportamento incomum. Cada uma exige julgamento. Sem esse julgamento, acontece o previsível: os alertas acumulam, a equipe aprende a ignorá-los, e o alerta verdadeiro chega no meio de uma fila que ninguém lê há semanas.
+
+Três consequências práticas:
+
+**Dimensionar a operação antes da ferramenta.** Quem vai triar, em que horário, com qual procedimento de escalonamento. Se a resposta for "a equipe de TI, quando sobrar tempo", a escolha honesta é ou contratar o monitoramento como serviço, ou assumir que a ferramenta funcionará apenas em modo preventivo.
+
+**Ajustar antes de ampliar.** Implantação sem período de ajuste produz ruído que destrói a credibilidade da ferramenta logo no primeiro mês. Exceções bem construídas — específicas de processo, caminho e assinatura, não amplas — são parte do trabalho, não desvio dele.
+
+**Medir o que importa.** Tempo até a triagem, proporção de alertas fechados sem análise, tempo de contenção. Métricas de "quantas ameaças bloqueamos" não dizem nada sobre a capacidade de resposta, que é o que EDR compra. O Volume 12 desenvolve esse tema.
+
+## O que decide a eficácia na prática
+
+Comparações de produto ajudam menos do que se imagina. As avaliações públicas conduzidas contra cenários adversários reais [@mitreevals2024] são úteis para entender **como** cada produto vê as coisas, mas os resultados dependem fortemente de configuração e ajuste — e a configuração é sua, não do fabricante. Cinco fatores explicam a maior parte da variação de resultado no mundo real:
+
+**Cobertura.** A máquina sem agente é a que será usada. Servidores antigos, hosts de virtualização, estações de terceiros, máquinas de laboratório e sistemas legados que "não podem receber agente" concentram os casos reais. Uma cobertura de 85% costuma significar que os 15% mais vulneráveis estão descobertos.
+
+**Proteção contra desligamento.** Uma das primeiras ações de quem obtém privilégio administrativo é parar o agente. Proteção contra adulteração — com senha ou política que impede desinstalação mesmo por administrador local — precisa estar ligada, e a **tentativa** de desligar precisa gerar alerta de alta prioridade. Agente que some do painel é evento de segurança, não problema de inventário.
+
+**Modo de operação.** Muitos ambientes rodam em modo de detecção "para não quebrar nada" e nunca migram para bloqueio. Detectar sem bloquear é uma escolha legítima quando há quem responda em minutos; é ilusão de segurança quando não há.
+
+**Retenção de telemetria.** Investigar um incidente descoberto trinta dias depois exige telemetria de trinta dias atrás. Retenção curta é o que transforma "sabemos que entraram" em "não sabemos por onde nem o que levaram". É o item que mais costuma ser cortado por custo e o que mais faz falta.
+
+**Integração com identidade.** A maior parte dos ataques atuais é de credencial, não de arquivo. Correlacionar eventos de endpoint com eventos de autenticação (@sec-cap026) é o que distingue detecção útil de contagem de arquivos bloqueados.
+
+::: {#fig-pipeline-edr}
+```{.tikz}
+%%| filename: pipeline-edr
+%%| alt: Fluxo de um evento de endpoint desde a coleta de telemetria até a contenção, indicando em cada etapa o que costuma falhar na prática
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.15cm, minimum height=1.0cm, font=\scriptsize},
+    fa/.style={draw, thick, rounded corners=3pt, align=center, inner sep=3pt,
+               minimum width=2.15cm, minimum height=1.25cm, font=\tiny,
+               draw=manualred, fill=manualred!10}}
+
+  \node[et, draw=manualblue,  fill=manualblue!10]  (a) at (0,1.9)    {telemetria\\coletada};
+  \node[et, draw=manualblue,  fill=manualblue!10]  (b) at (2.75,1.9) {detecção\\dispara};
+  \node[et, draw=manualgreen, fill=manualgreen!10] (c) at (5.5,1.9)  {triagem\\humana};
+  \node[et, draw=manualgreen, fill=manualgreen!10] (d) at (8.25,1.9) {investigação\\em contexto};
+  \node[et, draw=manualgreen, fill=manualgreen!14] (e) at (11.0,1.9) {contenção\\e resposta};
+
+  \foreach \x/\y in {a/b, b/c, c/d, d/e} {
+    \draw[->, >=stealth, very thick, manualgray] (\x) -- (\y);}
+
+  \node[fa] (fa) at (0,0.0)    {máquina sem\\agente; agente\\desligado};
+  \node[fa] (fb) at (2.75,0.0) {modo detecção\\sem bloqueio;\\exceção ampla demais};
+  \node[fa] (fc) at (5.5,0.0)  {\textbf{ninguém lê}\\fila acumulada,\\fadiga de alerta};
+  \node[fa] (fd) at (8.25,0.0) {retenção curta:\\o passado\\não existe mais};
+  \node[fa] (fe) at (11.0,0.0) {sem autonomia\\para isolar\\em minutos};
+
+  \foreach \x/\y in {a/fa, b/fb, c/fc, d/fd, e/fe} {
+    \draw[->, >=stealth, thick, manualred] (\y) -- (\x);}
+
+  \node[font=\tiny, manualred, anchor=north] at (5.5,-0.85) {\textbf{onde o fluxo quebra na prática}};
+
+  \node[draw=manualgreen, fill=manualgreen!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=12.4cm] at (5.5,-2.3)
+    {\textbf{As três primeiras falhas são de configuração e de gente; nenhuma se
+     resolve trocando de produto.} A comparação entre fabricantes só passa a
+     importar depois que cobertura, modo de operação e capacidade de triagem
+     estiverem resolvidos --- e é justamente a ordem inversa da que a maioria dos
+     projetos segue.};
+\end{tikzpicture}
+```
+O caminho de um evento até a contenção, e os cinco pontos em que ele costuma parar.
+:::
+
+## Onde o EDR não alcança
+
+Ser honesto sobre os limites evita a confiança equivocada que produz o próximo incidente.
+
+**Dispositivos que não recebem agente.** Equipamento de rede, impressoras, câmeras, controladores industriais, roteadores de assinante. São exatamente os que compõem redes de dispositivos comprometidos (@sec-cap035) e os que ninguém enxerga. A defesa ali é segmentação (@sec-cap028) e monitoramento de rede (@sec-cap031).
+
+**Nuvem e identidade fora do endpoint.** Uso indevido de credencial numa aplicação em nuvem, sem passar por máquina gerenciada, não gera evento de endpoint. É o vazio que o XDR se propõe a cobrir e que, sem integração real, permanece aberto.
+
+**Ameaça interna com acesso legítimo.** Alguém que já tem permissão fazendo o que tem permissão para fazer não dispara detecção comportamental. Ali, os controles são de autorização, segregação de funções e revisão de acesso — matéria do @sec-cap022 e do @sec-cap026.
+
+**Evasão direcionada.** Adversários capacitados estudam o produto usado pelo alvo. É por isso que a defesa não pode depender de uma camada única: EDR é uma camada, não a estratégia. Este capítulo, aliás, não descreve técnicas de evasão — o que interessa aqui é a conclusão defensiva de que elas existem e implicam profundidade em vez de aposta única.
+
+**A máquina desligada e o dado em repouso.** Nenhuma dessas ferramentas protege um disco retirado da máquina, assunto do @sec-cap041.
+
+## Erros que se repetem
+
+- **Comprar EDR sem definir quem lê os alertas** — o gravador caro que ninguém assiste.
+- **Cobertura parcial**, com as máquinas mais frágeis justamente sem agente.
+- **Proteção contra adulteração desligada**, e agente sumido tratado como problema de inventário.
+- **Modo detecção permanente** por medo de quebrar produção, sem quem responda em minutos.
+- **Exceções amplas** — pasta inteira, extensão inteira — criadas para calar ruído, que viram o esconderijo.
+- **Retenção curta demais** para investigar o que só se descobre semanas depois.
+- **Achar que EDR substitui hardening**: o @sec-cap036 e o @sec-cap037 reduzem o que precisa ser detectado.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD exige medidas de segurança e comunicação de incidentes, e a telemetria é o que dá substância às duas.** O art. 46 fala em medidas aptas a proteger dados pessoais; o art. 48 e a Resolução ANPD 15/2024 exigem comunicar incidentes de risco relevante com descrição da natureza, dos dados afetados e das medidas adotadas. Sem retenção de telemetria de endpoint, a organização não consegue dizer o que foi acessado — e a comunicação incompleta é, ela própria, um problema perante a autoridade [@lgpd2018; @anpd2024res15].
+
+**A ferramenta que monitora endpoint trata dados pessoais de funcionários.** EDR registra processos executados, sítios acessados por processo, arquivos manipulados e horários de atividade. Isso é tratamento de dados pessoais e precisa de base legal — em geral o legítimo interesse (art. 7º, IX), com o teste de proporcionalidade correspondente —, transparência na política de uso de recursos de TI e minimização. A jurisprudência trabalhista brasileira admite o monitoramento de equipamento corporativo com finalidade legítima e ciência prévia, e rejeita a devassa indiscriminada da vida privada. Documentar finalidade, escopo, retenção e quem tem acesso à console não é formalidade: é o que sustenta a legalidade do controle [@lgpd2018].
+
+**Console de EDR é ativo de altíssimo privilégio.** Quem administra a ferramenta pode executar comandos em todas as máquinas da organização — é, na prática, um canal de administração universal. Merece MFA obrigatório (@sec-cap024), contas nominais, segregação de funções e trilha de auditoria das ações dos próprios analistas. Comprometer essa console é comprometer o parque inteiro de uma vez, e há casos públicos de ferramentas de gestão remota usadas exatamente assim.
+
+**O CERT.br e as recomendações nacionais convergem para a mesma ordem de prioridade**: atualizar, reduzir privilégio, autenticar com múltiplos fatores e só então investir em detecção avançada. Para organizações pequenas, essa ordem importa mais do que a escolha do fabricante — EDR em parque desatualizado e com todos os usuários administradores é gasto que não compra risco reduzido [@cert2024praticas; @nistsp80083].
+
+**Em setores regulados, a detecção é requisito explícito.** A Resolução BCB 4.893/2021 exige capacidade de detecção e resposta a incidentes compatível com a criticidade dos serviços, e as instituições devem registrar e comunicar incidentes relevantes. A Resolução 740/2020 da Anatel traz obrigações equivalentes para redes de telecomunicações. Em ambos os casos, a evidência cobrada é operacional: existe procedimento de triagem, ele é executado, e há registro disso [@bcb4893; @anatel740].
+
+## 🛠️ No Campo
+
+**1. Feche a cobertura antes de discutir fabricante.** Compare a lista de agentes com o inventário real de ativos, não com ele mesmo:
+
+```powershell
+# Máquinas no diretório que não aparecem na console de EDR
+$ad  = Get-ADComputer -Filter {Enabled -eq $true} | Select-Object -ExpandProperty Name
+$edr = Import-Csv .\inventario-edr.csv | Select-Object -ExpandProperty Hostname
+Compare-Object $ad $edr | Where-Object SideIndicator -eq '<='
+```
+
+A lista resultante é a sua superfície descoberta, e costuma ser onde o incidente começa.
+
+**2. Ative a proteção contra adulteração e alerte sobre agente ausente.** Máquina que some da console por mais de 48 horas é fila de trabalho, não relatório mensal. E tentativa de parar o serviço do agente deve ser alerta de alta prioridade.
+
+**3. Verifique o estado real, máquina a máquina:**
+
+```powershell
+Get-MpComputerStatus | Select-Object AMServiceEnabled, RealTimeProtectionEnabled,
+  IsTamperProtected, AntivirusSignatureLastUpdated
+```
+
+**4. Enriqueça a telemetria com monitoramento de processos.** Uma configuração pública e madura, aplicada em todo o parque, melhora a visibilidade mais do que trocar de EDR:
+
+```powershell
+sysmon64.exe -accepteula -i sysmonconfig.xml
+Get-WinEvent -LogName "Microsoft-Windows-Sysmon/Operational" -MaxEvents 5
+```
+
+No Linux, o equivalente é a auditoria de sistema do @sec-cap036 com regras de execução.
+
+**5. Documente e limite as exceções.** Exceção por pasta inteira é convite. Prefira o mais específico possível — caminho completo, assinatura do binário, processo pai — e mantenha um registro versionado com autor, motivo e data de revisão. Exceção sem data de revisão é permanente por omissão.
+
+**6. Defina o procedimento de triagem antes de ligar o modo de bloqueio.** Em uma página: quem olha, com qual frequência, o que faz com cada nível de severidade, quando escala, quem autoriza isolar uma máquina de produção e qual é o caminho de reversão.
+
+**7. Dê autonomia para isolar.** O valor do EDR aparece nos primeiros minutos. Se isolar uma estação exige aprovação de gerente que só responde no dia seguinte, a capacidade existe no contrato e não na prática. Defina previamente que o analista de plantão pode isolar estações; para servidores, mantenha um caminho de decisão rápido e documentado.
+
+**8. Dimensione a retenção pelo tempo real de descoberta.** Se a maior parte dos incidentes é descoberta em semanas, retenção de sete dias não investiga nada. Trinta dias é um piso razoável; para eventos de autenticação e criação de processo, mais.
+
+**9. Correlacione endpoint com identidade.** As perguntas mais produtivas cruzam as duas fontes: autenticação de uma conta administrativa numa estação comum, logon fora do horário seguido de execução de ferramenta administrativa, mesma conta autenticando em muitas máquinas em pouco tempo.
+
+**10. Teste com cenários seguros e autorizados.** Use os testes de detecção públicos e inofensivos — o arquivo de teste padrão da indústria para verificar o antivírus, e simulações controladas de comportamento em máquina de laboratório, com autorização formal. O objetivo não é "furar" a ferramenta, e sim **verificar se o alerta chega a alguém e em quanto tempo** — que é a métrica que importa.
+
+**11. Meça o processo, não a contagem de bloqueios.** Tempo até a triagem, proporção de alertas fechados sem análise, tempo até a contenção, cobertura de agentes. Um painel com essas quatro linhas diz mais sobre a postura real do que qualquer relatório de ameaças bloqueadas.
+
+**12. Trate a console como ativo de camada 0.** MFA obrigatório, contas nominais, acesso restrito por função, trilha de auditoria das ações dos analistas e revisão periódica de quem tem acesso — pelas razões do @sec-cap037.
+
+## Resumo
+
+- **O antivírus responde "este arquivo é conhecidamente malicioso?" e continua necessário** — mas boa parte das intrusões atuais usa ferramentas legítimas do próprio sistema e credenciais válidas, para as quais não existe assinatura possível.
+- **EDR responde "o que aconteceu nesta máquina, e isso faz sentido?"**: telemetria contínua, detecção comportamental e, principalmente, capacidade de investigar, isolar e responder. **XDR** correlaciona endpoint com identidade, e-mail, rede e nuvem para juntar sinais fracos num incidente único.
+- A escada não é de qualidade, é de pergunta — e de custo humano. **EDR sem alguém para ler o que ele produz é um gravador caro que ninguém assiste**; a pergunta decisiva antes da compra é "quem vai olhar isso na terça-feira?".
+- A eficácia real depende de cinco fatores, todos de configuração e operação: **cobertura** (a máquina sem agente é a que será usada), **proteção contra adulteração**, **modo de operação** (detectar sem bloquear só faz sentido com quem responda em minutos), **retenção de telemetria** e **integração com identidade**.
+- **Agente sumido da console é evento de segurança, não problema de inventário.** E exceção ampla criada para calar ruído vira o esconderijo.
+- Limites honestos: dispositivos que não recebem agente, uso de credencial em nuvem sem passar por máquina gerenciada, ameaça interna com acesso legítimo e evasão direcionada. EDR é uma camada, não a estratégia — hardening reduz o que precisa ser detectado.
+- No Brasil, a telemetria retida é o que permite descrever a extensão do incidente na comunicação da Resolução ANPD 15/2024; o monitoramento de endpoint trata dados pessoais de funcionários e exige base legal, transparência e minimização; e a console de EDR é canal de administração universal, com exigência de MFA, contas nominais e auditoria das ações dos próprios analistas.
