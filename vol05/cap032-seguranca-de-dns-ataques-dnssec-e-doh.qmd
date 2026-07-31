@@ -1,3 +1,275 @@
 # Segurança de DNS: ataques, DNSSEC e DoH {#sec-cap032}
 
-*(em elaboracao)*
+Em julho de 2008, dezenas de fabricantes de software publicaram correções no mesmo dia, de forma coordenada e sem explicar o motivo. Dan Kaminsky havia descoberto uma forma de envenenar cache de DNS que não dependia de sorte: em vez de tentar forjar a resposta de um nome específico e esperar a próxima consulta, o atacante induzia consultas a nomes aleatórios inexistentes dentro do domínio alvo e, junto com a resposta forjada, injetava uma **delegação** para o domínio inteiro. Cada tentativa era independente da anterior, o que transformava um ataque de probabilidade remota num ataque de segundos [@kaminsky2008].
+
+O que estava em jogo era o pressuposto silencioso de toda a internet: que o nome digitado leva ao endereço correto. TLS, certificados, autenticação — quase tudo é construído sobre uma resolução de nomes que, por trinta anos, funcionou **sem qualquer autenticação**. O DNS foi projetado numa rede entre instituições que confiavam umas nas outras, e essa premissa nunca foi revisada no protocolo original (@sec-cap010).
+
+Este capítulo trata do que se ataca no DNS, do que o DNSSEC resolve e não resolve, e da tensão real entre privacidade e visibilidade que o transporte cifrado trouxe.
+
+## O que se ataca
+
+O DNS é atacado em pontos diferentes, com consequências diferentes. Vale separá-los, porque as contramedidas não se substituem.
+
+**Envenenamento de cache.** O adversário faz o resolvedor recursivo aceitar uma resposta falsa e servi-la a todos os seus clientes durante o tempo de vida do registro. É o ataque de maior alcance por unidade de esforço: um resolvedor de provedor atende milhares de assinantes.
+
+::: {#fig-envenenamento-cache}
+```{.tikz}
+%%| filename: envenenamento-cache
+%%| alt: Sequência do envenenamento de cache de DNS, em que o atacante corre contra a resposta do servidor autoritativo e precisa acertar identificador de transação, porta de origem e demais campos
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ator/.style={draw, very thick, rounded corners=3pt, align=center,
+                 minimum width=2.2cm, minimum height=0.7cm, font=\scriptsize},
+    msg/.style={->, >=stealth, thick},
+    nt/.style={font=\tiny, align=left}}
+
+  \node[ator, draw=manualblue, fill=manualblue!12]  (cli) at (0,3.6)  {cliente};
+  \node[ator, draw=manualgreen, fill=manualgreen!12](res) at (4.6,3.6) {resolvedor\\recursivo};
+  \node[ator, draw=manualgray, fill=manualgray!10]  (aut) at (9.6,3.6) {autoritativo\\legítimo};
+  \node[ator, draw=manualred, fill=manualred!12]    (atk) at (4.6,-0.6) {atacante};
+
+  \draw[msg, manualblue] (0,3.1) -- node[above, font=\tiny]{banco.exemplo?} (4.0,3.1);
+  \draw[msg, manualgray] (5.2,3.1) -- node[above, font=\tiny]{consulta} (9.0,3.1);
+
+  \draw[msg, manualred, very thick] (4.6,0.0) -- (4.6,2.5)
+    node[midway, right, font=\tiny, xshift=3pt, align=left, manualred]
+      {rajada de respostas forjadas\\\textbf{antes} da resposta legítima};
+
+  \draw[msg, manualgray, dashed] (9.0,2.6) -- node[below, font=\tiny]{resposta real (tarde)} (5.2,2.6);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=6.0cm] at (2.6,1.1)
+    {\textbf{Para vencer a corrida, a resposta forjada precisa acertar:}\\
+     $\bullet$ identificador de transação (16 bits)\\
+     $\bullet$ porta de origem da consulta (16 bits)\\
+     $\bullet$ nome, tipo e classe consultados\\
+     $\bullet$ chegar antes da resposta legítima};
+
+  \node[draw=manualgreen, fill=manualgreen!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=5.4cm] at (10.0,1.1)
+    {\textbf{Contramedidas que ampliam a entropia:}\\
+     $\bullet$ porta de origem aleatória (RFC 5452)\\
+     $\bullet$ variação de maiúsculas no nome\\
+     $\bullet$ validação DNSSEC --- a única que\\
+     \hspace{0.4em}elimina o problema em vez de\\
+     \hspace{0.4em}torná-lo improvável};
+\end{tikzpicture}
+```
+Envenenamento de cache: uma corrida em que a defesa clássica aumenta a entropia e o DNSSEC muda a natureza do jogo.
+:::
+
+A resposta imediata a 2008 foi **aumentar a entropia**: aleatorizar a porta de origem, além do identificador de 16 bits, elevando o espaço de adivinhação de 65 mil para bilhões de combinações [@rfc5452]. É uma mitigação eficaz e universalmente implantada — mas é probabilística. Ela torna o ataque caro; não o torna impossível.
+
+**Sequestro de domínio no registrador.** Nenhuma sofisticação técnica: o adversário toma a conta do registrador — por phishing, senha reutilizada ou engenharia social no suporte — e reaponta os servidores de nomes. Passa a controlar o domínio inteiro, e com controle do DNS obtém certificados válidos por validação automatizada. É um dos ataques mais devastadores e mais baratos, e a defesa é administrativa: segundo fator na conta do registrador, travamento de registro e contato de emergência atualizado.
+
+**Sequestro de subdomínio.** Um registro `CNAME` aponta para um recurso de nuvem que foi desativado. O adversário registra aquele recurso e passa a servir conteúdo sob o nome da organização — com certificado válido, porque o nome é legitimamente dele naquele provedor. É um dos achados mais comuns em programas de recompensa por falhas, e a causa é sempre a mesma: ninguém remove registro de DNS ao desativar um serviço.
+
+**Exfiltração e canal encoberto.** Codificar dados em subdomínios de um domínio controlado pelo adversário transforma o DNS num canal bidirecional que atravessa quase todo firewall — porque quase toda rede permite resolução de nomes. É lento e barulhento, e passa despercebido em quem não monitora consultas.
+
+**Amplificação para negação de serviço.** Uma consulta pequena com origem forjada produz uma resposta grande dirigida à vítima. É o assunto do @sec-cap035, e o DNS é historicamente um dos maiores amplificadores da internet.
+
+**Ataque de exaustão por nomes inexistentes.** Rajadas de consultas a subdomínios aleatórios de um domínio real forçam o resolvedor a consultar o autoritativo para cada uma — derrubando o autoritativo e, de quebra, saturando o resolvedor. Castiga simultaneamente quem hospeda o domínio e o provedor cujos assinantes geram o tráfego.
+
+## DNSSEC: assinar, não esconder
+
+O DNSSEC adiciona ao DNS o que faltava: **autenticidade e integridade da resposta** [@rfc4033]. Cada conjunto de registros é assinado; a chave que assina é publicada na própria zona; e o resumo dessa chave é publicado na zona **pai**, criando uma cadeia de confiança que sobe até a raiz — cuja chave é conhecida e distribuída com o software resolvedor.
+
+::: {#fig-cadeia-dnssec}
+```{.tikz}
+%%| filename: cadeia-dnssec
+%%| alt: Cadeia de confiança do DNSSEC da raiz até o domínio, com o registro DS de cada zona pai atestando a chave da zona filha e a assinatura RRSIG protegendo os registros
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    zn/.style={draw, very thick, rounded corners=4pt, align=center, inner sep=5pt,
+               minimum width=6.4cm, minimum height=1.05cm, font=\scriptsize},
+    lk/.style={->, >=stealth, very thick, manualgreen}}
+
+  \node[zn, draw=manualgray, fill=manualgray!10] (raiz) at (0,4.5)
+    {\textbf{Raiz (.)} \quad DNSKEY\\
+     \scriptsize âncora de confiança distribuída com o resolvedor};
+  \node[zn, draw=manualblue, fill=manualblue!10] (br) at (0,2.6)
+    {\textbf{.br} \quad DNSKEY + RRSIG\\
+     \scriptsize a raiz publica o \textbf{DS} de .br --- e o assina};
+  \node[zn, draw=manualgreen, fill=manualgreen!10] (dom) at (0,0.7)
+    {\textbf{exemplo.com.br} \quad DNSKEY + RRSIG\\
+     \scriptsize .br publica o \textbf{DS} de exemplo.com.br --- e o assina};
+  \node[zn, draw=manualgreen, fill=manualgreen!18] (rr) at (0,-1.2)
+    {\textbf{www.exemplo.com.br} \quad A + RRSIG\\
+     \scriptsize registro assinado pela chave da zona};
+
+  \draw[lk] (raiz) -- node[right, font=\tiny, xshift=3pt]{DS atesta} (br);
+  \draw[lk] (br)   -- node[right, font=\tiny, xshift=3pt]{DS atesta} (dom);
+  \draw[lk] (dom)  -- node[right, font=\tiny, xshift=3pt]{assina} (rr);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=5.0cm] at (6.6,2.6)
+    {\textbf{O elo que quebra na prática:}\\ o DS precisa ser publicado no
+     \emph{registrador}. Trocar a chave sem atualizar o DS derruba o domínio
+     para todo resolvedor que valida --- e o erro é indistinguível de um ataque.};
+
+  \node[draw=manualyellow, fill=manualyellow!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=5.0cm] at (6.6,-0.9)
+    {\textbf{O DNSSEC não cifra nada.} A consulta e a resposta continuam legíveis
+     na rede. Ele responde ``esta resposta é autêntica?'', não ``quem está
+     olhando?''.};
+\end{tikzpicture}
+```
+Cadeia de confiança do DNSSEC: cada zona pai atesta a chave da filha, até a âncora na raiz.
+:::
+
+Os registros que fazem o trabalho: `DNSKEY` publica as chaves da zona, `RRSIG` carrega as assinaturas, `DS` é o resumo da chave da filha publicado no pai, e `NSEC`/`NSEC3` provam de forma autenticada que um nome **não existe** — problema mais sutil do que parece, porque assinar previamente todas as respostas negativas possíveis é impossível [@rfc4035; @rfc5155].
+
+O que o DNSSEC **não** faz merece a mesma ênfase, porque o mal-entendido é comum:
+
+- **Não confere confidencialidade.** Consulta e resposta seguem em claro.
+- **Não valida o conteúdo.** Ele garante que a resposta veio de quem administra a zona e não foi alterada. Se o administrador publicar o endereço de um servidor malicioso, a resposta será autenticamente maliciosa.
+- **Não protege o "último salto".** Entre o resolvedor validador e o cliente, a resposta trafega sem proteção, salvo se houver transporte cifrado ou validação no próprio cliente.
+- **Não impede o sequestro no registrador**, que altera a delegação legitimamente.
+
+E o custo operacional é real, com uma consequência assimétrica que precisa ser dita: **assinar uma zona incorretamente derruba o domínio**. Chave expirada, troca de chave sem atualizar o DS, assinatura vencida — o resolvedor que valida trata tudo isso como falha de segurança e responde com erro. O domínio some para uma parcela crescente da internet, e o problema é indistinguível de um ataque. Quedas notórias de grandes provedores tiveram exatamente essa origem. A conclusão não é evitar DNSSEC; é **automatizar a assinatura e a troca de chaves, e monitorar a validade das assinaturas como se monitora a de um certificado**.
+
+## Transporte cifrado: DoT, DoH e a tensão que ele criou
+
+DNSSEC resolve autenticidade. A confidencialidade veio depois, e por outro caminho: cifrar o transporte.
+
+**DNS sobre TLS** usa a porta 853, dedicada [@rfc7858]. **DNS sobre HTTPS** usa a 443, indistinguível de tráfego web [@rfc8484]. **DNS sobre QUIC** traz o mesmo com menor latência [@rfc9250]. Todos protegem a consulta contra observação e alteração no caminho — o que é uma melhoria genuína de privacidade, sobretudo em redes públicas.
+
+A tensão aparece na diferença entre as portas, e ela não é um detalhe técnico. O DoT usa uma porta própria: a organização pode permitir ou bloquear explicitamente, e a decisão é visível. O DoH se mistura ao tráfego HTTPS: um navegador ou aplicação configurado com um resolvedor externo **contorna silenciosamente o resolvedor corporativo**, e com ele contorna o filtro de conteúdo, o bloqueio de domínios maliciosos, o registro de consultas e boa parte da detecção do @sec-cap031.
+
+Não há uma resposta única, e é honesto reconhecer os dois lados: para o usuário numa rede hostil, DoH é proteção real; para a organização que responde por incidentes, o DNS é um dos melhores pontos de detecção e controle que existem.
+
+A postura que concilia os dois: **oferecer DoH/DoT no próprio resolvedor corporativo** — o benefício de privacidade no último salto sem perder a visibilidade —, configurar os navegadores gerenciados para usar esse resolvedor, e tratar a saída para resolvedores externos como fluxo a bloquear na política de saída do @sec-cap029. Em dispositivo pessoal, isso não é imponível, o que reforça o argumento do @sec-cap027 de colocar o controle na aplicação em vez de na rede.
+
+| | DNSSEC | DoT / DoH / DoQ |
+|---|---|---|
+| Protege | Autenticidade e integridade | Confidencialidade no caminho |
+| Contra | Resposta forjada, envenenamento | Observação e alteração no trânsito |
+| Quem implanta | Quem administra a zona | Quem opera resolvedor e cliente |
+| Alcance | Fim a fim (da zona ao validador) | Salto a salto |
+| Efeito na visibilidade corporativa | Nenhum | DoH pode eliminá-la |
+
+: DNSSEC e transporte cifrado resolvem problemas diferentes, e um não substitui o outro. {#tbl-dnssec-vs-doh}
+
+## O DNS como controle defensivo
+
+Vale inverter a perspectiva. Além de alvo, o DNS é um dos pontos de controle mais eficientes que existem — porque quase todo ataque precisa resolver um nome em algum momento.
+
+**Filtragem por política no resolvedor.** Bloquear ou redirecionar domínios de comando e controle, phishing e malware conhecidos no resolvedor recursivo alcança todos os clientes, sem instalar nada em lugar nenhum. É um dos controles de melhor relação entre custo e efeito de toda a segurança de rede.
+
+**Redirecionamento para poço.** Apontar domínios maliciosos para um endereço interno controlado, que registra quem tentou resolver. O resultado é uma lista de máquinas provavelmente comprometidas, entregue de graça.
+
+**Registro de consultas.** Toda resolução, com origem e horário. É a fonte mais barata para responder "qual máquina falou com este domínio nos últimos noventa dias?" — a pergunta que domina o início de uma resposta a incidente.
+
+**Detecção de anomalia na consulta.** Volume atípico, nomes muito longos, alta taxa de respostas negativas, subdomínios de alta aleatoriedade — os sinais de exfiltração e de algoritmos de geração de domínios.
+
+**CAA.** Um registro que declara quais autoridades certificadoras podem emitir certificado para o domínio, limitando o dano de uma emissão indevida (@sec-cap019) [@rfc8659].
+
+## ⚖️ Brasil em Foco
+
+**O Brasil é referência em DNSSEC, e isso é uma vantagem a ser usada.** O Registro.br oferece suporte a DNSSEC desde 2009, a zona `.br` está assinada e o NIC.br mantém material de implantação em português. Para quem administra domínio `.br`, o custo de entrada é baixo e o processo de publicação do DS é feito no próprio painel do registrador. É um dos poucos casos em que a infraestrutura nacional está à frente da média internacional, e não aproveitá-la é desperdício [@nicbr2024dnssec; @rfc4033].
+
+**O sequestro de domínio tem consequência jurídica direta.** Tomar a conta de um registrador e reapontar os servidores de nomes configura invasão de dispositivo informático (Lei 12.737/2012) e, dependendo do uso, estelionato eletrônico na modalidade do art. 155-A e do art. 171, §2º-A do Código Penal — a fraude eletrônica com pena agravada introduzida pela Lei 14.155/2021. Para a vítima, a resposta prática começa antes: **segundo fator na conta do registrador e travamento de registro**, medidas que o Registro.br disponibiliza e que a maioria das organizações não ativa [@lei12737; @lei14155].
+
+**Bloqueio judicial por DNS é realidade operacional dos provedores brasileiros.** Ordens determinando a indisponibilização de conteúdo ou aplicações costumam ser cumpridas por manipulação de resolução de nomes no resolvedor do provedor. O Marco Civil estabelece o regime de responsabilidade e a necessidade de ordem judicial específica, com identificação clara do conteúdo. Duas consequências técnicas: o provedor precisa de capacidade de aplicar e reverter esses bloqueios com registro e prazo, e a adoção de DoH pelos assinantes **contorna esse mecanismo** — o que transforma uma discussão técnica de privacidade numa questão de eficácia de decisão judicial [@marcocivil2014].
+
+**Registro de consultas é dado pessoal.** Um log de DNS revela hábitos, saúde, orientação política e religiosa de quem consultou. Sob a LGPD, sua coleta exige finalidade legítima, prazo de retenção definido e acesso restrito. A prática defensável para provedores e para empresas: reter pelo tempo necessário à segurança e à operação, restringir o acesso, e não usar essa base para finalidade diversa daquela declarada — em particular, não monetizar. É importante distinguir esse registro dos **registros de conexão** do Marco Civil, cuja guarda é obrigatória por um ano e cujo regime é diferente [@lgpd2018; @marcocivil2014; @lei9296].
+
+**Resolvedores abertos são um problema nacional persistente.** Um resolvedor recursivo que atende consultas da internet inteira é munição para ataques de amplificação, e o CERT.br mantém notificações e recomendações a respeito. Fechar a recursão para a base de assinantes, ativar limitação de taxa de resposta nos autoritativos e implementar a filtragem de origem do BCP 38 são as três medidas que um provedor brasileiro pode tomar esta semana com efeito imediato sobre a saúde da rede — a própria e a dos outros [@cert2024ddos; @rfc2827].
+
+## 🛠️ No Campo
+
+**1. Assine suas zonas — com automação, nunca à mão.** Assinatura manual é a origem das quedas atribuídas a DNSSEC:
+
+```bash
+# BIND: assinatura e troca de chaves gerenciadas pelo proprio servidor
+zone "exemplo.com.br" {
+    type master;
+    file "db.exemplo.com.br";
+    dnssec-policy default;
+    inline-signing yes;
+};
+
+# Verificar a cadeia completa a partir da raiz — a prova de que funciona
+delv +vtrace www.exemplo.com.br A
+```
+
+**2. Monitore a validade das assinaturas como monitora certificado.** Alerta com sete dias de antecedência, no mínimo:
+
+```bash
+# Dias restantes na assinatura do apex
+dig +dnssec exemplo.com.br SOA | awk '/RRSIG/{print $9}' |
+  head -1 | xargs -I{} date -d {} +%s
+```
+
+**3. Trave o domínio no registrador e ative o segundo fator.** É o controle de maior efeito e menor custo do capítulo. O sequestro no registrador anula DNSSEC, TLS e tudo o mais — e não exige nenhuma habilidade técnica do adversário.
+
+**4. Feche a recursão e limite a taxa de resposta.** Um resolvedor aberto ataca terceiros usando a sua banda:
+
+```bash
+# BIND: recursao apenas para a rede de assinantes
+options {
+    allow-recursion { 10.0.0.0/8; 198.51.100.0/24; };
+    recursion yes;
+};
+
+# Autoritativo: limitar amplificacao
+rate-limit {
+    responses-per-second 15;
+    slip 2;
+    window 5;
+};
+```
+
+```bash
+# Verificar se voce e um resolvedor aberto (a partir de fora da sua rede)
+dig @seu.servidor.exemplo google.com +short
+```
+
+**5. Cace registros pendurados antes que alguém os assuma.** É a auditoria que rende achados na primeira execução:
+
+```bash
+# CNAMEs apontando para recursos de nuvem que podem nao existir mais
+while read -r n; do
+  t=$(dig +short CNAME "$n")
+  [ -n "$t" ] && ! dig +short "$t" | grep -q . && echo "PENDURADO: $n -> $t"
+done < lista-de-nomes.txt
+```
+
+**6. Obrigue toda resolução a passar pelo resolvedor interno.** É a regra da política de saída que sustenta metade da detecção do @sec-cap031:
+
+```
+deny  grp-estacoes -> !srv-dns-interno  udp/53,tcp/53,tcp/853  log
+```
+
+E, para DoH, configure os navegadores gerenciados por diretiva — bloquear por rede é uma batalha perdida, porque o tráfego é indistinguível de HTTPS comum.
+
+**7. Ofereça DoT/DoH no seu próprio resolvedor.** Concilia privacidade no último salto com visibilidade e filtragem. É a única postura que não obriga a escolher entre proteger o usuário e proteger a organização.
+
+**8. Registre e analise as consultas.** Alerta em nomes muito longos, alta entropia de subdomínio, volume anômalo por origem e taxa elevada de respostas negativas:
+
+```bash
+# Candidatos a exfiltracao: muitos subdominios distintos sob o mesmo pai
+awk '{print $NF}' /var/log/dns/queries.log |
+  awk -F. '{print $(NF-1)"."$NF}' | sort | uniq -c | sort -rn | head -20
+```
+
+**9. Publique CAA.** Uma linha que limita quem pode emitir certificado para o seu domínio:
+
+```
+exemplo.com.br.  IN  CAA  0 issue "letsencrypt.org"
+exemplo.com.br.  IN  CAA  0 iodef "mailto:seguranca@exemplo.com.br"
+```
+
+**10. Tenha um plano de recuperação de DNS.** Se a zona for sequestrada ou a assinatura expirar, quem liga para o registrador, com que credencial, em quanto tempo? Documente o procedimento, mantenha o contato de emergência atualizado e guarde cópia da zona fora do provedor. DNS quebrado é indisponibilidade total, e o relógio começa a correr no pior momento possível.
+
+## Resumo
+
+- **O DNS foi projetado sem autenticação**, e quase toda a segurança da internet depende dele. O ataque de Kaminsky, em 2008, transformou o envenenamento de cache de improvável em questão de segundos e forçou uma correção coordenada global.
+- A superfície é ampla e as contramedidas não se substituem: **envenenamento de cache**, **sequestro no registrador** (o mais devastador e o mais barato), **sequestro de subdomínio** por registro pendurado, **exfiltração por canal encoberto**, **amplificação** e **exaustão por nomes inexistentes**.
+- A aleatorização de porta de origem tornou o envenenamento caro, mas é **probabilística**. Só o DNSSEC muda a natureza do problema.
+- **DNSSEC assina; não esconde.** Garante autenticidade e integridade por uma cadeia que sobe até a raiz, não confere confidencialidade, não valida conteúdo, não protege o último salto e não impede sequestro no registrador.
+- **Assinar errado derruba o domínio**, e a falha é indistinguível de um ataque. A conclusão é automatizar assinatura e troca de chaves, e monitorar validade de assinatura como se monitora certificado.
+- **DoT, DoH e DoQ resolvem confidencialidade, não autenticidade** — problema diferente do DNSSEC. E o DoH, por usar a porta 443, contorna silenciosamente o resolvedor corporativo, com ele o filtro, o registro e boa parte da detecção.
+- A postura que concilia os lados é **oferecer DoH/DoT no resolvedor da própria organização**, configurar os navegadores gerenciados por diretiva e bloquear a saída para resolvedores externos.
+- **O DNS também é um dos melhores controles defensivos**: filtragem por política, redirecionamento para poço, registro de consultas, detecção de anomalia e publicação de CAA.
+- No Brasil, o Registro.br oferece DNSSEC desde 2009 e a zona `.br` está assinada; sequestro de domínio configura crime sob a Lei 12.737 e a Lei 14.155; bloqueio judicial por DNS é rotina de provedor — e é justamente o que o DoH contorna; e resolvedores abertos continuam sendo munição de amplificação que o CERT.br cobra fechar.
