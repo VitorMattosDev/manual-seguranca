@@ -1,3 +1,273 @@
 # Gestão de vulnerabilidades e ciclo de patches {#sec-cap039}
 
-*(em elaboracao)*
+O relatório do scanner tem 14.320 linhas. Delas, 800 são classificadas como críticas e 3.100 como altas. A equipe de infraestrutura tem quatro pessoas, que também cuidam de chamados, backup e da migração do sistema de faturamento. O relatório é gerado toda segunda-feira e, há oito meses, ninguém o abre — porque na primeira vez que abriram, ficou evidente que não havia como tratar aquilo, e um relatório que não pode ser tratado deixa de ser lido.
+
+Enquanto isso, o serviço que efetivamente será usado para invadir a rede aparece na linha 6.212, classificado como "médio".
+
+Esse é o problema real da gestão de vulnerabilidades, e ele não é técnico: **é de priorização sob escassez**. Encontrar vulnerabilidades é barato e automatizável; decidir quais corrigir primeiro, com quatro pessoas e uma janela de manutenção mensal, é o trabalho difícil. Este capítulo é sobre transformar um relatório impossível numa fila executável — e sobre por que a severidade técnica, sozinha, é o critério errado para construir essa fila.
+
+## Vulnerabilidade não é achado de scanner
+
+Vale separar três coisas que a linguagem cotidiana mistura, porque a confusão entre elas produz decisões ruins.
+
+**Vulnerabilidade** é a fraqueza no sistema (@sec-cap004). Existe independentemente de alguém saber dela.
+
+**Achado** é o que a ferramenta reporta. Pode ser um falso positivo, pode ser uma vulnerabilidade real em componente não utilizado, pode ser um serviço que já está protegido por outro controle. O achado é uma **hipótese** a ser verificada, não um fato.
+
+**Risco** é o que resulta de combinar a vulnerabilidade com a exposição do ativo, o valor do que ele protege e a probabilidade de exploração (@sec-cap006). É o único dos três que serve para priorizar.
+
+Daí a primeira regra do processo: **a fila de trabalho é ordenada por risco, não por severidade**. Uma falha crítica num sistema interno, sem exposição, atrás de duas camadas de segmentação, protegido por controle compensatório, e sem exploração conhecida, pode legitimamente esperar. Uma falha média num serviço publicado na internet, com exploração pública ativa e credenciais de clientes atrás dele, não pode esperar nada.
+
+## Os três sinais que ordenam a fila
+
+Priorizar bem exige combinar três dimensões independentes. Nenhuma isolada é suficiente, e é exatamente por isso que o relatório ordenado apenas por severidade é inútil.
+
+**Severidade técnica — quão grave seria.** O sistema padrão de pontuação descreve características intrínsecas da falha: se é explorável pela rede, se exige autenticação, se exige interação do usuário, qual o impacto sobre confidencialidade, integridade e disponibilidade. A versão 4.0 melhora ao distinguir explicitamente a métrica base do contexto ambiental e da situação de exploração [@cvss40]. O erro difundido é usar apenas a pontuação base — que, por definição, **não sabe nada sobre o seu ambiente**.
+
+**Probabilidade de exploração — quão provável é.** Nem toda falha grave é explorada. Modelos públicos estimam a probabilidade de que uma vulnerabilidade específica seja explorada nos próximos trinta dias, com base em dados observados [@epss2024]. A distribuição é fortemente desigual: a maioria das vulnerabilidades publicadas nunca é explorada em escala, e uma minoria concentra quase toda a atividade real. Cruzar severidade com essa probabilidade reordena a fila drasticamente — e é a mudança mais produtiva que uma equipe pequena pode fazer.
+
+**Exploração confirmada — está sendo usada agora.** Catálogos de vulnerabilidades sabidamente exploradas listam falhas com uso confirmado em ataques reais [@cisakev]. Uma vulnerabilidade nesse catálogo, num ativo seu exposto, é emergência independentemente da pontuação. Este é o sinal de maior valor e o mais fácil de incorporar: é uma lista pública, atualizada, e cruzá-la com o inventário é trabalho de minutos.
+
+Sobre essas três dimensões incide o **contexto do ativo**: exposição à internet, criticidade do serviço, sensibilidade dos dados, existência de controle compensatório. Metodologias de decisão baseadas em árvore [@ssvc2021] formalizam isso em perguntas objetivas — está exposto? há exploração? qual o impacto na missão? — e produzem uma decisão explícita: agir agora, agendar, adiar. A vantagem sobre a pontuação numérica é que a decisão fica **defensável e auditável**, porque cada resposta está registrada.
+
+::: {#fig-priorizacao-vuln}
+```{.tikz}
+%%| filename: priorizacao-vuln
+%%| alt: Funil de priorização de vulnerabilidades, do total de achados até a fila executável, com o efeito de cada filtro: exposição, exploração conhecida e criticidade do ativo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fx/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=5pt,
+               minimum height=0.9cm, font=\scriptsize},
+    nt/.style={font=\tiny, anchor=west, align=left, text width=5.4cm}}
+
+  \node[fx, draw=manualgray,   fill=manualgray!12,   minimum width=8.6cm] (a) at (0,3.6)
+    {\textbf{todos os achados do scanner} \tiny --- inclui falso positivo e componente não usado};
+  \node[fx, draw=manualblue,   fill=manualblue!10,   minimum width=6.8cm] (b) at (0,2.4)
+    {\textbf{+ ativo realmente exposto} \tiny --- internet, ou alcançável por quem já entrou};
+  \node[fx, draw=manualyellow, fill=manualyellow!16, minimum width=5.0cm] (c) at (0,1.2)
+    {\textbf{+ exploração provável} \tiny --- modelo de probabilidade};
+  \node[fx, draw=manualred,    fill=manualred!12,    minimum width=3.4cm] (d) at (0,0.0)
+    {\textbf{+ exploração confirmada}};
+  \node[fx, draw=manualgreen,  fill=manualgreen!16,  minimum width=2.4cm] (e) at (0,-1.2)
+    {\textbf{fila executável}};
+
+  \foreach \x/\y in {a/b, b/c, c/d, d/e} {
+    \draw[->, >=stealth, thick, manualgray] (\x) -- (\y);}
+
+  \node[nt, manualgray]          at (4.6,3.6)  {milhares de linhas --- \textbf{ilegível e por isso ignorado}};
+  \node[nt, manualblue]          at (4.6,2.4)  {segmentação e controle compensatório entram aqui};
+  \node[nt, manualyellow!70!black] at (4.6,1.2) {a minoria concentra quase toda a exploração real};
+  \node[nt, manualred]           at (4.6,0.0)  {catálogo público de falhas em uso ativo};
+  \node[nt, manualgreen]         at (4.6,-1.2) {\textbf{cabe na janela de manutenção do mês}};
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.8cm] at (2.6,-3.0)
+    {\textbf{O objetivo não é corrigir tudo --- é corrigir o que importa, sempre.}
+     Uma fila curta e efetivamente executada todo mês vale mais que uma lista
+     completa e permanentemente adiada. A severidade sozinha ordena mal porque
+     não sabe nada sobre a sua rede.};
+\end{tikzpicture}
+```
+Da lista impossível à fila executável: cada filtro corta uma ordem de grandeza.
+:::
+
+## O ciclo, e o que falha em cada etapa
+
+O processo tem seis etapas, e cada uma tem um modo de falha característico [@nistsp80040].
+
+**1. Inventário.** É o pré-requisito de tudo e a causa mais comum de falha silenciosa: **não se corrige o que não se sabe que existe**. Servidor antigo esquecido, ambiente de homologação publicado, sistema de terceiro instalado sem registro, dispositivo de rede fora do inventário. O ativo desconhecido não aparece em nenhum relatório e é justamente onde a vulnerabilidade permanece indefinidamente.
+
+**2. Descoberta.** Varredura autenticada encontra muito mais que a não autenticada, porque enxerga versões instaladas em vez de inferir por banner. Exige credencial de leitura distribuída e gerida — e essa credencial é ativo sensível, porque alcança todo o parque. Onde há agente de EDR (@sec-cap038) ou de gestão, a coleta de inventário de software costuma ser mais confiável e menos intrusiva que a varredura por rede.
+
+**3. Validação.** O achado é hipótese. Conferir se o componente está mesmo em uso, se a versão é a reportada, se há controle compensatório. Pular esta etapa faz a equipe gastar a janela de manutenção com falso positivo — e queimar credibilidade com quem opera o sistema.
+
+**4. Priorização.** As três dimensões acima, mais o contexto do ativo. O resultado é uma fila curta com prazo definido.
+
+**5. Correção.** Aplicar a atualização é o caminho normal. Quando não é possível — sistema legado, fornecedor sem correção, indisponibilidade inaceitável —, a alternativa é o **controle compensatório documentado**: segmentar, restringir acesso, desabilitar o componente, virtualizar o remendo. O que não vale é a terceira via, que é a mais comum: não corrigir, não compensar e não registrar.
+
+**6. Verificação.** Confirmar que a correção foi efetivamente aplicada, e não apenas baixada, agendada ou aplicada em parte do parque. Vulnerabilidade que reaparece no relatório seguinte é sinal de processo quebrado — reinstalação a partir de imagem desatualizada, máquina que não reiniciou, exceção herdada.
+
+## Prazos, exceções e a janela que existe de verdade
+
+Um processo sem prazo não é processo. A prática consolidada é definir prazos por classe de risco e escrevê-los em política:
+
+| Classe | Critério | Prazo típico |
+|---|---|---|
+| Emergencial | Exploração confirmada em ativo exposto | 24 a 72 horas |
+| Crítica | Alta severidade, exposta, exploração provável | 7 a 15 dias |
+| Alta | Alta severidade, sem exposição direta | 30 dias |
+| Média/baixa | Sem exposição, impacto limitado | próxima janela programada |
+
+: Prazos por classe de risco — números a calibrar por setor e capacidade real. {#tbl-prazos-patch}
+
+Dois pontos importam mais que os números exatos. Primeiro, **os prazos precisam ser factíveis**: uma política que promete 24 horas para tudo e é descumprida sistematicamente é pior que uma política de 15 dias que é cumprida, porque a primeira ensina a equipe a ignorar a política. Segundo, **toda exceção precisa de dono, prazo e justificativa**. Exceção sem data de revisão é decisão permanente tomada por omissão, e é o que se encontra em toda auditoria: o servidor que "não pode reiniciar" desde 2019.
+
+Sobre a **janela de manutenção**: a maior parte das organizações trava aqui, não na priorização. Se a única janela é o último domingo do mês, o prazo de 72 horas é ficção. Três saídas práticas: redundância que permita atualizar em rodízio sem parar o serviço (@sec-cap028), automação da aplicação em anéis, e a decisão explícita — feita antecipadamente, não durante a emergência — de que certas classes autorizam parada imediata.
+
+## Automação em anéis
+
+Aplicar atualização automaticamente em todo o parque assusta com razão: atualização quebra coisa. A resposta madura não é aplicar manualmente, é **aplicar automaticamente em ondas**.
+
+**Anel 1 — piloto.** Máquinas da própria equipe de TI e um conjunto representativo. Aplicação imediata, no dia da publicação.
+
+**Anel 2 — parque geral.** Depois de alguns dias sem incidente no anel 1.
+
+**Anel 3 — crítico.** Servidores de produção sensíveis, com validação funcional e janela combinada.
+
+Isso dá o benefício da automação com o risco controlado, e transforma a pergunta "e se quebrar?" em "quebrou no anel 1, e por isso não chegou no anel 3". Duas condições tornam o modelo confiável: **capacidade de reverter** — instantâneo antes da aplicação, ou imagem reconstruível — e **validação funcional automatizada** do que o sistema precisa fazer depois de atualizar.
+
+::: {#fig-aneis-patch}
+```{.tikz}
+%%| filename: aneis-patch
+%%| alt: Modelo de aplicação de atualizações em três anéis, do piloto ao parque crítico, com o caminho de exceção documentada quando não há correção disponível
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    an/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=5pt,
+               minimum width=3.1cm, minimum height=1.35cm, font=\scriptsize},
+    ex/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=5pt,
+               minimum width=3.1cm, minimum height=1.35cm, font=\scriptsize,
+               draw=manualyellow, fill=manualyellow!16}}
+
+  \node[an, draw=manualgreen, fill=manualgreen!10] (r1) at (0,2.0)
+    {\textbf{Anel 1 --- piloto}\\\tiny TI e amostra representativa\\\tiny \emph{no dia da publicação}};
+  \node[an, draw=manualblue, fill=manualblue!10] (r2) at (4.2,2.0)
+    {\textbf{Anel 2 --- parque}\\\tiny estações e servidores comuns\\\tiny \emph{após dias sem incidente}};
+  \node[an, draw=manualred, fill=manualred!10] (r3) at (8.4,2.0)
+    {\textbf{Anel 3 --- crítico}\\\tiny produção sensível\\\tiny \emph{janela e validação funcional}};
+
+  \draw[->, >=stealth, very thick, manualgray] (r1) -- (r2);
+  \draw[->, >=stealth, very thick, manualgray] (r2) -- (r3);
+
+  \node[ex] (ex) at (4.2,-0.4)
+    {\textbf{sem correção possível}\\\tiny legado, fornecedor sem patch};
+  \node[an, draw=manualgreen, fill=manualgreen!14, minimum width=3.6cm] (cc) at (8.6,-0.4)
+    {\textbf{controle compensatório}\\\tiny segmentar, restringir, desabilitar\\\tiny \emph{com dono e prazo}};
+
+  \draw[->, >=stealth, very thick, manualyellow!70!black] (ex) -- (cc);
+  \draw[->, >=stealth, thick, manualgray, dashed] (r2) -- (ex);
+
+  \draw[->, >=stealth, very thick, manualred] (0,1.2) -- (0,-0.4)
+    node[midway, left, font=\tiny, align=right, manualred]
+      {quebrou aqui?\\\textbf{para tudo}\\e reverte};
+  \node[an, draw=manualred, fill=manualred!12, minimum width=2.6cm] at (0,-0.4)
+    {\textbf{reversão}\\\tiny instantâneo ou\\\tiny reconstrução};
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=12.0cm] at (4.2,-2.4)
+    {\textbf{A alternativa à automação não é a aplicação manual --- é o
+     esquecimento.} Equipes pequenas não sustentam aplicação manual em centenas
+     de máquinas, e o que ocorre é a atualização simplesmente não acontecer. O
+     anel piloto existe para que ``e se quebrar?'' tenha resposta antes de
+     chegar em produção.};
+\end{tikzpicture}
+```
+Anéis de aplicação: automação com risco controlado, e o caminho explícito para o que não tem correção.
+:::
+
+## Métricas que dizem algo
+
+Poucas, e sobre o processo:
+
+- **Cobertura de varredura**: proporção do inventário efetivamente avaliado. Se está abaixo de 90%, nenhuma outra métrica significa muito.
+- **Tempo médio de correção por classe de risco**, medido do momento da publicação até a verificação — não até o agendamento.
+- **Idade da vulnerabilidade mais antiga em aberto** por classe. Um número único, brutalmente informativo, e o que melhor revela processo travado.
+- **Taxa de reincidência**: itens que voltam ao relatório. Alta reincidência indica imagem base desatualizada ou verificação inexistente.
+- **Exceções vencidas**: exceções cuja data de revisão passou. Deveria ser zero, e quase nunca é.
+
+Contar vulnerabilidades totais é a métrica menos útil de todas: ela sobe quando o inventário melhora e quando o scanner é atualizado, o que pune justamente quem está fazendo o trabalho certo.
+
+## Erros que se repetem
+
+- **Ordenar por severidade** e ignorar exposição e exploração real.
+- **Relatório que ninguém abre** porque é grande demais para ser executável.
+- **Varredura não autenticada** apenas, que subestima o parque inteiro.
+- **Inventário incompleto**, com o ativo esquecido fora de qualquer relatório.
+- **Exceção sem prazo nem dono**, permanente por omissão.
+- **Corrigir sem verificar**, e descobrir no mês seguinte que metade do parque não aplicou.
+- **Prometer prazos impossíveis** em política e ensinar a equipe a ignorá-la.
+
+## ⚖️ Brasil em Foco
+
+**O art. 46 da LGPD e a discussão de responsabilidade civil giram em torno de negligência demonstrável.** Um incidente causado por vulnerabilidade conhecida, com correção publicada há meses, em ativo exposto à internet, é o cenário mais desfavorável possível para a organização — porque a ANPD e o Judiciário podem verificar objetivamente a data de publicação da correção. Ter um processo documentado, com priorização justificada e exceções registradas, muda a conversa de "por que não corrigiram?" para "corrigimos conforme este critério, e este item estava classificado assim, por estas razões" [@lgpd2018; @anpd2024res15].
+
+**A divulgação responsável tem norma e ainda pouca prática no Brasil.** As normas ISO/IEC 29147 e 30111 tratam de como receber e tratar relatos de vulnerabilidade. Publicar um canal de contato de segurança, responder a quem reporta e não tratar o pesquisador como adversário é postura que reduz o risco de divulgação pública sem aviso. Do outro lado, o pesquisador brasileiro opera numa zona sensível: testar sistema de terceiro sem autorização pode configurar o crime do art. 154-A do Código Penal, mesmo com intenção de ajudar (@sec-cap007). Um canal formal e uma política pública de divulgação protegem os dois lados [@iso29147; @iso30111; @lei12737].
+
+**Para provedores de internet, o parque de clientes entra na conta.** Roteadores de assinante com firmware vulnerável e credencial padrão são a matéria-prima das redes de dispositivos comprometidos que produzem ataques volumétricos (@sec-cap035). O CERT.br publica alertas recorrentes sobre equipamentos comprometidos em redes brasileiras, e a atualização remota gerenciada do equipamento fornecido ao assinante é, hoje, parte da higiene mínima de um provedor. A Resolução 740/2020 da Anatel reforça essa expectativa [@cert2024ddos; @anatel740].
+
+**No setor financeiro, o prazo é supervisionado.** A Resolução BCB 4.893/2021 exige gestão de vulnerabilidades e testes periódicos compatíveis com a criticidade dos sistemas, e a evidência cobrada em fiscalização é o registro do ciclo — quando foi detectado, quando foi corrigido, o que ficou pendente e por quê. Para instituições participantes do Pix, a exposição regulatória de um incidente evitável é significativa [@bcb4893].
+
+**Software sem suporte é decisão de risco, não fato consumado.** É comum encontrar em operação sistemas cujo fabricante encerrou o ciclo de correções. A partir do fim do suporte, nenhuma vulnerabilidade nova será corrigida — o que significa que o risco só cresce com o tempo. Registrar isso formalmente como risco aceito, com dono, prazo de substituição e controles compensatórios, é o que diferencia gestão de omissão perante auditoria e perante a ANPD [@ciscontrols].
+
+## 🛠️ No Campo
+
+**1. Comece pelo inventário, não pelo scanner.** Reconcilie pelo menos três fontes independentes — diretório, console de EDR, gestão de ativos, faixas de endereçamento — e trate as divergências como achados de prioridade alta:
+
+```bash
+# Descoberta de hosts vivos nas suas faixas, para reconciliar com o inventário
+nmap -sn 198.51.100.0/24 -oG - | awk '/Up$/{print $2}'
+```
+
+**2. Use varredura autenticada.** A diferença de qualidade é enorme. Trate a credencial de varredura como ativo sensível: conta dedicada, apenas leitura, origem restrita e senha rotacionada.
+
+**3. Cruze com o catálogo de exploração confirmada.** É o filtro de maior valor por unidade de esforço:
+
+```bash
+curl -s https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json \
+  | jq -r '.vulnerabilities[].cveID' | sort > kev.txt
+cut -d, -f3 achados-scanner.csv | sort -u > meus-cves.txt
+comm -12 kev.txt meus-cves.txt   # esta é a sua fila de emergência
+```
+
+**4. Incorpore a probabilidade de exploração.** Consultar a pontuação por API e usá-la como segundo eixo de ordenação, junto com a severidade, reduz a fila em uma ordem de grandeza sem perder o que importa.
+
+**5. Escreva prazos factíveis em política e cumpra-os.** Melhor 15 dias cumpridos que 24 horas descumpridas. Revise os prazos uma vez por ano contra o desempenho real.
+
+**6. Padronize a exceção.** Um registro por exceção, com identificador da vulnerabilidade, ativo, motivo, controle compensatório aplicado, dono nomeado e **data de revisão obrigatória**. Uma revisão trimestral de exceções vencidas evita que a temporária vire permanente.
+
+**7. Implante anéis de atualização.** Configure o piloto com máquinas da própria TI e adiantamento de dias entre anéis:
+
+```powershell
+# Windows: adiamento por anel via política
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" `
+  -Name "DeferQualityUpdatesPeriodInDays" -Value 3
+```
+
+**8. No Linux, automatize a correção de segurança e monitore o resultado:**
+
+```bash
+# Debian/Ubuntu: apenas atualizações de segurança, automáticas
+dpkg-reconfigure -plow unattended-upgrades
+grep -E 'Package|error' /var/log/unattended-upgrades/unattended-upgrades.log | tail -20
+
+# RHEL e derivados
+dnf install -y dnf-automatic
+sed -i 's/^upgrade_type.*/upgrade_type = security/' /etc/dnf/automatic.conf
+systemctl enable --now dnf-automatic.timer
+```
+
+**9. Verifique, não confie no agendamento.** Uma consulta simples ao inventário de software após a janela, comparada com a lista do que deveria ter sido aplicado, revela as máquinas que não reiniciaram ou falharam em silêncio.
+
+**10. Corrija a imagem base, não só as máquinas.** Se as novas instalações nascem com o problema, a reincidência é garantida. Toda correção relevante entra na imagem no mesmo ciclo (@sec-cap036).
+
+**11. Publique um canal de contato de segurança.** Um arquivo `security.txt` no domínio e um endereço monitorado custam nada e mudam a forma como você fica sabendo dos problemas:
+
+```
+# https://exemplo.com.br/.well-known/security.txt
+Contact: mailto:seguranca@exemplo.com.br
+Expires: 2027-12-31T23:59:00.000Z
+Preferred-Languages: pt-BR, en
+Policy: https://exemplo.com.br/politica-divulgacao
+```
+
+**12. Acompanhe cinco métricas, não cinquenta.** Cobertura de varredura, tempo médio de correção por classe, idade do item mais antigo em aberto, taxa de reincidência e exceções vencidas. Se essas cinco estão saudáveis, o processo está funcionando.
+
+## Resumo
+
+- O problema da gestão de vulnerabilidades **não é encontrar, é priorizar sob escassez**. Um relatório grande demais para ser executado deixa de ser lido, e o serviço que será usado na invasão costuma estar no meio dele classificado como "médio".
+- Distinguir **vulnerabilidade** (a fraqueza), **achado** (a hipótese da ferramenta) e **risco** (o que combina exposição, valor e probabilidade) é o que permite ordenar a fila por risco em vez de severidade.
+- Três sinais independentes ordenam bem: **severidade técnica** (quão grave seria), **probabilidade de exploração** (a minoria das falhas concentra quase toda a atividade real) e **exploração confirmada** em catálogo público — este último é o filtro de maior valor por esforço. Sobre eles incide o contexto do ativo.
+- O ciclo tem seis etapas e a primeira é decisiva: **não se corrige o que não se sabe que existe**. Varredura autenticada, validação do achado antes de gastar janela, correção ou **controle compensatório documentado** — nunca a terceira via de não corrigir, não compensar e não registrar — e verificação do que foi de fato aplicado.
+- Prazos por classe precisam ser **factíveis**: política descumprida ensina a equipe a ignorar política. Toda exceção precisa de dono, justificativa e **data de revisão** — sem ela, é decisão permanente tomada por omissão.
+- **A alternativa à automação não é a aplicação manual, é o esquecimento.** Anéis (piloto, parque, crítico) dão automação com risco controlado, desde que haja capacidade de reverter e validação funcional.
+- Métricas úteis são poucas e sobre o processo: cobertura, tempo de correção por classe, idade do item mais antigo, reincidência e exceções vencidas. Contar vulnerabilidades totais pune quem melhora o inventário.
+- No Brasil, incidente causado por falha com correção publicada há meses é o cenário mais desfavorável perante a ANPD; divulgação responsável tem norma (ISO 29147/30111) e o pesquisador sem autorização opera sob risco do art. 154-A; provedores respondem pelo firmware do equipamento do assinante; e software sem suporte deve ser registrado como risco aceito, com dono e prazo de substituição.
