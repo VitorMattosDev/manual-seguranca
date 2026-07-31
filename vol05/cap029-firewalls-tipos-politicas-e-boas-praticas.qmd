@@ -1,3 +1,278 @@
 # Firewalls: tipos, políticas e boas práticas {#sec-cap029}
 
-*(em elaboracao)*
+Em 2004, Avishai Wool publicou a análise de configurações reais de firewalls corporativos de grandes organizações. O resultado não foi que algumas estavam mal configuradas: **praticamente todas** apresentavam erros graves, e o número de erros crescia com a complexidade da base de regras. Um estudo posterior, sobre uma amostra maior, confirmou o padrão [@wool2004].
+
+Isso diz o essencial sobre o assunto. O firewall é o controle de segurança de rede mais implantado do mundo — e o mais mal operado. A tecnologia amadureceu; a disciplina de escrever e manter política, não. Uma base com quatro mil regras acumuladas ao longo de uma década, sem dono e sem revisão, não é um controle de segurança: é um artefato arqueológico que ninguém ousa tocar.
+
+Este capítulo é sobre o instrumento que aplica a matriz de fluxos do @sec-cap028 — como ele funciona por dentro, o que cada geração realmente inspeciona e, principalmente, como manter a política compreensível ao longo do tempo.
+
+## O que o firewall decide, e onde
+
+Um firewall é um ponto de aplicação de política que **media todo o tráfego entre duas regiões da rede**. Duas palavras dessa frase fazem todo o trabalho: *media* — a decisão precede a passagem — e *todo* — se existe um caminho paralelo, a mediação não existe. É o princípio da mediação completa de Saltzer e Schroeder (@sec-cap022), aplicado a pacotes.
+
+A consequência prática aparece no @sec-cap028 e vale repetir: um firewall perfeitamente configurado com uma rota que o contorna equivale a nenhum firewall naquele caminho. A primeira verificação de qualquer auditoria não é ler as regras; é procurar os desvios.
+
+## As gerações, e o que cada uma enxerga
+
+::: {#fig-geracoes-firewall}
+```{.tikz}
+%%| filename: geracoes-firewall
+%%| alt: Comparação das gerações de firewall mostrando até que camada da pilha cada uma inspeciona: filtro de pacotes até a camada 4 sem estado, firewall com estado com tabela de conexões, gateway de aplicação na camada 7 e firewall de próxima geração com identificação de aplicação e usuário
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cam/.style={draw=manualgray, thin, fill=manualgray!8, minimum width=2.5cm,
+                minimum height=0.5cm, font=\tiny, align=center, inner sep=1pt},
+    vis/.style={cam, fill=manualgreen!25, draw=manualgreen},
+    inv/.style={cam, fill=manualgray!6, draw=manualgray!40, text=manualgray},
+    tit/.style={font=\scriptsize\bfseries, align=center, text width=2.7cm}}
+
+  \foreach \x/\t in {0/{Filtro de pacotes\\\scriptsize sem estado},
+                     3/{Firewall\\com estado},
+                     6/{Gateway de\\aplicação (proxy)},
+                     9/{Próxima geração\\(NGFW)}} {
+    \node[tit] at (\x,4.1) {\t};}
+
+  % camadas por geracao: 0 = invisivel, 1 = visivel
+  \foreach \x in {0,3,6,9} {
+    \node[font=\tiny, manualgray, anchor=east] at (-1.55,3.3) {L7 aplicação};
+    \node[font=\tiny, manualgray, anchor=east] at (-1.55,2.7) {L5-6 sessão};
+    \node[font=\tiny, manualgray, anchor=east] at (-1.55,2.1) {L4 transporte};
+    \node[font=\tiny, manualgray, anchor=east] at (-1.55,1.5) {L3 rede};}
+
+  \node[inv] at (0,3.3){}; \node[inv] at (0,2.7){};
+  \node[vis] at (0,2.1){porta}; \node[vis] at (0,1.5){IP};
+
+  \node[inv] at (3,3.3){}; \node[vis] at (3,2.7){conexão};
+  \node[vis] at (3,2.1){porta + flags}; \node[vis] at (3,1.5){IP};
+
+  \node[vis] at (6,3.3){protocolo\\completo}; \node[vis] at (6,2.7){sessão};
+  \node[vis] at (6,2.1){porta}; \node[vis] at (6,1.5){IP};
+
+  \node[vis] at (9,3.3){aplicação\\+ usuário}; \node[vis] at (9,2.7){conexão};
+  \node[vis] at (9,2.1){porta}; \node[vis] at (9,1.5){IP};
+
+  \node[align=center, font=\tiny, text width=2.6cm, manualred] at (0,0.55)
+    {não sabe se o pacote pertence a uma conexão};
+  \node[align=center, font=\tiny, text width=2.6cm, manualgreen] at (3,0.55)
+    {o padrão da indústria; base de toda segmentação};
+  \node[align=center, font=\tiny, text width=2.6cm, manualblue] at (6,0.55)
+    {entende o protocolo; caro e específico};
+  \node[align=center, font=\tiny, text width=2.6cm, manualyellow!70!black] at (9,0.55)
+    {depende de inspecionar TLS para enxergar L7};
+
+  \node[align=left, font=\scriptsize, text width=11.4cm, draw=manualgray,
+        fill=white, thick, rounded corners=3pt, inner sep=6pt] at (4.3,-0.9)
+    {\textbf{Nenhuma geração substitui a anterior.} Um NGFW moderno faz filtragem de
+     pacotes, mantém tabela de estado e, quando lhe entregam a chave, inspeciona
+     aplicação. O que muda é o custo por pacote --- e por isso a política continua
+     sendo escrita em camadas, do mais barato para o mais caro.};
+\end{tikzpicture}
+```
+O que cada geração de firewall consegue enxergar da pilha, e o preço dessa visibilidade.
+:::
+
+**Filtro de pacotes sem estado.** Decide olhando cabeçalhos de camada 3 e 4 de cada pacote isoladamente: origem, destino, protocolo, porta, flags. É rápido e barato, e é o que roda em ACL de roteador a taxas altíssimas. A limitação é estrutural: como não sabe se um pacote pertence a uma conexão existente, para permitir respostas é preciso abrir portas altas em ambas as direções — uma permissão larga demais. Continua útil para filtragem grosseira e de alto volume (bloqueio de faixas, anti-*spoofing* na borda), não para política entre zonas.
+
+**Firewall com estado.** Mantém uma tabela de conexões: ao ver o SYN inicial permitido pela política, registra a quíntupla e passa a aceitar automaticamente os pacotes que pertencem àquele fluxo. Isso permite a política direcional que a segmentação exige — "a aplicação inicia para o banco; o banco nunca inicia para a aplicação" — e reduz drasticamente o número de regras.
+
+O estado tem um custo que merece atenção operacional: **a tabela é um recurso finito**. Um ataque de inundação de conexões pode esgotá-la, e o firewall passa a descartar tráfego legítimo — negação de serviço causada pelo próprio controle de segurança. Dimensionar a tabela, ajustar temporizadores e habilitar as proteções de inundação são tarefas de configuração, não opcionais (@sec-cap035).
+
+**Gateway de aplicação (proxy).** Termina a conexão de um lado e abre outra do outro, entendendo o protocolo. Enxerga tudo e pode aplicar política semântica — este método HTTP, este comando SMTP, esta consulta. O preço é a especificidade: precisa conhecer o protocolo, escala pior e adiciona latência. Sobrevive onde o valor compensa: proxy de saída para HTTP, gateway de e-mail, bastião de acesso administrativo.
+
+**Firewall de próxima geração.** Um firewall com estado que adiciona identificação de aplicação independente da porta, associação com identidade de usuário (integrada ao diretório do @sec-cap013), inspeção de conteúdo e filtragem por reputação. É onde a política deixa de ser "porta 443 permitida" e passa a ser "o grupo Financeiro pode usar este sistema de armazenamento em nuvem".
+
+Há uma condição incômoda embutida nessa promessa: **quase todo o tráfego relevante é cifrado**. Sem inspeção de TLS, o NGFW enxerga pouco mais que o nome do servidor e o volume. Com inspeção, ele passa a ser um ponto de descriptografia de todo o tráfego da organização — o que traz consequências que a próxima seção trata em separado, porque elas não são apenas técnicas.
+
+## Inspeção de TLS: o que se ganha e o que se cria
+
+Inspecionar TLS significa fazer o firewall atuar como intermediário: ele apresenta ao cliente um certificado emitido por uma autoridade interna instalada em todos os dispositivos, decifra, inspeciona e recifra em direção ao destino. É, tecnicamente, um ataque de intermediário autorizado (@sec-cap020).
+
+O que se ganha é real: detecção de malware em canal cifrado, aplicação de política de conteúdo, prevenção de vazamento de dados. O que se cria também:
+
+- **Um ponto único de descriptografia de tudo.** Credenciais, dados pessoais e comunicações da organização inteira passam em claro por um equipamento. Comprometê-lo é comprometer tudo — e o registro desse equipamento vira, ele próprio, dado sensível.
+- **Risco de rebaixamento.** Implementações de inspeção já foram documentadas negociando parâmetros piores com o servidor do que o cliente negociaria sozinho, ou validando certificados de forma frouxa. O intermediário passa a ser o elo fraco da cadeia que ele deveria proteger.
+- **Quebra funcional.** Fixação de certificado em aplicações móveis, autenticação mútua, e mecanismos mais recentes de ocultação do nome do servidor simplesmente param de funcionar. Isso gera listas de exceção, que crescem, e a exceção é exatamente o caminho que o adversário procura.
+- **Consequência jurídica.** Inspecionar tráfego pessoal de funcionários é tratamento de dado pessoal, sujeito à LGPD, e exige base legal, transparência e proporcionalidade.
+
+A postura defensável é seletiva: inspecionar categorias de risco, **excluir explicitamente** saúde, financeiro e governo, documentar a decisão, comunicar aos titulares e proteger o equipamento no mesmo nível de um servidor de autenticação. Inspecionar tudo "porque a caixa suporta" é uma decisão de risco tomada sem análise de risco.
+
+## A política: escrever para ser lida daqui a cinco anos
+
+A avaliação é sequencial: o primeiro casamento vence. Dessa mecânica simples decorre quase toda a patologia de bases de regras reais.
+
+::: {#fig-base-regras}
+```{.tikz}
+%%| filename: base-de-regras
+%%| alt: Base de regras de firewall ilustrando regra sombreada que nunca é avaliada, regra permissiva demais no topo e a regra final de negar tudo com registro
+\begin{tikzpicture}[font=\footnotesize, y=0.72cm]
+  \tikzset{
+    rg/.style={draw=manualgray, thin, fill=white, minimum width=10.4cm,
+               minimum height=0.62cm, font=\ttfamily\tiny, align=left,
+               inner sep=4pt, anchor=west},
+    bad/.style={rg, fill=manualred!12, draw=manualred},
+    dead/.style={rg, fill=manualgray!18, draw=manualgray, text=manualgray},
+    good/.style={rg, fill=manualgreen!16, draw=manualgreen},
+    nm/.style={font=\tiny\bfseries, anchor=east, manualgray}}
+
+  \node[nm] at (-0.15,4){1}; \node[good] at (0,4)
+    {allow  grp-web      -> srv-app       tcp/8443   \# dono=app validade=2027-06};
+  \node[nm] at (-0.15,3){2}; \node[bad]  at (0,3)
+    {allow  grp-suporte  -> any           any        \# "temporario" desde 2021};
+  \node[nm] at (-0.15,2){3}; \node[good] at (0,2)
+    {allow  grp-app      -> srv-bd        tcp/5432   \# dono=dba validade=2027-01};
+  \node[nm] at (-0.15,1){4}; \node[dead] at (0,1)
+    {deny   grp-suporte  -> srv-bd        tcp/5432   \# NUNCA AVALIADA (regra 2)};
+  \node[nm] at (-0.15,0){5}; \node[dead] at (0,0)
+    {allow  10.4.7.22    -> 10.9.1.30     tcp/1521   \# host desativado em 2022};
+  \node[nm] at (-0.15,-1){6}; \node[good] at (0,-1)
+    {deny   any          -> any           any        log  \# padrao explicito};
+
+  \draw[->, >=stealth, very thick, manualred] (10.9,3) to[out=0,in=0,looseness=1.6] (10.9,1);
+  \node[font=\tiny, manualred, align=left, text width=2.5cm, anchor=west] at (11.3,2)
+    {a regra 2 \textbf{sombreia} a 4: a proibição jamais é aplicada};
+
+  \node[align=left, font=\scriptsize, text width=11.0cm, draw=manualblue,
+        fill=manualblue!8, thick, rounded corners=3pt, inner sep=6pt] at (5.2,-2.6)
+    {\textbf{Três patologias numa base de seis linhas:} uma permissão larga no topo
+     (2), uma proibição morta que dá falsa sensação de controle (4) e uma regra
+     órfã de host inexistente (5). Numa base de quatro mil linhas, elas são
+     invisíveis a olho nu --- por isso a revisão precisa ser automatizada.};
+\end{tikzpicture}
+```
+Uma base de regras pequena o bastante para caber numa figura, com os três defeitos mais comuns das bases grandes.
+:::
+
+Os princípios que sustentam uma política legível:
+
+**Negar por padrão, permitir por exceção.** A última regra é `deny any any` **com registro**. Sem o registro, você perde a informação mais valiosa que o firewall produz: o que foi tentado e recusado.
+
+**Especificidade.** Cada regra nomeia origem, destino, serviço e direção. `permitir da rede corporativa para a de servidores` não é uma regra — é uma rendição.
+
+**Ordem por intenção, não por acaso.** Regras de negação específicas antes das permissões amplas; regras de alto volume no topo, por desempenho, desde que não alterem a semântica.
+
+**Objetos nomeados.** `srv-erp-producao` sobrevive à renumeração; `10.4.7.22` não.
+
+**Metadados obrigatórios.** Chamado, dono, justificativa e validade em cada regra. É o que permite remover com segurança daqui a três anos — e o que transforma a revisão anual num exercício possível.
+
+**Filtragem de saída.** Este é o item mais subaproveitado do capítulo. Quase toda organização filtra rigorosamente o que entra e permite quase tudo o que sai. Mas o canal de comando e controle, a exfiltração e o *download* do segundo estágio são todos **tráfego de saída**. Uma política de saída que permita apenas o necessário — com resolução de nomes e navegação passando por serviços dedicados — quebra a cadeia de ataque num ponto em que o adversário tem pouca alternativa. Começa simples: bloquear DNS direto de estações, bloquear saída para portas de administração remota e obrigar a navegação a passar pelo proxy.
+
+## Firewall de host: a segmentação que escala
+
+O firewall de borda protege a fronteira entre zonas; o firewall de host protege a carga de trabalho contra a máquina ao lado, na mesma zona. Como a movimentação lateral costuma acontecer *dentro* do segmento, ele é frequentemente o controle que mais reduz alcance por real investido — e vem incluído no sistema operacional.
+
+No Linux, `nftables` substituiu `iptables` com sintaxe mais coerente e melhor desempenho; em servidores gerenciados, a política costuma ser expressa por ferramenta de configuração e distribuída como código, o que resolve o problema de consistência. No Windows, o firewall com segurança avançada é distribuído por diretiva de grupo, e permite regras baseadas em autenticação IPsec — isolamento de domínio, que é microssegmentação com identidade de máquina, disponível há mais de uma década e raramente usada (@sec-cap013).
+
+O ponto de atenção é operacional: firewall de host que ninguém gerencia centralmente vira inconsistência. A regra é distribuir como código, medir conformidade e alertar quando divergir.
+
+## Manter: onde os programas falham
+
+Escrever a primeira política é fácil. Mantê-la ao longo de anos é onde o controle se degrada.
+
+**Processo de mudança com prazo embutido.** Toda solicitação declara origem, destino, serviço, justificativa, dono e **data de expiração**. Sem expiração, a base só cresce.
+
+**Revisão periódica com dados de uso.** Firewalls contam acertos por regra. Regra com zero acertos em doze meses é candidata natural à remoção — o dado dispensa a discussão.
+
+**Recertificação pelo dono do negócio.** Quem pediu confirma que ainda precisa. Anualmente, com prazo, e removendo o que não for confirmado.
+
+**Higiene automatizada.** Ferramentas de análise detectam regras sombreadas, redundantes, órfãs e permissivas demais. É a única forma viável de auditar milhares de linhas.
+
+**Política como código.** Base de regras versionada, revisada por par, aplicada por automação. Traz histórico, revisão e reversão — e acaba com a mudança feita direto na interface às sextas-feiras.
+
+**Alta disponibilidade real.** Par com sincronização de estado, testado com falha provocada. Um firewall que é ponto único de falha transforma um controle de segurança num risco de disponibilidade — e é o argumento que sempre aparece para justificar a rota que o contorna.
+
+## Erros que se repetem
+
+- **Regra `any/any` no topo**, criada para desbloquear uma emergência e nunca removida.
+- **Base sem dono.** Ninguém sabe o que a regra 847 sustenta, então ninguém a remove.
+- **Confiar apenas no perímetro.** Firewall forte na borda e nada entre servidores.
+- **Não registrar as negações** — perdendo o sinal mais barato de detecção que existe.
+- **Inspeção de TLS sem exceções nem base legal**, com lista de exceção crescendo até virar caminho livre.
+- **Interfaces de administração do próprio firewall expostas**, às vezes com credencial padrão.
+- **Confundir NAT com segurança.** NAT dificulta o alcance de entrada; não é política, não registra e não decide (@sec-cap009).
+
+## ⚖️ Brasil em Foco
+
+**A inspeção de TLS é a questão jurídica mais delicada do capítulo.** Decifrar o tráfego de um funcionário é tratamento de dado pessoal sob a LGPD, e a base legal usual — legítimo interesse do controlador — exige teste de proporcionalidade, transparência e minimização. Na prática: política interna comunicada e assinada, exclusão explícita de categorias sensíveis (saúde, financeiro, sindical, jurídico), retenção curta dos registros e acesso restrito a eles. A Constituição protege o sigilo das comunicações, e a interceptação de comunicação alheia sem previsão adequada é conduta tipificada — a diferença entre monitoramento corporativo legítimo e ilícito está na transparência prévia e na finalidade [@lgpd2018; @marcocivil2014; @lei9296].
+
+**Para provedores, o firewall de borda é onde a filtragem de origem acontece.** O BCP 38 recomenda que a rede não deixe sair pacotes com endereço de origem forjado; o CERT.br e o NIC.br promovem essa prática há anos, e ela é a contribuição mais concreta que um provedor brasileiro pode dar contra ataques de amplificação — inclusive contra si mesmo, já que boa parte do tráfego malicioso que castiga a rede nacional nasce de redes que não filtram [@rfc2827; @rfc3704; @cert2024praticas].
+
+**A Resolução 740/2020 da Anatel exige controle de acesso às interfaces de gerência dos produtos de telecomunicações.** Um firewall com a interface administrativa alcançável a partir da internet, ou com credencial padrão, é achado de não conformidade além de risco. O mesmo vale para os equipamentos de assinante, cujas interfaces de administração remota devem estar desabilitadas ou restritas por padrão [@anatel740].
+
+**No setor financeiro, o registro das negações tem valor probatório.** A Resolução BCB 4.893/2021 exige capacidade de detecção, registro e resposta a incidentes; e, sob a LGPD, comunicar um incidente à ANPD exige delimitar o que foi acessado. Log de firewall com retenção adequada é frequentemente a única evidência disponível sobre a origem e o alcance de um acesso — e a decisão de reter por trinta ou por trezentos e sessenta e cinco dias é tomada muito antes de o incidente acontecer [@bcb4893; @anpd2024res15].
+
+**Para órgãos públicos**, as práticas recomendadas nacionais e os requisitos de segurança da administração federal convergem no mesmo desenho: negar por padrão, registrar, segregar a gerência e revisar periodicamente — com a diferença de que, no setor público, a política de firewall costuma ser documento sujeito a auditoria dos órgãos de controle [@cert2024praticas; @nistsp80041].
+
+## 🛠️ No Campo
+
+**1. Encontre os desvios antes de ler as regras.** A política só vale onde não há caminho paralelo:
+
+```bash
+# Rotas alternativas que nao passam pelo firewall
+ip route show table all | grep -v 'default via 10.0.0.1'
+
+# Servidor com duas interfaces em zonas diferentes: roteador improvisado
+ip -o addr show | awk '{print $2, $4}' | sort
+
+# Encaminhamento habilitado onde nao deveria estar
+sysctl net.ipv4.ip_forward
+```
+
+**2. Registre a negação e a use.** É a fonte de detecção mais barata que existe:
+
+```bash
+# nftables: negar por padrao, com registro limitado
+nft add rule inet filter forward log prefix \"FW-DROP: \" limit rate 10/second
+nft add rule inet filter forward drop
+
+# Os 20 destinos mais negados na ultima hora — o mapa dos fluxos esquecidos
+journalctl -S -1h -k | grep 'FW-DROP' | grep -oP 'DPT=\d+' | sort | uniq -c | sort -rn | head -20
+```
+
+**3. Comece a filtragem de saída pelo que não tem contestação.** Três medidas com alto retorno e baixo atrito:
+
+```
+# 1. Nenhuma estacao fala DNS direto: so o resolvedor interno
+deny  grp-estacoes -> !srv-dns  udp/53,tcp/53  log
+# 2. Nenhum servidor navega na internet sem passar pelo proxy
+deny  grp-servidores -> internet  tcp/80,tcp/443  log
+# 3. Administracao remota nunca sai para a internet
+deny  any -> internet  tcp/22,tcp/3389,tcp/5900  log
+```
+
+**4. Ache as regras mortas com o contador de acertos.** O dado encerra a discussão sobre remover ou não:
+
+```bash
+# nftables: regras com zero pacotes desde o ultimo reinicio
+nft -a list ruleset | grep -B1 'packets 0 bytes 0'
+```
+
+```powershell
+# Windows: regras habilitadas com escopo remoto irrestrito
+Get-NetFirewallRule -Enabled True -Direction Inbound |
+  Get-NetFirewallAddressFilter |
+  Where-Object { $_.RemoteAddress -eq 'Any' }
+```
+
+**5. Trate a base de regras como código.** Repositório, revisão por par, aplicação automatizada, reversão testada. Mudança manual em produção é a origem da maioria das interrupções atribuídas a "problema de rede".
+
+**6. Defina a política de inspeção de TLS por escrito, com exclusões.** Categorias sensíveis fora da inspeção, base legal declarada, aviso aos usuários, retenção curta e acesso restrito ao equipamento de decifragem — que passa a exigir a mesma proteção de um servidor de autenticação.
+
+**7. Ajuste a tabela de estado antes de ser testado por um ataque.** Meça a ocupação em pico, dimensione com folga, reduza os temporizadores de conexões semiabertas e habilite as proteções de inundação. A tabela cheia é uma negação de serviço produzida pelo próprio firewall (@sec-cap035).
+
+**8. Publique métricas de higiene, não de volume.** "Bloqueamos 4 milhões de pacotes" não diz nada. Diga: número de regras `any` (alvo: zero), percentual de regras sem dono, número de regras com zero acertos em 12 meses, idade média da base e prazo médio entre solicitação e aplicação.
+
+**9. Habilite o firewall de host em todo servidor.** Mesmo dentro de uma zona já segmentada. É o que impede que o servidor comprometido alcance o vizinho — e é gratuito.
+
+**10. Teste a comutação de falha em janela planejada.** Um par de alta disponibilidade nunca testado é um ponto único de falha com custo de dois. Provoque a falha, meça o que cai e verifique se as conexões sobrevivem à sincronização de estado.
+
+## Resumo
+
+- **O problema do firewall não é a tecnologia, é a manutenção da política.** Estudos de configurações reais mostram erros graves em praticamente todas as bases examinadas, com a taxa de erro crescendo junto com a complexidade.
+- **Um firewall só vale onde não existe caminho paralelo.** A primeira verificação de qualquer auditoria é procurar os desvios, não ler as regras.
+- As gerações se acumulam em vez de se substituir: **filtro sem estado** (rápido, cego a conexões), **com estado** (o padrão, base da segmentação), **proxy** (entende o protocolo, caro) e **próxima geração** (aplicação e usuário, dependente de inspecionar TLS).
+- **A tabela de estado é um recurso finito** — esgotá-la é uma forma de negação de serviço causada pelo próprio controle; dimensionamento e temporizadores são configuração obrigatória.
+- **Inspeção de TLS é um ataque de intermediário autorizado**: entrega visibilidade real e cria um ponto único de descriptografia, risco de rebaixamento, quebra funcional e obrigação jurídica. A postura defensável é seletiva, documentada e com exclusões explícitas.
+- A política legível exige **negar por padrão com registro**, especificidade, objetos nomeados e metadados (chamado, dono, justificativa, validade) em toda regra. Sem validade, a base só cresce.
+- **A filtragem de saída é o controle mais subaproveitado**: comando e controle, exfiltração e segundo estágio são todos tráfego de saída. Bloquear DNS direto, navegação sem proxy e administração remota saindo já quebra boa parte da cadeia.
+- **Firewall de host é a segmentação que escala** e já vem no sistema operacional — mas precisa ser distribuído como código e ter conformidade medida.
+- No Brasil, inspecionar TLS de funcionários é tratamento de dado pessoal sob a LGPD e exige base legal, transparência e exclusões; a filtragem de origem na borda (BCP 38) é a contribuição mais concreta de um provedor contra amplificação; e a Resolução 740 da Anatel cobra o controle de acesso às interfaces de gerência.
