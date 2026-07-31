@@ -1,3 +1,307 @@
 # Cross-site scripting e ataques no lado do cliente {#sec-cap045}
 
-*(em elaboracao)*
+Um provedor regional de internet usa um sistema de chamados. O cliente abre o chamado pelo portal e descreve o problema em um campo de texto livre. O analista de suporte abre o chamado no painel administrativo para atender.
+
+Alguém abre um chamado cujo texto contém uma marcação de script. O campo é gravado no banco e exibido no painel sem tratamento. Quando o analista abre o chamado, **o código do atacante executa dentro do navegador do analista, dentro da sessão do analista, dentro da origem do painel administrativo**. Ele não precisa da senha: já está do lado de dentro. O que se seguiu foi uma sequência de requisições legítimas — legítimas do ponto de vista do servidor — criando um usuário administrativo novo.
+
+Esse é o ponto que costuma ser subestimado quando se explica cross-site scripting: a falha não está no navegador do atacante, está no navegador de **outra pessoa**. É a única classe de vulnerabilidade web em que a vítima é o usuário, e o servidor é apenas o veículo. E é por isso que a defesa "mas o dado que ele injetou não faz nada no nosso servidor" é irrelevante.
+
+## O que o navegador garante, e o que o XSS derruba
+
+O modelo de segurança do navegador se apoia na **política de mesma origem**: código carregado de `https://painel.provedor.com.br` pode ler dados dessa origem e não pode ler dados de `https://banco.com.br`. Origem, aqui, é a tripla esquema, host e porta. É essa regra que permite manter cinquenta abas abertas sem que uma leia a outra.
+
+XSS não contorna a política de mesma origem. Faz pior: **executa dentro dela**. O código injetado *é* código da origem, do ponto de vista do navegador, e por isso herda tudo — os cookies, o armazenamento local, os tokens, a sessão, a capacidade de emitir requisições autenticadas e de ler as respostas.
+
+Daí decorre a consequência mais mal compreendida do tema: **marcar o cookie como `HttpOnly` não resolve XSS**. Impede que o script leia o valor do cookie, o que é útil e deve ser feito, mas não impede o script de *usar* a sessão — porque o navegador anexa o cookie automaticamente a cada requisição que o próprio script disparar. O atacante não precisa do valor do cookie; precisa de um navegador que já o tenha, e é exatamente o que ele tem.
+
+Com XSS, o atacante pode: ler tudo o que está na tela, incluindo dados que a vítima tem permissão de ver e ele não; agir como a vítima, executando qualquer operação da aplicação; capturar o que for digitado, inclusive senha e código de segundo fator; alterar a interface para pedir dados que a aplicação nunca pediria; e permanecer, porque o script recarrega a cada visita.
+
+## Três formas de acontecer
+
+**Refletido.** A entrada volta imediatamente na resposta à mesma requisição. O caso típico é a página de busca que exibe "nenhum resultado para *termo*". A exploração exige que a vítima acesse um link preparado, o que na prática significa combiná-lo com engenharia social — tema do Volume 10.
+
+**Armazenado.** A entrada é gravada e exibida depois, para quem abrir aquele conteúdo. É o caso do chamado de suporte. É a forma mais grave, por dois motivos: não precisa que a vítima clique em nada, e frequentemente atinge quem tem mais privilégio — o analista, o coordenador, o administrador que revisa o conteúdo enviado pelos usuários.
+
+**Baseado em DOM.** A entrada nunca chega ao servidor de forma relevante; é o próprio JavaScript da página que a lê de algum lugar (o fragmento da URL, um parâmetro, uma mensagem entre janelas) e a escreve em um ponto perigoso do documento. O servidor pode estar impecável e a falha existir mesmo assim — e por isso ela escapa de boa parte das ferramentas que analisam apenas respostas HTTP.
+
+Na forma baseada em DOM, vale conhecer o vocabulário: a **fonte** é onde o dado não confiável entra (`location.hash`, `document.referrer`, `postMessage`) e o **sorvedouro** é onde ele vira código (`innerHTML`, `document.write`, `eval`, atribuição a `src` de script). A revisão consiste em rastrear se existe caminho de uma fonte até um sorvedouro.
+
+::: {#fig-xss-tres-formas}
+```{.tikz}
+%%| filename: xss-tres-formas
+%%| alt: Fluxo das três formas de cross-site scripting: refletido, armazenado e baseado em DOM, mostrando por onde o dado não confiável trafega em cada uma
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ator/.style={draw, thick, rounded corners=2pt, align=center, inner sep=3pt,
+                 minimum width=1.9cm, minimum height=0.6cm, font=\tiny, fill=white},
+    lin/.style={->, >=stealth, thick}}
+
+  % refletido
+  \node[font=\scriptsize, manualyellow, anchor=west] at (-0.6,3.9) {\textbf{REFLETIDO}};
+  \node[ator, draw=manualred]   (r1) at (0.6,3.2) {atacante};
+  \node[ator, draw=manualgray]  (r2) at (3.4,3.2) {vítima};
+  \node[ator, draw=manualblue]  (r3) at (6.2,3.2) {servidor};
+  \node[ator, draw=manualred]   (r4) at (9.4,3.2) {navegador da vítima\\executa};
+  \draw[lin, manualred]  (r1) -- node[above, font=\tiny] {link} (r2);
+  \draw[lin, manualgray] (r2) -- node[above, font=\tiny] {requisição} (r3);
+  \draw[lin, manualred]  (r3) -- node[above, font=\tiny] {resposta reflete} (r4);
+
+  % armazenado
+  \node[font=\scriptsize, manualred, anchor=west] at (-0.6,2.4) {\textbf{ARMAZENADO}};
+  \node[ator, draw=manualred]   (a1) at (0.6,1.7) {atacante};
+  \node[ator, draw=manualblue]  (a2) at (3.4,1.7) {banco de dados};
+  \node[ator, draw=manualgray]  (a3) at (6.2,1.7) {vítima abre\\o conteúdo};
+  \node[ator, draw=manualred]   (a4) at (9.4,1.7) {navegador da vítima\\executa};
+  \draw[lin, manualred]  (a1) -- node[above, font=\tiny] {grava} (a2);
+  \draw[lin, manualgray] (a2) -- node[above, font=\tiny] {exibe} (a3);
+  \draw[lin, manualred]  (a3) -- (a4);
+
+  % dom
+  \node[font=\scriptsize, manualblue, anchor=west] at (-0.6,0.9) {\textbf{BASEADO EM DOM}};
+  \node[ator, draw=manualred]   (d1) at (0.6,0.2) {atacante};
+  \node[ator, draw=manualgray]  (d2) at (3.4,0.2) {fonte no cliente\\\tiny hash, postMessage};
+  \node[ator, draw=manualgray]  (d3) at (6.2,0.2) {script da página};
+  \node[ator, draw=manualred]   (d4) at (9.4,0.2) {sorvedouro\\\tiny innerHTML, eval};
+  \draw[lin, manualred]  (d1) -- (d2);
+  \draw[lin, manualgray] (d2) -- (d3);
+  \draw[lin, manualred]  (d3) -- (d4);
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.4cm] at (5.0,-1.4)
+    {\textbf{Na forma baseada em DOM o servidor pode estar impecável.} O dado não
+     confiável nem chega até ele --- vai da fonte ao sorvedouro dentro do navegador.
+     Por isso essa forma escapa das ferramentas que só examinam requisição e resposta,
+     e por isso a revisão precisa perguntar: \emph{existe caminho de uma fonte até um
+     sorvedouro?}};
+\end{tikzpicture}
+```
+As três formas de XSS. A armazenada dispensa clique da vítima e costuma atingir quem tem mais privilégio.
+:::
+
+## A correção: codificar na saída, conforme o contexto
+
+A defesa correta não está na entrada, está na saída. E ela depende do **contexto** onde o dado será colocado, porque cada contexto tem regras sintáticas diferentes:
+
+| Contexto de saída | O que é preciso |
+|---|---|
+| Corpo do HTML | Codificar `<`, `>`, `&`, `"`, `'` como entidades |
+| Valor de atributo | Codificação de atributo, e o valor **sempre entre aspas** |
+| Dentro de bloco JavaScript | Codificação própria de string JS — ou, muito melhor, não colocar dado ali |
+| URL (parâmetro) | Codificação percentual, com validação do esquema |
+| Dentro de CSS | Codificação própria de CSS — contexto a evitar |
+
+Duas conclusões práticas emergem dessa tabela. A primeira: **a codificação genérica não existe**. Escapar para HTML e colocar o resultado dentro de um bloco de script não protege nada. A segunda, mais útil: **evite os contextos difíceis**. Dado de usuário dentro de JavaScript embutido, dentro de CSS ou dentro de um atributo de evento é uma decisão de arquitetura ruim que se paga em revisão eterna. Passe o dado por um atributo `data-` e leia-o com `textContent`, ou serialize-o como JSON num elemento de tipo apropriado.
+
+Frameworks modernos fazem a codificação por padrão. React, Angular, Vue, Django, Rails, Thymeleaf escapam a interpolação normal — e é por isso que a incidência de XSS caiu tanto. **A falha entra pelas portas de fuga**, que existem em todos eles e têm nomes reconhecíveis:
+
+```bash
+grep -rnE "dangerouslySetInnerHTML|v-html|\|safe|\bmark_safe\b|html_safe|\
+bypassSecurityTrust|\.innerHTML *=|document\.write|\beval\(|new Function\(" src/
+```
+
+Cada ocorrência precisa ser lida. É a varredura de melhor retorno para esta classe de falha, exatamente como a busca por concatenação de SQL é para injeção (@sec-cap044).
+
+## Quando HTML rico é requisito: sanitizar
+
+Editores de texto formatado — comuns em sistemas de chamados, portais de notícias e ferramentas internas — precisam guardar HTML de verdade. Aqui não dá para codificar tudo; é preciso **sanitizar**: analisar o HTML, manter uma lista fechada de elementos e atributos permitidos, e descartar o resto.
+
+Três regras não negociáveis:
+
+**Use biblioteca dedicada e mantida.** Sanitizar HTML com expressão regular é um erro clássico: o analisador do navegador aceita construções malformadas que a expressão não prevê, e é justamente aí que a exploração vive.
+
+**Lista de permissão, nunca de bloqueio.** Elementos e atributos permitidos são enumerados; tudo o que não estiver na lista sai. Bloquear `<script>` é insuficiente — sobram atributos de evento, `javascript:` em `href`, `srcdoc` em `iframe` e uma lista que cresce a cada versão de navegador.
+
+**Sanitize também os atributos de URL.** Um `href` só deve aceitar `http`, `https` e `mailto`. É a lacuna mais comum em sanitizadores configurados à mão.
+
+```javascript
+import DOMPurify from 'dompurify';
+
+const limpo = DOMPurify.sanitize(htmlDoUsuario, {
+  ALLOWED_TAGS: ['b','i','em','strong','p','br','ul','ol','li','a','code','pre'],
+  ALLOWED_ATTR: ['href','title'],
+  ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i
+});
+```
+
+Sanitizar no servidor, no momento de gravar, tem a vantagem de guardar o conteúdo já limpo. Sanitizar no cliente, no momento de exibir, tem a vantagem de acompanhar as peculiaridades do analisador do navegador. Quem pode fazer os dois, faz.
+
+## Política de segurança de conteúdo: a rede de proteção
+
+O cabeçalho `Content-Security-Policy` instrui o navegador sobre quais origens podem fornecer script, estilo, imagem e quadro, e se scripts embutidos podem executar [@csp3]. É a segunda camada: **não corrige o XSS, mas reduz muito o que ele consegue fazer**.
+
+O ponto que decide se a política funciona: uma política que contenha `'unsafe-inline'` em `script-src` não protege contra XSS, porque XSS injeta exatamente script embutido. E `'unsafe-inline'` está em quase toda política real, porque a aplicação tem scripts embutidos legados.
+
+A saída é o **nonce**: um valor aleatório gerado por requisição, colocado no cabeçalho e repetido em cada `<script>` legítimo. O navegador executa apenas os scripts que trazem o valor certo — e o script injetado não tem como adivinhá-lo.
+
+```
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'nonce-{VALOR_ALEATORIO}' 'strict-dynamic';
+  object-src 'none';
+  base-uri 'none';
+  frame-ancestors 'none';
+  require-trusted-types-for 'script'
+```
+
+Vale explicar as diretivas menos óbvias: `'strict-dynamic'` permite que um script já autorizado carregue outros, o que evita ter de listar cada CDN; `object-src 'none'` elimina plugins; `base-uri 'none'` impede que o atacante mude a base de resolução de URLs relativas — um contorno clássico; `frame-ancestors 'none'` bloqueia clickjacking; e `require-trusted-types-for 'script'` ativa o mecanismo de **Trusted Types**, que faz o navegador recusar atribuição de string crua a sorvedouros perigosos como `innerHTML` [@trustedtypes]. Trusted Types é, hoje, o único mecanismo que ataca a forma baseada em DOM na raiz.
+
+A implantação de CSP tem uma ordem que evita quebrar a aplicação: publique primeiro em modo somente-relato (`Content-Security-Policy-Report-Only`), colete as violações por algumas semanas, ajuste, e só então mude para o cabeçalho que bloqueia. É a mesma lógica dos portões do pipeline (@sec-cap042): começar bloqueando produz reversão imediata.
+
+## Os outros ataques do lado do cliente
+
+XSS é o mais grave, não é o único. Vale a passagem por cada um, porque todos têm correção barata:
+
+**Falsificação de requisição entre sítios (CSRF).** O sítio do atacante faz o navegador da vítima enviar uma requisição autenticada à aplicação — o navegador anexa o cookie sozinho. A defesa moderna tem duas camadas: cookie com `SameSite=Lax` ou `Strict`, que impede o envio em requisições vindas de outro sítio, e token anti-CSRF sincronizado para as operações sensíveis. `SameSite=Lax` é padrão nos navegadores atuais, mas contar com o padrão do navegador não é postura defensável — declare explicitamente [@rfc6265].
+
+**Clickjacking.** A aplicação é carregada em um quadro invisível sobre a página do atacante, e o clique da vítima cai no botão errado. Correção: `frame-ancestors 'none'` (ou a lista de origens permitidas) na política de conteúdo.
+
+**Redirecionamento aberto.** Um parâmetro que controla para onde a aplicação redireciona depois do login vira ferramenta de phishing, porque o link começa no domínio legítimo. Correção: lista fechada de destinos, ou aceitar apenas caminhos relativos.
+
+**Sequestro de aba.** Link com `target="_blank"` permite que a página aberta manipule a original. Navegadores atuais já isolam por padrão; declarar `rel="noopener noreferrer"` continua sendo a postura correta.
+
+**Mensagens entre janelas sem verificação.** Um manipulador de `message` que não verifica `event.origin` aceita mensagem de qualquer sítio. É fonte clássica de XSS baseado em DOM.
+
+**CORS permissivo.** `Access-Control-Allow-Origin` refletindo a origem da requisição, combinado com `Allow-Credentials: true`, entrega os dados autenticados da vítima a qualquer sítio. É configuração, não código, e aparece com frequência em APIs internas expostas por engano.
+
+**Cookies mal configurados.** Os quatro atributos que importam: `HttpOnly` (o script não lê), `Secure` (só por TLS), `SameSite` (contra CSRF) e o prefixo `__Host-` (impede que um subdomínio comprometido fixe um cookie no domínio pai).
+
+```
+Set-Cookie: __Host-sessao=<valor>; Path=/; Secure; HttpOnly; SameSite=Lax
+```
+
+::: {#fig-camadas-cliente}
+```{.tikz}
+%%| filename: camadas-cliente
+%%| alt: Camadas de defesa no lado do cliente, da codificação por contexto até Trusted Types, indicando o que cada camada resolve e o que não resolve
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cam/.style={draw, very thick, rounded corners=3pt, align=left, inner sep=5pt,
+                minimum width=12.4cm, minimum height=0.95cm, font=\scriptsize,
+                anchor=west}}
+
+  \node[cam, draw=manualgreen, fill=manualgreen!12] at (0,3.6)
+    {\textbf{1. Codificação por contexto na saída} \tiny --- corrige a falha.
+     Framework escapa por padrão; a falha entra pelas portas de fuga.};
+  \node[cam, draw=manualgreen, fill=manualgreen!10] at (0,2.5)
+    {\textbf{2. Sanitização com lista de permissão} \tiny --- quando HTML rico é
+     requisito. Biblioteca dedicada, nunca expressão regular.};
+  \node[cam, draw=manualyellow, fill=manualyellow!14] at (0,1.4)
+    {\textbf{3. CSP com nonce} \tiny --- não corrige, contém. Inútil se houver
+     \texttt{'unsafe-inline'} em \texttt{script-src}.};
+  \node[cam, draw=manualyellow, fill=manualyellow!12] at (0,0.3)
+    {\textbf{4. Trusted Types} \tiny --- ataca a forma baseada em DOM na raiz:
+     o navegador recusa string crua em sorvedouro perigoso.};
+  \node[cam, draw=manualblue, fill=manualblue!12] at (0,-0.8)
+    {\textbf{5. Atributos de cookie e cabeçalhos} \tiny ---
+     \texttt{HttpOnly}, \texttt{Secure}, \texttt{SameSite}, \texttt{\_\_Host-},
+     \texttt{frame-ancestors}.};
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (6.3,-2.3)
+    {\textbf{O mal-entendido mais caro do tema:} \texttt{HttpOnly} não resolve XSS.
+     Ele impede o script de \emph{ler} o cookie, mas não de \emph{usar} a sessão ---
+     o navegador anexa o cookie sozinho em toda requisição que o próprio script
+     disparar. O atacante não precisa do valor do cookie; precisa de um navegador
+     que já o tenha.};
+\end{tikzpicture}
+```
+Camadas de defesa no cliente. Apenas a primeira corrige; as demais limitam o estrago.
+:::
+
+## Erros que se repetem
+
+- **Achar que `HttpOnly` resolve XSS.** Resolve o roubo do valor do cookie, não o uso da sessão.
+- **Filtrar a entrada em vez de codificar a saída.** O mesmo dado pode ir para cinco contextos diferentes; só na saída se sabe qual é.
+- **Sanitizar com expressão regular**, que não reproduz o analisador do navegador.
+- **CSP com `'unsafe-inline'`** em `script-src`, que anula a proteção contra a coisa exata que se queria conter.
+- **Esquecer a forma baseada em DOM**, porque a ferramenta que analisa respostas HTTP não a enxerga.
+- **Confiar no padrão do navegador** para `SameSite` em vez de declarar o atributo.
+- **CORS refletindo a origem** com credenciais habilitadas, o que equivale a não ter política nenhuma.
+- **Painel administrativo na mesma origem do conteúdo enviado por usuários** — decisão de arquitetura que transforma qualquer XSS armazenado em comprometimento administrativo.
+
+## ⚖️ Brasil em Foco
+
+**XSS armazenado em sistema com dado pessoal é incidente comunicável, e a extensão é difícil de determinar.** Ao contrário da injeção de SQL, cuja exploração deixa rastro no log do banco, o XSS executa no navegador da vítima — as requisições que ele dispara chegam ao servidor **indistinguíveis das legítimas**, porque partem de uma sessão válida. Isso tem consequência direta na comunicação exigida pelo art. 48 da LGPD e pela Resolução ANPD 15/2024: sem registro fino do que cada sessão acessou, a organização não consegue delimitar o que foi exposto, e a comunicação precisa assumir o pior caso. **Registro de acesso a dado sensível por sessão é o que torna essa conta possível** [@lgpd2018; @anpd2024res15].
+
+**Usar XSS para agir em nome de outra pessoa configura mais de um tipo penal.** A execução de código no dispositivo alheio sem autorização atrai o art. 154-A do Código Penal; se a operação resulta em transferência de valores ou obtenção de vantagem, entra o estelionato eletrônico do art. 171, §2º-A, com a pena agravada pela Lei 14.155/2021. E há o agravante do art. 154-A, §3º quando há obtenção de comunicações privadas ou segredos. Vale a mesma advertência dos demais capítulos: o estudo desta classe se faz em laboratório próprio (@sec-cap014) ou sob autorização escrita [@lei12737; @lei14155].
+
+**Portais de governo estão especialmente expostos à forma refletida.** Sistemas públicos de consulta — protocolo, processo, benefício, situação cadastral — costumam exibir o termo buscado na página de resultado, e é exatamente o padrão que produz XSS refletido. Combinado com o fato de que links de gov.br carregam confiança presumida, o vetor de phishing fica muito mais eficaz: **a barra de endereços mostra o domínio legítimo do órgão**. Para o cidadão, não há sinal visual de que algo está errado.
+
+**A padronização visual do gov.br ajuda e atrapalha.** Ajuda porque dá ao cidadão uma referência de aparência confiável. Atrapalha porque um XSS em qualquer portal aderente permite reproduzir a identidade visual oficial com o domínio oficial — a combinação mais convincente possível para uma página falsa de coleta de dados. Órgãos que operam portais de atendimento deveriam tratar XSS como achado de severidade alta por padrão, independentemente do dado que o sistema específico trata.
+
+**Cabeçalhos de segurança são o item de maior retorno em auditoria de aplicação brasileira.** Levantamentos periódicos de portais públicos e privados no Brasil mostram ausência quase universal de política de conteúdo e presença irregular de HSTS. São linhas de configuração no servidor web, sem alteração de código — e é o tipo de correção que cabe em uma janela de manutenção. É também o item mais fácil de verificar por um órgão de controle, o que o torna prioridade prática.
+
+**Setor financeiro tem exigência direta.** O PCI-DSS v4 trata explicitamente de XSS e de falhas de controle de acesso no Requisito 6, e o open finance brasileiro, com sua cadeia de redirecionamentos entre instituições, é particularmente sensível a redirecionamento aberto e a clickjacking — os fluxos de consentimento acontecem justamente em janelas que passam de um domínio a outro [@pcidss4; @bcbopenfinance].
+
+## 🛠️ No Campo
+
+**1. Varra as portas de fuga do framework.** É a ação de maior retorno da lista:
+
+```bash
+grep -rnE "dangerouslySetInnerHTML|v-html|\|safe|mark_safe|html_safe|\
+bypassSecurityTrust|\.innerHTML *=|outerHTML *=|document\.write|\
+\beval\(|new Function\(|setTimeout\( *['\"]" src/
+```
+
+Cada ocorrência é lida uma vez e recebe um comentário justificando, ou é corrigida. Onde o alvo é texto puro, `textContent` resolve e é mais rápido.
+
+**2. Meça a situação dos cabeçalhos antes de discutir prioridade:**
+
+```bash
+curl -sI https://portal.exemplo.gov.br | grep -iE \
+  'content-security-policy|strict-transport|x-content-type|x-frame|referrer-policy|permissions-policy'
+```
+
+**3. Publique a CSP em modo de relato primeiro.** Duas a quatro semanas coletando violações, ajustando, e só então bloqueando:
+
+```
+Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self'; report-uri /csp-report
+```
+
+**4. Elimine `'unsafe-inline'` com nonce.** Gere um valor aleatório por requisição, propague para o template, e exija-o em cada script:
+
+```nginx
+# nginx
+set $cspnonce $request_id;
+add_header Content-Security-Policy
+  "default-src 'self'; script-src 'nonce-$cspnonce' 'strict-dynamic'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" always;
+```
+
+**5. Configure os cookies dos quatro jeitos, sempre.** `HttpOnly`, `Secure`, `SameSite` e prefixo `__Host-` quando o cookie não precisar valer para subdomínios.
+
+**6. Separe a origem do painel administrativo da origem do conteúdo de usuários.** É a decisão de arquitetura que impede que um XSS armazenado no portal público vire comprometimento administrativo. Domínio distinto, cookie distinto, sessão distinta.
+
+**7. Sanitize com biblioteca, com lista de permissão e com filtro de esquema de URL.** E aplique tanto na gravação quanto na exibição, se a arquitetura permitir.
+
+**8. Verifique cada manipulador de `message`:**
+
+```javascript
+window.addEventListener('message', (e) => {
+  if (e.origin !== 'https://parceiro.exemplo.com.br') return;   // sem isto, é XSS
+  // ...
+});
+```
+
+**9. Revise a política de CORS procurando reflexo de origem.** Se o valor de `Access-Control-Allow-Origin` acompanha o cabeçalho `Origin` enviado, e `Allow-Credentials` está ligado, a política é inexistente:
+
+```bash
+curl -sI -H "Origin: https://atacante.example" https://api.exemplo.com.br/v1/dados \
+  | grep -i 'access-control'
+```
+
+**10. Feche os redirecionamentos.** Todo parâmetro que controla destino aceita apenas caminho relativo, ou um valor de uma lista fechada. Vale para o retorno pós-login, que é onde quase sempre está.
+
+**11. Adote Trusted Types nas aplicações novas.** É trabalhoso em base legada, mas em aplicação nova custa pouco e elimina a categoria baseada em DOM por construção.
+
+**12. Adicione teste de regressão com o payload didático.** Para cada campo que aceita texto livre e é exibido em outro lugar, um teste automatizado grava `<script>alert(1)</script>` e verifica que a saída aparece escapada. É barato e impede o retorno da falha.
+
+## Resumo
+
+- XSS executa **dentro da origem da aplicação**, com todos os privilégios do usuário logado. Não contorna a política de mesma origem: opera de dentro dela.
+- **`HttpOnly` não resolve XSS.** Impede a leitura do cookie, não o uso da sessão — o navegador anexa o cookie sozinho às requisições que o próprio script injetado disparar.
+- Três formas: **refletida** (exige link e engenharia social), **armazenada** (dispensa clique e costuma atingir quem tem mais privilégio) e **baseada em DOM** (o servidor pode estar impecável; o caminho vai de uma fonte a um sorvedouro dentro do navegador).
+- A correção é **codificar na saída, conforme o contexto** — não existe codificação genérica, e escapar para HTML dentro de um bloco de script não protege nada. Frameworks escapam por padrão; a falha entra pelas portas de fuga, que têm nomes conhecidos e são varredoras.
+- Quando HTML rico é requisito, **sanitizar com biblioteca dedicada, lista de permissão e filtro de esquema de URL** — nunca com expressão regular.
+- **CSP não corrige, contém** — e é inútil com `'unsafe-inline'` em `script-src`. A saída é o nonce por requisição, implantado primeiro em modo de relato. **Trusted Types** é hoje o único mecanismo que ataca a forma baseada em DOM na raiz.
+- Ao redor do XSS orbitam CSRF (`SameSite` mais token), clickjacking (`frame-ancestors`), redirecionamento aberto, `postMessage` sem verificação de origem e CORS refletindo a origem com credenciais — todos com correção barata e todos frequentes.
+- No Brasil, XSS explorado é difícil de dimensionar em uma comunicação de incidente, porque as requisições partem de sessão legítima; portais públicos são especialmente expostos à forma refletida, com o agravante de que a barra de endereços exibe o domínio oficial do órgão.

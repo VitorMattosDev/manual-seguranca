@@ -75,7 +75,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 042** - Ciclo de desenvolvimento seguro e DevSecOps - `vol07/cap042-ciclo-de-desenvolvimento-seguro-e-devsecops.qmd`
 - [x] **cap 043** - OWASP Top 10: panorama e como usar - `vol07/cap043-owasp-top-10-panorama-e-como-usar.qmd`
 - [x] **cap 044** - Injeção: SQL, NoSQL e comandos de sistema - `vol07/cap044-injecao-sql-nosql-e-comandos-de-sistema.qmd`
-- [ ] **cap 045** - Cross-site scripting e ataques no lado do cliente - `vol07/cap045-cross-site-scripting-e-ataques-no-lado-do.qmd`
+- [x] **cap 045** - Cross-site scripting e ataques no lado do cliente - `vol07/cap045-cross-site-scripting-e-ataques-no-lado-do.qmd`
 - [ ] **cap 046** - Falhas de autenticação e gestão de sessão - `vol07/cap046-falhas-de-autenticacao-e-gestao-de-sessao.qmd`
 - [ ] **cap 047** - Falhas de controle de acesso: IDOR, SSRF e escalonamento - `vol07/cap047-falhas-de-controle-de-acesso-idor-ssrf-e.qmd`
 - [ ] **cap 048** - Segurança de APIs REST e GraphQL - `vol07/cap048-seguranca-de-apis-rest-e-graphql.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (44 concluidos).
+**Total:** 107 capitulos em 16 volumes (45 concluidos).
 
