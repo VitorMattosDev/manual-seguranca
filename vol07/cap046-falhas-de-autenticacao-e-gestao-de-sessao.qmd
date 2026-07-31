@@ -1,3 +1,251 @@
 # Falhas de autenticação e gestão de sessão {#sec-cap046}
 
-*(em elaboracao)*
+Uma fintech regional descobre, num sábado, que trinta e sete contas foram esvaziadas durante a madrugada. O padrão é idêntico em todas: pedido de recuperação de senha, código de seis dígitos enviado por SMS, acesso bem-sucedido, cadastro de nova chave Pix, transferência.
+
+A investigação encontra três defeitos, todos no mesmo fluxo. O código de seis dígitos não expirava — o primeiro gerado continuava válido horas depois. Não havia limite de tentativas na verificação, o que permitia percorrer o espaço de um milhão de combinações em minutos. E, ao concluir a troca de senha, o sistema não encerrava as sessões existentes nem avisava o titular por outro canal.
+
+Nenhum desses defeitos é sofisticado. Nenhum aparece em varredura automatizada de vulnerabilidades. Todos os três estão no fluxo que a maioria das equipes escreve por último, testa menos e revisa nunca — porque "recuperação de senha" parece funcionalidade de conveniência, e não o portão de entrada que ela realmente é.
+
+O Volume 4 tratou dos fundamentos: como se armazena senha (@sec-cap023), como funcionam os fatores de autenticação (@sec-cap024), como se federa identidade (@sec-cap025). Este capítulo trata do que acontece quando esses fundamentos encontram uma aplicação real — onde a autenticação quebra no fluxo, e onde a sessão quebra no ciclo de vida.
+
+## Onde a autenticação quebra na prática
+
+**Enumeração de usuários.** A aplicação responde "usuário não encontrado" e "senha incorreta" de formas distintas, permitindo descobrir quais contas existem antes de tentar qualquer senha. A diferença nem sempre está no texto: pode estar no código de status, no tempo de resposta ou no comportamento do cadastro ("este e-mail já está em uso"). Eliminar a enumeração por completo é difícil, porque o cadastro precisa dizer alguma coisa a quem já tem conta; o objetivo realista é não facilitá-la, e a mensagem uniforme no login é o mínimo.
+
+**Ausência de limite de tentativas.** Sem limite, qualquer senha cai. O bloqueio por conta, porém, cria um problema próprio: quem conhece os nomes de usuário consegue travar toda a organização de fora. A configuração equilibrada combina limite por conta com desbloqueio temporal, limite por origem, atraso progressivo a cada falha e desafio adicional após poucas tentativas — e, principalmente, **limite também sobre o fluxo de recuperação e sobre a verificação de segundo fator**, que é onde ele quase sempre falta.
+
+**Reuso de credenciais vazadas.** Não é ataque de força bruta: é o uso de pares de e-mail e senha que já vazaram em outros serviços, testados um por conta. Cada tentativa é uma tentativa correta com credencial válida em outro lugar, e por isso passa por qualquer limite pensado para força bruta. As defesas que funcionam são o segundo fator, a verificação da senha escolhida contra listas públicas de senhas comprometidas no momento do cadastro, e a detecção de padrão — muitas contas distintas, um acerto a cada cem tentativas, mesma faixa de origem.
+
+**Segundo fator mal encaixado.** O fator existe, mas o fluxo tem brecha: o endpoint que confirma o código não verifica se a etapa anterior foi cumprida; o código não expira; o mesmo código serve para várias tentativas; a "confiança neste dispositivo" dura para sempre; ou existe um caminho alternativo — um aplicativo antigo, uma API legada — que autentica sem o fator. **A brecha quase nunca está no algoritmo do código; está na máquina de estados do fluxo.**
+
+**Credenciais em lugares errados.** Senha em log de aplicação, token em URL (que vai para o histórico do navegador, para o log do servidor e para o cabeçalho de referência), credencial em código-fonte, senha de serviço compartilhada entre pessoas. São achados triviais e recorrentes.
+
+## O identificador de sessão e seu ciclo de vida
+
+Depois que a autenticação passa, tudo o que separa o usuário de um estranho é o identificador de sessão. Ele precisa de três propriedades:
+
+**Entropia suficiente e origem criptográfica.** Gerado por gerador de números aleatórios adequado, com pelo menos 128 bits. Identificador sequencial, derivado de tempo ou de identificador de usuário é falha grave e ainda aparece em sistema legado.
+
+**Opacidade.** O identificador não carrega informação. Quem o obtém não deve conseguir deduzir nada sobre o usuário ou sobre a validade.
+
+**Ciclo de vida definido**, que é onde mora a maioria das falhas:
+
+**Renovação no login.** No instante em que a autenticação é bem-sucedida, a aplicação **descarta o identificador anterior e emite um novo**. Sem isso, existe a **fixação de sessão**: o atacante obtém um identificador válido antes do login (visitando a aplicação), induz a vítima a usá-lo (por um link com o identificador, ou fixando-o por um subdomínio comprometido), e quando a vítima se autentica, aquele mesmo identificador — que o atacante já tem — passa a valer como sessão autenticada. É uma falha antiga, de correção de uma linha, e ainda presente.
+
+**Expiração por inatividade e expiração absoluta.** A primeira encerra a sessão parada; a segunda impõe um teto de duração independentemente de atividade. Sem a absoluta, uma sessão sequestrada dura enquanto o atacante a mantiver ativa — indefinidamente.
+
+**Encerramento no servidor.** Sair da aplicação precisa **invalidar a sessão no servidor**, não apenas apagar o cookie do navegador. Apagar o cookie no cliente e manter o registro válido no servidor significa que quem copiou o identificador antes continua dentro. É outro defeito de uma linha, com consequência desproporcional.
+
+**Renovação de privilégio.** Ao entrar em área sensível — alterar dados bancários, trocar e-mail, mudar o segundo fator —, exigir a senha novamente. Isso limita o estrago de uma sessão sequestrada e é o controle que teria contido o caso de abertura.
+
+::: {#fig-ciclo-sessao}
+```{.tikz}
+%%| filename: ciclo-sessao
+%%| alt: Ciclo de vida da sessão com os pontos de falha em cada transição, do login à expiração
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    st/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=3pt,
+               minimum width=2.4cm, minimum height=0.95cm, font=\scriptsize},
+    fl/.style={draw, thick, rounded corners=2pt, align=center, inner sep=3pt,
+               minimum width=2.6cm, minimum height=1.35cm, font=\tiny, fill=white}}
+
+  \node[st, draw=manualgray,  fill=manualgray!12]  (s1) at (0,0)    {anônima};
+  \node[st, draw=manualblue,  fill=manualblue!12]  (s2) at (3.2,0)  {\textbf{autenticada}};
+  \node[st, draw=manualgreen, fill=manualgreen!12] (s3) at (6.4,0)  {reautenticada\\\tiny área sensível};
+  \node[st, draw=manualyellow,fill=manualyellow!16](s4) at (9.6,0)  {expirada};
+  \node[st, draw=manualred,   fill=manualred!12]   (s5) at (12.8,0) {encerrada};
+
+  \draw[->, >=stealth, thick, manualgray] (s1) -- node[above, font=\tiny] {login} (s2);
+  \draw[->, >=stealth, thick, manualgray] (s2) -- node[above, font=\tiny] {senha de novo} (s3);
+  \draw[->, >=stealth, thick, manualgray] (s3) -- node[above, font=\tiny] {inatividade} (s4);
+  \draw[->, >=stealth, thick, manualgray] (s4) -- node[above, font=\tiny] {saída} (s5);
+
+  \node[fl, draw=manualred] at (1.6,-1.9)  {\textbf{FIXAÇÃO}\\[2pt]não emitiu novo\\identificador\\no login};
+  \node[fl, draw=manualred] at (4.8,-1.9)  {\textbf{SEQUESTRO}\\[2pt]sem teto de\\duração absoluta,\\dura para sempre};
+  \node[fl, draw=manualred] at (8.0,-1.9)  {\textbf{SEM RENOVAÇÃO}\\[2pt]sessão roubada\\troca a senha\\e a chave Pix};
+  \node[fl, draw=manualred] at (11.2,-1.9) {\textbf{SAÍDA FALSA}\\[2pt]apagou o cookie\\mas não invalidou\\no servidor};
+
+  \foreach \x/\y in {1.6/s2, 4.8/s2, 8.0/s3, 11.2/s5} {
+    \draw[->, >=stealth, thick, manualred, dashed] (\x,-1.2) -- (\x,-0.5);}
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.8cm] at (6.4,-3.6)
+    {\textbf{Quatro defeitos, quatro linhas de código.} Emitir novo identificador no
+     login, impor teto absoluto de duração, exigir senha de novo antes de operação
+     sensível e invalidar no servidor ao sair. Nenhum deles aparece em varredura
+     automatizada, e os quatro são triviais de corrigir --- desde que alguém
+     tenha decidido que eles existem.};
+\end{tikzpicture}
+```
+Ciclo de vida da sessão e os quatro pontos onde ele quebra com mais frequência.
+:::
+
+## Cookie de sessão ou token autocontido?
+
+Duas arquiteturas disputam o espaço, e a escolha entre elas costuma ser feita por moda em vez de por análise.
+
+**Sessão no servidor, referenciada por cookie.** O identificador é opaco; o estado fica do lado do servidor. Revogar é imediato: apaga-se o registro. Encerrar todas as sessões de um usuário é uma operação de banco. O custo é manter esse estado — o que, com um armazenamento de chave e valor, é bem menos problema do que costuma se supor.
+
+**Token autocontido assinado (JWT).** O token carrega as afirmações e a assinatura; o servidor valida sem consultar estado. Escala bem entre serviços e é natural em arquiteturas distribuídas. **O custo é a revogação: um token válido continua válido até expirar**, mesmo que o usuário tenha sido demitido, tenha trocado a senha ou tenha sofrido sequestro de conta. Contornos existem — expiração curta com token de renovação, lista de revogação —, mas note que uma lista de revogação consultada a cada requisição reintroduz o estado que se queria eliminar.
+
+O critério honesto: **para sessão de usuário em aplicação web, o cookie de sessão do lado do servidor costuma ser a escolha certa**, porque revogação imediata importa. JWT brilha na comunicação entre serviços e em federação, onde a expiração curta é aceitável e o emissor é distinto do consumidor.
+
+Quem usa JWT precisa acertar uma lista específica de itens, e cada um deles já causou incidente público:
+
+- **Fixar o algoritmo esperado na validação.** Nunca aceitar o algoritmo declarado no cabeçalho do próprio token. Daí vêm os ataques clássicos de `alg: none` e de confusão entre algoritmo assimétrico e simétrico, em que a chave pública é usada como segredo de HMAC.
+- **Validar emissor, destinatário e expiração** — `iss`, `aud`, `exp`. Um token válido emitido para outro serviço não pode ser aceito neste.
+- **Segredo forte para HMAC.** Segredo curto é quebrável fora da máquina, com o token em mãos.
+- **Expiração curta**, com renovação por token de renovação que pode ser revogado e que é rotacionado a cada uso.
+- **Nada de dado sensível no corpo**, que é apenas codificado, não cifrado — qualquer pessoa lê.
+
+E, do lado do armazenamento no navegador: **token de sessão em `localStorage` é legível por qualquer script**, o que significa que um XSS o entrega diretamente (@sec-cap045). Cookie com `HttpOnly`, `Secure` e `SameSite` é a opção defensável. O argumento comum a favor do `localStorage` — "evita CSRF" — não se sustenta hoje, porque `SameSite` mais token anti-CSRF resolve CSRF sem abrir mão da proteção contra leitura por script.
+
+## Recuperação de conta: o elo mais fraco
+
+Vale enunciar o princípio com clareza: **o fluxo de recuperação é um caminho alternativo de autenticação, e a segurança da conta é a do caminho mais fraco.** Segundo fator obrigatório no login não vale nada se a recuperação por e-mail contorna tudo.
+
+Os requisitos de um fluxo defensável:
+
+- **Token de uso único, aleatório, com validade curta** (dez a trinta minutos), invalidado no primeiro uso e invalidado também quando um novo é gerado.
+- **Limite de tentativas na verificação.** É onde o caso de abertura caiu: um milhão de combinações é nada sem limite.
+- **Resposta uniforme.** "Se este endereço estiver cadastrado, enviaremos as instruções" — sempre, e com o mesmo tempo de resposta, para não transformar a recuperação em oráculo de enumeração.
+- **Encerrar todas as sessões ativas** ao concluir a troca de senha. Se a conta estava comprometida, é isso que expulsa o invasor.
+- **Notificar por canal independente**, informando o que mudou, quando e de onde, com orientação de contato imediato se não foi o titular. É o controle que mais reduz o tempo de detecção, e custa um e-mail.
+- **Não usar perguntas secretas.** A resposta costuma ser pública, ou está na rede social do titular, ou foi esquecida. É desenho inseguro no sentido exato da categoria A04 do @sec-cap043.
+- **Cuidado com SMS.** Serve como fator, mas é o mais fraco: sujeito a troca fraudulenta de chip e a interceptação. Para operações financeiras, aplicativo autenticador ou chave de segurança são superiores por uma margem grande (@sec-cap024).
+
+E os **fluxos de alto risco** — troca de e-mail, troca de telefone, cadastro de nova chave de pagamento, desativação do segundo fator — merecem tratamento próprio: reautenticação, notificação ao canal **antigo** (o novo pode ser do atacante), e, quando o risco justifica, período de carência antes de a mudança valer.
+
+::: {#fig-recuperacao-conta}
+```{.tikz}
+%%| filename: recuperacao-conta
+%%| alt: Comparação entre um fluxo de recuperação de conta com os defeitos comuns e um fluxo com os controles corretos
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    pa/.style={draw, thick, rounded corners=2pt, align=left, inner sep=4pt,
+               minimum width=5.9cm, minimum height=0.58cm, font=\tiny,
+               anchor=west, fill=white}}
+
+  \node[draw=manualred, very thick, rounded corners=4pt, fill=manualred!8,
+        minimum width=6.5cm, minimum height=4.5cm, anchor=north west] at (0,4.3) {};
+  \node[font=\scriptsize, manualred, anchor=north west] at (0.15,4.15)
+    {\textbf{O FLUXO DO INCIDENTE}};
+
+  \node[pa, draw=manualred] at (0.3,3.4)  {código de 6 dígitos por SMS};
+  \node[pa, draw=manualred] at (0.3,2.7)  {sem expiração --- vale horas depois};
+  \node[pa, draw=manualred] at (0.3,2.0)  {sem limite de tentativas na verificação};
+  \node[pa, draw=manualred] at (0.3,1.3)  {sessões antigas continuam válidas};
+  \node[pa, draw=manualred] at (0.3,0.6)  {nenhuma notificação ao titular};
+  \node[pa, draw=manualred] at (0.3,-0.1) {nova chave Pix sem reautenticação};
+
+  \node[draw=manualgreen, very thick, rounded corners=4pt, fill=manualgreen!8,
+        minimum width=6.5cm, minimum height=4.5cm, anchor=north west] at (7.3,4.3) {};
+  \node[font=\scriptsize, manualgreen, anchor=north west] at (7.45,4.15)
+    {\textbf{O FLUXO DEFENSÁVEL}};
+
+  \node[pa, draw=manualgreen] at (7.6,3.4)  {token aleatório, uso único, 15 min};
+  \node[pa, draw=manualgreen] at (7.6,2.7)  {limite por conta \emph{e} por origem};
+  \node[pa, draw=manualgreen] at (7.6,2.0)  {resposta uniforme --- não enumera};
+  \node[pa, draw=manualgreen] at (7.6,1.3)  {encerra todas as sessões ativas};
+  \node[pa, draw=manualgreen] at (7.6,0.6)  {notifica por canal independente};
+  \node[pa, draw=manualgreen] at (7.6,-0.1) {operação sensível exige senha de novo};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=13.0cm] at (6.9,-1.4)
+    {\textbf{A regra que resume o quadro:} o fluxo de recuperação é um caminho
+     alternativo de autenticação, e a segurança da conta é a do caminho mais fraco.
+     Segundo fator obrigatório no login não vale nada se a recuperação por e-mail
+     contorna tudo.};
+\end{tikzpicture}
+```
+O mesmo fluxo, com e sem os seis controles. Nenhum deles é caro; todos costumam faltar juntos.
+:::
+
+## Erros que se repetem
+
+- **Não emitir novo identificador de sessão no login**, deixando a fixação em aberto.
+- **Saída que só apaga o cookie** e mantém a sessão válida no servidor.
+- **Limite de tentativas apenas no login**, faltando na verificação de segundo fator e na recuperação.
+- **Token de sessão em `localStorage`**, entregue de graça por qualquer XSS.
+- **JWT com o algoritmo lido do próprio token**, ou sem validação de destinatário e expiração.
+- **Perguntas secretas** como caminho de recuperação.
+- **Troca de e-mail sem notificar o endereço antigo** — o novo é do atacante.
+- **Sessão sem teto absoluto de duração**, o que faz um sequestro durar meses.
+- **Token de recuperação em URL** que vaza pelo cabeçalho de referência ao clicar em qualquer link externo da página de destino.
+
+## ⚖️ Brasil em Foco
+
+**A tomada de conta é hoje o principal vetor de fraude financeira no país, e o Pix mudou a economia do ataque.** Antes, comprometer uma conta bancária exigia um caminho de saque com atrito e rastro. Com liquidação instantânea e irrevogável, a janela entre o acesso indevido e o dinheiro fora da conta é de minutos. Isso desloca o peso do controle para **antes** da transação: cadastro de nova chave, cadastro de novo dispositivo e alteração de limite passam a ser os eventos que exigem reautenticação, notificação e, quando cabível, carência. O Banco Central estabeleceu mecanismos de contenção — como o mecanismo especial de devolução — mas eles operam depois do fato; o controle na aplicação é o que evita o fato [@bcb4893].
+
+**A troca fraudulenta de chip torna o SMS um fator fraco no contexto brasileiro.** O golpe é conhecido: com dados pessoais obtidos em vazamentos, o fraudador solicita a portabilidade ou a segunda via do chip e passa a receber os códigos da vítima. A Anatel e as operadoras adotaram medidas de mitigação, mas o vetor persiste. Para aplicação que movimenta dinheiro ou trata dado sensível, **SMS não deve ser o único segundo fator**, e a troca de número cadastrado deve exigir muito mais do que um código enviado ao número novo [@anatel680].
+
+**A Lei 14.155/2021 endureceu a resposta penal e mudou a competência.** O estelionato praticado por meio eletrônico ganhou tipo qualificado com pena maior, e a lei fixou que a competência se define pelo domicílio da vítima — o que facilitou muito o registro de ocorrência em fraude praticada à distância. Para a organização, a consequência prática é que **o log da aplicação vira prova**: horário, origem, dispositivo, sequência de operações. Sem registro adequado do fluxo de autenticação, a investigação para no primeiro passo [@lei14155].
+
+**A guarda de registros tem prazo definido.** O Marco Civil da Internet obriga provedores de aplicação a guardar registros de acesso a aplicações por seis meses, e provedores de conexão por um ano. Para quem opera aplicação, esse é o piso; para investigação de fraude e para defesa da própria organização, guardar o registro de eventos de autenticação por período maior costuma ser justificável — sempre com base legal, finalidade declarada e prazo definido, porque registro é dado pessoal e sua retenção precisa de fundamento sob a LGPD [@marcocivil2014; @lgpd2018].
+
+**O gov.br estabeleceu uma escala de confiança que serve de referência.** Os selos de confiabilidade — bronze, prata e ouro — associam níveis de garantia de identidade a formas distintas de comprovação, e serviços públicos exigem o selo compatível com o risco do ato. É um modelo útil para o setor privado copiar: **nem toda operação exige o mesmo nível de certeza sobre quem está do outro lado**, e escalonar a exigência conforme a criticidade da operação é mais eficaz — e menos irritante — do que exigir o máximo o tempo todo [@govbr2024].
+
+**Vazamentos anteriores alimentam o reuso de credenciais.** O Brasil acumulou exposições de grande escala envolvendo CPF, nome, data de nascimento e endereço. Isso tem duas consequências para o desenho da autenticação: **dado cadastral não serve como fator de autenticação** — CPF, nome da mãe e data de nascimento estão em circulação —, e a verificação da senha escolhida contra listas de senhas comprometidas deixa de ser refinamento e vira controle básico [@lgpd2018].
+
+## 🛠️ No Campo
+
+**1. Percorra o fluxo inteiro com o inspetor de rede aberto.** Login, erro de senha, erro de usuário, segundo fator, recuperação, troca de senha, saída. Anote o que muda entre o caso de usuário existente e inexistente — texto, código de status e tempo de resposta.
+
+**2. Confirme que o identificador de sessão muda no login.** É o teste de trinta segundos que fecha a fixação de sessão:
+
+```bash
+curl -s -c antes.txt https://app.exemplo.com.br/login | grep -o 'csrf[^"]*'
+curl -s -b antes.txt -c depois.txt -d 'usuario=teste&senha=...' \
+     https://app.exemplo.com.br/login
+diff <(grep -i sessao antes.txt) <(grep -i sessao depois.txt)
+```
+
+Se o valor for o mesmo, há fixação de sessão.
+
+**3. Confirme que a saída invalida no servidor.** Guarde o cookie, saia pela interface, e refaça uma requisição autenticada com o cookie guardado. Se responder 200, a saída é decorativa.
+
+**4. Ponha limite de tentativas nos três lugares** — login, verificação de segundo fator e recuperação —, combinando conta e origem, com atraso progressivo:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+
+location /login {
+    limit_req zone=login burst=5 nodelay;
+    limit_req_status 429;
+}
+```
+
+Limite na borda é complemento; o limite por conta precisa estar na aplicação, porque o atacante distribui a origem.
+
+**5. Defina os dois tempos de expiração.** Inatividade em torno de 30 minutos para aplicação sensível, e teto absoluto de 8 a 12 horas. Sessão "eterna" só em aplicação de baixo risco, e com renovação exigida para qualquer operação relevante.
+
+**6. Exija reautenticação nos fluxos de alto risco.** Troca de e-mail, de telefone, de senha, de segundo fator, cadastro de chave de pagamento e alteração de limite. É o controle único que teria contido o incidente de abertura.
+
+**7. Notifique por canal independente, e ao endereço antigo.** Toda alteração de credencial ou de canal de contato gera aviso ao contato **anterior**, com o que mudou, quando, de onde e como contestar.
+
+**8. Verifique a senha escolhida contra listas de senhas comprometidas** no cadastro e na troca. Existem bibliotecas que fazem isso sem enviar a senha, usando busca por prefixo de resumo.
+
+**9. Migre token de sessão de `localStorage` para cookie** com `HttpOnly`, `Secure` e `SameSite`. Se a arquitetura exige token no cabeçalho, mantenha-o em memória e renove-o por cookie de renovação — nunca em armazenamento persistente legível por script.
+
+**10. Audite a validação de JWT no código.** Procure o ponto de verificação e confirme que o algoritmo é fixo e que emissor, destinatário e expiração são verificados:
+
+```bash
+grep -rnE "jwt\.(decode|verify)|verify_signature|algorithms *=|require_(aud|iss|exp)" src/
+```
+
+`verify=False`, `algorithms` ausente ou lista incluindo `none` são achados críticos.
+
+**11. Elimine token em URL.** Recuperação de senha, confirmação de e-mail e links de acesso devem entregar o token por corpo de requisição ou por caminho que a aplicação consome e descarta imediatamente. Token em consulta de URL vaza por histórico, por log de servidor e por cabeçalho de referência.
+
+**12. Registre e monitore os eventos certos.** Sucesso e falha de autenticação, uso de segundo fator, alteração de credencial, criação de sessão, sessão simultânea de origens distantes, e recuperação de senha concluída. Uma regra útil de detecção: **várias falhas seguidas de sucesso**, especialmente com mudança de país entre uma e outra (@sec-cap031).
+
+## Resumo
+
+- As falhas de autenticação em aplicações reais raramente estão no algoritmo: estão no **fluxo** — enumeração de usuários, limite de tentativas ausente onde mais importa, segundo fator com brecha na máquina de estados, e recuperação de conta tratada como conveniência.
+- **Reuso de credenciais vazadas não é força bruta** e não é contido por limite pensado para força bruta. Segundo fator, verificação contra listas de senhas comprometidas e detecção de padrão são as defesas efetivas.
+- O identificador de sessão precisa de **entropia criptográfica, opacidade e ciclo de vida definido**. Quatro defeitos de uma linha cada concentram a maioria dos incidentes: não renovar no login (fixação), não ter teto absoluto de duração, não exigir reautenticação em área sensível e não invalidar no servidor ao sair.
+- Entre cookie de sessão e token autocontido, o critério honesto é a **revogação**: para sessão de usuário em aplicação web, o estado do lado do servidor costuma vencer; JWT brilha entre serviços e em federação, onde expiração curta é aceitável.
+- Quem usa JWT precisa **fixar o algoritmo na validação**, verificar emissor, destinatário e expiração, usar segredo forte e não guardar dado sensível no corpo — que é codificado, não cifrado.
+- **Token de sessão em `localStorage` é entregue por qualquer XSS.** Cookie com `HttpOnly`, `Secure` e `SameSite` é a opção defensável, e o argumento do CSRF já não sustenta a alternativa.
+- **O fluxo de recuperação é um caminho alternativo de autenticação, e a conta vale o que vale o caminho mais fraco**: token de uso único e curto, limite de tentativas, resposta uniforme, encerramento das sessões ativas e notificação por canal independente.
+- No Brasil, a liquidação instantânea do Pix reduziu a minutos a janela entre acesso indevido e prejuízo, o que desloca o controle para os eventos anteriores à transação; a troca fraudulenta de chip enfraquece o SMS como fator único; e dado cadastral vazado — CPF, nome da mãe, data de nascimento — não serve mais como fator de autenticação.
