@@ -68,7 +68,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 038** - Antivírus, EDR e XDR - `vol06/cap038-antivirus-edr-e-xdr.qmd`
 - [x] **cap 039** - Gestão de vulnerabilidades e ciclo de patches - `vol06/cap039-gestao-de-vulnerabilidades-e-ciclo-de-patches.qmd`
 - [x] **cap 040** - Segurança de dispositivos móveis e BYOD - `vol06/cap040-seguranca-de-dispositivos-moveis-e-byod.qmd`
-- [ ] **cap 041** - Criptografia de disco e proteção de dados em repouso - `vol06/cap041-criptografia-de-disco-e-protecao-de-dados-em.qmd`
+- [x] **cap 041** - Criptografia de disco e proteção de dados em repouso - `vol06/cap041-criptografia-de-disco-e-protecao-de-dados-em.qmd`
 
 ### Volume 7 — Segurança de Aplicações
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (40 concluidos).
+**Total:** 107 capitulos em 16 volumes (41 concluidos).
 

@@ -1,3 +1,271 @@
 # Criptografia de disco e proteção de dados em repouso {#sec-cap041}
 
-*(em elaboracao)*
+Uma prefeitura do interior troca vinte computadores. Os antigos vão para leilão de bens inservíveis, como manda o procedimento administrativo. Ninguém apaga nada, porque "os computadores estão velhos e não ligam direito". Seis meses depois, um comprador publica nas redes sociais o conteúdo de um dos discos: fichas funcionais, laudos médicos de servidores, dados de beneficiários de programas sociais. Os discos estavam intactos; só as máquinas é que estavam ruins.
+
+O mesmo cenário se repete com o notebook furtado do carro, o servidor devolvido ao fornecedor em garantia, o backup em disco externo esquecido numa gaveta e o disco de máquina virtual copiado de um ambiente de nuvem mal configurado. Em todos, o controle que teria evitado o vazamento é o mesmo, e é barato: **dado em repouso cifrado, com a chave fora do alcance de quem obtém o meio físico**.
+
+Este capítulo é sobre o que essa frase exige na prática — e sobre a pergunta que decide tudo, que não é "qual algoritmo?", mas **"onde está a chave e quem consegue chegar até ela?"**.
+
+## O modelo de ameaça: contra o que isso protege
+
+Criptografia de disco tem um escopo específico, e confundi-lo produz falsa sensação de segurança. Ela protege contra o **acesso ao meio de armazenamento fora do controle do sistema operacional em execução**:
+
+- Notebook furtado, extraviado ou apreendido.
+- Disco descartado, vendido, doado ou devolvido em garantia.
+- Servidor retirado do rack, ou disco substituído por defeito.
+- Cópia bruta do volume feita a partir do hipervisor ou do provedor de nuvem.
+- Backup em mídia removível que sai do prédio.
+
+Ela **não protege**, e é essencial ser claro sobre isso:
+
+- Contra quem já está autenticado na máquina ligada. Com o volume montado, o sistema decifra tudo transparentemente — o atacante que obteve acesso remoto vê arquivos em claro, sempre.
+- Contra malware em execução, pela mesma razão.
+- Contra o administrador do sistema, do hipervisor ou do provedor, dependendo de onde a chave é gerenciada.
+- Contra vazamento por aplicação — uma consulta que exporta dados de um banco cifrado devolve os dados em claro.
+
+A frase que resume: **criptografia de disco protege o dado quando a máquina está desligada**. Do momento em que o sistema inicia e destrava o volume até o desligamento, quem protege é tudo o mais deste volume — hardening (@sec-cap036 e @sec-cap037), controle de acesso (@sec-cap022), detecção (@sec-cap038).
+
+::: {#fig-escopo-cripto-repouso}
+```{.tikz}
+%%| filename: escopo-cripto-repouso
+%%| alt: Escopo de proteção da criptografia de disco, mostrando quais ameaças ela cobre com a máquina desligada e quais permanecem descobertas com a máquina ligada e o volume destravado
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    it/.style={draw, thick, rounded corners=2pt, align=left, inner sep=4pt,
+               minimum width=5.3cm, minimum height=0.62cm, font=\tiny, anchor=west}}
+
+  \node[draw=manualgreen, very thick, rounded corners=4pt, fill=manualgreen!8,
+        minimum width=6.0cm, minimum height=4.1cm, anchor=north west] (bp) at (0,3.6) {};
+  \node[font=\scriptsize, manualgreen, anchor=north west, align=left] at (0.15,3.45)
+    {\textbf{PROTEGE}\\\tiny máquina desligada, volume travado};
+
+  \node[it, draw=manualgreen, fill=white] at (0.25,2.55) {notebook furtado ou extraviado};
+  \node[it, draw=manualgreen, fill=white] at (0.25,1.85) {disco descartado, vendido, doado};
+  \node[it, draw=manualgreen, fill=white] at (0.25,1.15) {devolução em garantia};
+  \node[it, draw=manualgreen, fill=white] at (0.25,0.45) {cópia bruta do volume no hipervisor};
+  \node[it, draw=manualgreen, fill=white] at (0.25,-0.25) {mídia de backup que sai do prédio};
+
+  \node[draw=manualred, very thick, rounded corners=4pt, fill=manualred!8,
+        minimum width=6.0cm, minimum height=4.1cm, anchor=north west] (bn) at (6.8,3.6) {};
+  \node[font=\scriptsize, manualred, anchor=north west, align=left] at (6.95,3.45)
+    {\textbf{NÃO PROTEGE}\\\tiny máquina ligada, volume destravado};
+
+  \node[it, draw=manualred, fill=white] at (7.05,2.55) {atacante autenticado na máquina};
+  \node[it, draw=manualred, fill=white] at (7.05,1.85) {malware em execução};
+  \node[it, draw=manualred, fill=white] at (7.05,1.15) {administrador do sistema};
+  \node[it, draw=manualred, fill=white] at (7.05,0.45) {quem gerencia a chave (nuvem, hipervisor)};
+  \node[it, draw=manualred, fill=white] at (7.05,-0.25) {exportação pela própria aplicação};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (6.4,-1.3)
+    {\textbf{A fronteira é o destravamento, não o algoritmo.} Depois que o volume
+     é montado, o sistema decifra tudo de forma transparente --- para o usuário
+     legítimo e para quem estiver no lugar dele.};
+\end{tikzpicture}
+```
+O escopo real da criptografia de disco: a proteção termina no instante em que o volume é destravado.
+:::
+
+## As camadas: onde cifrar
+
+Existem quatro camadas possíveis, e elas não são alternativas excludentes — são escolhas com escopos diferentes [@nistsp800111].
+
+**Autocriptografia no próprio dispositivo.** O controlador do disco cifra tudo em hardware, com desempenho nativo. A chave de dados nunca sai do dispositivo; o que a destrava é uma credencial de autenticação. A vantagem é o custo zero de desempenho e, principalmente, o **apagamento criptográfico**: destruir a chave interna torna todo o conteúdo irrecuperável em segundos, o que resolve o problema do descarte de forma elegante [@tcgopal]. A desvantagem é depender inteiramente da implementação do fabricante, que é fechada — e houve casos públicos de implementações falhas em que a chave não dependia realmente da senha do usuário.
+
+**Volume inteiro em software.** É o padrão da indústria: o sistema operacional cifra o volume, e o destravamento acontece no início da inicialização. Protege tudo — sistema, aplicações, dados, arquivo de troca e hibernação, que são fontes clássicas de vazamento esquecidas. É a escolha correta para estações e notebooks [@luks2spec; @microsoft2024bitlocker].
+
+**Sistema de arquivos ou diretório específico.** Cifra apenas parte do conteúdo, tipicamente diretórios de usuário. Útil como camada adicional em servidores multiusuário, onde permite que dados de usuários distintos tenham chaves distintas. Insuficiente sozinha, porque deixa em claro registros, arquivos temporários, índices e área de troca — que frequentemente contêm exatamente o que se queria proteger.
+
+**Aplicação ou banco de dados.** A aplicação cifra campos específicos antes de gravar. É a única camada que protege contra o administrador do banco e contra o vazamento por cópia do arquivo de dados. Em contrapartida, quebra busca e ordenação sobre os campos cifrados e transfere todo o peso da gestão de chaves para a aplicação. Não substitui as camadas inferiores: complementa-as para o subconjunto realmente sensível — CPF, dados de saúde, credenciais.
+
+A recomendação prática, para a maioria dos ambientes: **volume inteiro em todos os endpoints e servidores, mais cifragem em nível de aplicação para os campos de maior sensibilidade**. As duas juntas cobrem o descarte, o furto e o vazamento por cópia de arquivo de banco.
+
+## Onde fica a chave — a pergunta que decide tudo
+
+O algoritmo é o problema resolvido (@sec-cap016). O que varia entre uma implantação segura e uma inútil é o gerenciamento da chave.
+
+O padrão adotado por todos os sistemas sérios é o **encadeamento de chaves**: um volume é cifrado com uma chave de dados aleatória, que nunca muda; essa chave é guardada cifrada por uma ou mais chaves derivadas dos fatores de destravamento. Trocar a senha do usuário recifra apenas o invólucro, não o volume inteiro — e por isso é instantâneo. Igualmente importante: **destruir todas as cópias do invólucro torna o volume irrecuperável**, mesmo com o disco intacto. É esse mecanismo que faz do apagamento criptográfico uma operação de segundos.
+
+Os fatores que destravam:
+
+**Senha ou frase secreta.** Simples, e depende inteiramente da entropia escolhida pela pessoa. Precisa de derivação lenta e com uso intenso de memória (@sec-cap023) para resistir a ataque fora da máquina — o atacante com o disco em mãos tem tempo ilimitado e hardware dedicado.
+
+**Módulo de plataforma confiável.** Um componente que guarda a chave e só a libera se a medição do estado de inicialização corresponder ao esperado. É o que permite ligar o computador e chegar direto à tela de login sem digitar uma senha adicional — conveniência que aumenta muito a adoção [@tpm2spec]. O ponto de atenção: **sozinho, o módulo destrava sempre que a máquina liga**. Contra furto do aparelho ligado ou em suspensão, e contra ataques por acesso direto à memória, a proteção é menor. Por isso a combinação recomendada em máquinas de alto risco é módulo **mais** PIN de inicialização, e a exigência de que a suspensão não mantenha a chave em memória.
+
+**Chave de recuperação.** Um segredo longo, gerado no momento da configuração, guardado fora do dispositivo. É o que evita perder os dados quando a placa-mãe queima ou o usuário esquece a senha. É também **um segundo caminho completo para os dados** — e por isso o local onde ela é guardada precisa de proteção equivalente à do próprio dado. Chave de recuperação em planilha compartilhada anula a criptografia inteira.
+
+**Custódia empresarial.** Em ambiente corporativo, as chaves de recuperação são depositadas automaticamente no diretório ou no serviço de gestão. Sem isso, criptografia em massa produz perda de dados garantida. Com isso, o repositório de custódia vira alvo de altíssimo valor, com exigência de acesso restrito, MFA e auditoria de cada consulta.
+
+::: {#fig-hierarquia-chaves}
+```{.tikz}
+%%| filename: hierarquia-chaves
+%%| alt: Encadeamento de chaves na criptografia de volume, com a chave de dados protegida por invólucros derivados de senha, módulo de plataforma confiável e chave de recuperação
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fa/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.9cm, minimum height=1.15cm, font=\scriptsize},
+    kv/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.6cm, minimum height=0.8cm, font=\tiny}}
+
+  \node[fa, draw=manualblue, fill=manualblue!10]     (s) at (0,3.2)  {\textbf{senha}\\\tiny derivação lenta};
+  \node[fa, draw=manualgreen, fill=manualgreen!12]   (t) at (0,1.6)  {\textbf{módulo TPM}\\\tiny estado do boot medido};
+  \node[fa, draw=manualyellow, fill=manualyellow!16] (r) at (0,0.0)  {\textbf{recuperação}\\\tiny em custódia};
+
+  \node[kv, draw=manualblue, fill=white]     (is) at (4.3,3.2) {invólucro 1};
+  \node[kv, draw=manualgreen, fill=white]    (it) at (4.3,1.6) {invólucro 2};
+  \node[kv, draw=manualyellow, fill=white]   (ir) at (4.3,0.0) {invólucro 3};
+
+  \foreach \a/\b in {s/is, t/it, r/ir} {
+    \draw[->, >=stealth, thick, manualgray] (\a) -- (\b);}
+
+  \node[draw=manualred, fill=manualred!12, very thick, rounded corners=3pt,
+        minimum width=3.1cm, minimum height=1.5cm, align=center, font=\scriptsize] (dk) at (8.6,1.6)
+    {\textbf{chave de dados}\\\tiny aleatória, nunca muda\\\tiny nunca sai em claro};
+
+  \foreach \b in {is, it, ir} {
+    \draw[->, >=stealth, very thick, manualred] (\b) -- (dk);}
+
+  \node[draw=manualgray, fill=manualgray!12, very thick, rounded corners=3pt,
+        minimum width=2.7cm, minimum height=1.5cm, align=center, font=\scriptsize] (vol) at (12.2,1.6)
+    {\textbf{volume}\\\tiny cifrado em disco};
+  \draw[->, >=stealth, very thick, manualgray] (dk) -- (vol);
+
+  \node[draw=manualgreen, fill=manualgreen!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=12.6cm] at (6.0,-1.6)
+    {\textbf{Duas consequências decorrem do encadeamento.} Trocar a senha
+     recifra apenas um invólucro --- é instantâneo, e por isso não há desculpa
+     para não fazê-lo. E \textbf{destruir todos os invólucros torna o volume
+     irrecuperável em segundos}, mesmo com o disco intacto: é assim que se
+     descarta um disco com segurança. A contrapartida é que \emph{cada}
+     invólucro é um caminho completo até o dado --- a chave de recuperação
+     precisa da mesma proteção que o próprio dado.};
+\end{tikzpicture}
+```
+Encadeamento de chaves: cada fator destrava um invólucro, e cada invólucro é um caminho inteiro até o dado.
+:::
+
+## Inicialização confiável: o elo que sustenta o resto
+
+Se a chave é liberada mediante a medição do estado de inicialização, é preciso que esse estado signifique alguma coisa. É o papel da inicialização verificada: cada componente da cadeia — firmware, gerenciador de boot, kernel — é verificado por assinatura antes de executar [@uefi2024]. Sem isso, um atacante com acesso físico pode substituir o gerenciador de boot por uma versão que captura a senha, devolver o equipamento e coletar o resultado depois.
+
+Esse conjunto de ataques exige acesso físico repetido e é raro no cotidiano, mas define o teto do que a criptografia de disco garante. Em máquinas que saem do país, ficam em hotéis ou circulam em ambientes de risco, importa. As contramedidas são acumuláveis: inicialização verificada ativa, senha no firmware, ordem de inicialização fixa, interfaces de acesso direto à memória desabilitadas quando não usadas, e verificação física de lacre em equipamento que ficou fora de controle.
+
+Os **ataques de memória fria** [@halderman2008] exploram o fato de que a memória retém conteúdo por alguns instantes após o desligamento, permitindo recuperar chaves de uma máquina que estava ligada. A defesa prática é simples e organizacional: **desligar, não suspender** — hibernação com a chave descartada da memória, e política de que máquinas em trânsito viajam desligadas.
+
+## Descarte: o problema que a criptografia resolve de graça
+
+Voltando ao caso da prefeitura. As formas tradicionais de sanitização [@nistsp80088] têm limitações reais em mídia moderna: sobrescrever um dispositivo de estado sólido não alcança blocos remapeados pelo controlador de forma confiável, e a destruição física, embora definitiva, elimina o valor residual do equipamento e nem sempre é praticável em escala.
+
+O **apagamento criptográfico** resolve isso com elegância: se o disco sempre esteve cifrado, destruir todos os invólucros da chave torna o conteúdo irrecuperável, em segundos, sem desgaste do meio e mantendo o equipamento utilizável. A condição é uma só, e é o motivo de este ser o argumento mais forte a favor de cifrar tudo desde o primeiro dia: **funciona apenas se a cifragem estiver ativa desde antes de o dado ser gravado**. Cifrar na véspera do descarte não apaga o que já foi escrito em claro.
+
+A norma de referência organiza as opções em três níveis — limpar, purgar e destruir — e a escolha depende da sensibilidade do dado e do destino do equipamento. Para dados pessoais sensíveis saindo da organização, purgar por apagamento criptográfico ou destruir são as opções defensáveis; sobrescrita simples, não.
+
+## Erros que se repetem
+
+- **Cifrar só o diretório de dados** e deixar registros, temporários e área de troca em claro.
+- **Chave de recuperação em planilha compartilhada**, anulando a criptografia inteira.
+- **Sem custódia**, e a perda de dados chega antes do primeiro benefício.
+- **Módulo de plataforma sozinho em notebook de alto risco**, que destrava só de ligar.
+- **Suspender em vez de desligar** em trânsito, mantendo a chave em memória.
+- **Achar que o disco cifrado protege o servidor invadido** — ele está ligado e destravado.
+- **Descartar sem apagamento verificado**, com procedimento administrativo que não menciona dados.
+
+## ⚖️ Brasil em Foco
+
+**A criptografia tem efeito jurídico direto na comunicação de incidentes.** O art. 48 da LGPD e a Resolução ANPD 15/2024 exigem comunicar incidentes que possam acarretar risco relevante aos titulares. Um notebook furtado, com volume cifrado e desligado, com chave em custódia adequada e sem indício de comprometimento da chave, sustenta um argumento consistente de risco reduzido — o dado existe, mas está inacessível. O mesmo notebook sem criptografia é presunção de exposição. **Registrar o estado de criptografia de cada equipamento no inventário é o que permite fazer essa afirmação com base em evidência**, e não em memória de quem configurou a máquina [@lgpd2018; @anpd2024res15].
+
+**Descarte de equipamento público tem procedimento formal que costuma ignorar os dados.** Órgãos públicos brasileiros desfazem-se de bens por doação, leilão ou inutilização segundo normas administrativas próprias. Esses procedimentos tratam do bem patrimonial, não da informação nele contida. É responsabilidade do controlador — e o poder público é controlador sob a LGPD, com regime próprio no art. 23 — garantir a sanitização antes da saída física do equipamento. Incluir uma etapa obrigatória de apagamento com registro assinado no fluxo de desfazimento é a correção prática, e ela precisa constar do processo administrativo [@lgpd2018].
+
+**O art. 46 cobra medidas técnicas, e criptografia é a citada explicitamente com mais frequência.** A ANPD, em seus guias orientativos para agentes de tratamento de pequeno porte, aponta a criptografia de dispositivos como medida de segurança de baixo custo e alto efeito. Para organizações pequenas — que são a maioria do parque brasileiro —, é provavelmente o controle com melhor relação entre esforço e redução de risco disponível hoje, porque já vem embutido nos sistemas operacionais [@anpd2023guia].
+
+**Dado de saúde, biométrico e de criança tem regime mais exigente.** O art. 11 trata de dados sensíveis e o art. 14 dos dados de crianças e adolescentes, com bases legais restritas e maior expectativa de proteção. Clínicas, laboratórios, escolas e operadoras que mantêm esses dados em estações e servidores locais precisam considerar criptografia de volume como linha de base, e cifragem em nível de aplicação para os campos mais sensíveis [@lgpd2018].
+
+**A questão do acesso compelido existe e tem contorno próprio.** Determinações judiciais de acesso a dispositivos apreendidos, no contexto de investigação, esbarram na garantia contra a autoincriminação (art. 5º, LXIII da Constituição) quando se trata de compelir alguém a fornecer a senha. Há debate jurisprudencial sobre a distinção entre entregar uma senha e ceder biometria. Para a organização, a orientação prática é ter política clara sobre chaves corporativas em custódia — que a empresa pode fornecer quando legalmente requisitada, por serem dela — separada da questão pessoal do funcionário. Confundir as duas cria problema para todo mundo [@marcocivil2014].
+
+**No setor financeiro e em serviços regulados, proteção de dados em repouso é requisito.** A Resolução BCB 4.893/2021 exige controles proporcionais à criticidade, e o PCI-DSS, aplicável a quem processa dados de cartão, é explícito quanto à proteção de dados armazenados e à gestão de chaves — incluindo separação de funções entre quem administra a chave e quem administra o dado [@bcb4893; @pcidss4].
+
+## 🛠️ No Campo
+
+**1. Verifique o estado real, não o presumido.** Comece descobrindo quantas máquinas estão de fato cifradas:
+
+```powershell
+# Windows
+Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionMethod
+manage-bde -protectors -get C:
+```
+
+```bash
+# Linux
+lsblk -o NAME,FSTYPE,MOUNTPOINT,TYPE
+cryptsetup luksDump /dev/nvme0n1p3 | head -20
+```
+
+**2. Cifre o volume inteiro, não só a pasta de dados.** Área de troca, hibernação, registros e temporários são fontes clássicas de vazamento e ficam de fora quando se cifra apenas um diretório.
+
+**3. Configure a custódia antes de cifrar o parque.** Sem depósito automático das chaves de recuperação, a implantação produz perda de dados na primeira falha de hardware:
+
+```powershell
+manage-bde -protectors -adbackup C: -id "{ID-DO-PROTETOR}"
+```
+
+Restrinja quem pode ler as chaves no diretório e audite cada consulta — o repositório de custódia é ativo de camada 0 (@sec-cap037).
+
+**4. Em máquinas de alto risco, exija módulo mais PIN.** Só o módulo destrava ao ligar; com PIN de inicialização, o aparelho furtado desligado permanece inútil:
+
+```powershell
+Enable-BitLocker -MountPoint "C:" -EncryptionMethod XtsAes256 `
+  -TpmAndPinProtector -UsedSpaceOnly:$false
+```
+
+**5. Use derivação lenta e com uso intenso de memória onde a proteção é uma senha:**
+
+```bash
+cryptsetup luksFormat --type luks2 --pbkdf argon2id \
+  --pbkdf-memory 1048576 --pbkdf-force-iterations 8 /dev/sdX
+```
+
+**6. Feche o caminho da suspensão.** Política de hibernar ou desligar em vez de suspender, e exigência de reautenticação ao retornar. Máquina em trânsito viaja desligada — é o que neutraliza os ataques de memória residual.
+
+**7. Verifique a inicialização confiável:**
+
+```bash
+mokutil --sb-state
+bootctl status | grep -i secure
+```
+
+```powershell
+Confirm-SecureBootUEFI
+Get-Tpm | Select-Object TpmPresent, TpmReady, TpmEnabled
+```
+
+E defina senha de firmware com ordem de inicialização fixa nos equipamentos que saem da organização.
+
+**8. Registre o estado de criptografia no inventário.** É o que permite afirmar, no dia do furto, que aquele equipamento específico estava cifrado. Sem esse registro, a comunicação de incidente vira presunção de exposição.
+
+**9. Coloque o apagamento no fluxo de descarte, com evidência assinada.** Nenhum equipamento sai da organização sem passar por essa etapa, e ela gera um documento com número de série, método usado, data e responsável:
+
+```bash
+# Apagamento criptográfico em disco com autocriptografia
+nvme format /dev/nvme0n1 --ses=1
+
+# Destruição dos invólucros de chave em volume LUKS
+cryptsetup luksErase /dev/sdX
+```
+
+Guarde o comprovante junto ao processo de desfazimento do bem — é ele que responde à auditoria três anos depois.
+
+**10. Cifre o backup, e trate a chave dele separadamente.** Backup cifrado com a mesma chave do sistema de origem não protege contra o comprometimento daquele sistema. Chave distinta, custódia distinta, e teste de restauração que confirme que a chave existe e funciona — o Volume 14 volta ao assunto.
+
+**11. Adicione cifragem em nível de aplicação para o subconjunto sensível.** CPF, dados de saúde, biometria e credenciais merecem cifra na aplicação, com chaves em cofre gerenciado e rotação definida. Isso protege contra a cópia do arquivo de dados e contra o administrador do banco — cenários que a criptografia de volume não cobre.
+
+**12. Teste a recuperação antes de precisar dela.** Uma vez por semestre: pegue uma máquina cifrada, force o cenário de recuperação, e confirme que alguém consegue obter a chave em custódia, em tempo hábil e com o procedimento documentado. Chave em custódia que ninguém sabe recuperar é ausência de custódia.
+
+## Resumo
+
+- **Criptografia de disco protege o dado quando a máquina está desligada.** Cobre furto, descarte, devolução em garantia, cópia bruta de volume e mídia de backup; não cobre atacante autenticado, malware em execução, administrador do sistema nem exportação pela aplicação.
+- Quatro camadas com escopos distintos: **autocriptografia no dispositivo** (desempenho nativo e apagamento criptográfico), **volume inteiro em software** (a escolha correta para endpoints, porque inclui área de troca e hibernação), **diretório específico** (insuficiente sozinha) e **aplicação ou banco** (a única que protege contra o administrador do banco).
+- A pergunta decisiva não é o algoritmo, é **onde está a chave**. O encadeamento de chaves faz a troca de senha ser instantânea e permite o apagamento criptográfico — e implica que **cada invólucro é um caminho completo até o dado**, incluindo a chave de recuperação.
+- **Módulo de plataforma sozinho destrava sempre que a máquina liga**; em equipamentos de alto risco, a combinação é módulo mais PIN, com desligamento em vez de suspensão para neutralizar ataques de memória residual.
+- **Custódia empresarial é pré-requisito**, não refinamento: sem depósito automático das chaves de recuperação, a implantação produz perda de dados. E o repositório de custódia passa a ser ativo de altíssimo valor.
+- No descarte, o **apagamento criptográfico** resolve o que a sobrescrita não resolve em mídia moderna — mas só funciona se a cifragem estava ativa **antes** de o dado ser gravado. É o argumento mais forte para cifrar tudo desde o primeiro dia.
+- No Brasil, o estado de criptografia registrado no inventário é o que sustenta o argumento de risco reduzido na comunicação de incidente da Resolução ANPD 15/2024; o desfazimento de bens públicos trata do patrimônio e ignora os dados, o que exige etapa formal de apagamento com evidência assinada; e dados sensíveis, biométricos e de crianças elevam a exigência para cifra também em nível de aplicação.
