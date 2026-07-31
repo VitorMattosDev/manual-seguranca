@@ -1,3 +1,217 @@
 # Modelo de responsabilidade compartilhada {#sec-cap050}
 
-*(em elaboracao)*
+Uma empresa de médio porte conclui a migração para a nuvem. A apresentação para a diretoria tem um slide dizendo que a infraestrutura agora roda em um provedor com certificação ISO/IEC 27001, SOC 2 Tipo II e datacenters com redundância em três zonas. A conclusão implícita — nunca dita em voz alta, mas presente na sala inteira — é que segurança deixou de ser problema da empresa.
+
+Onze meses depois, um pesquisador avisa que um repositório de objetos com relatórios financeiros e planilhas de folha de pagamento está acessível sem autenticação. Alguém marcou o repositório como público durante um teste, dois anos antes, e ninguém revisou.
+
+O provedor não falhou. Nenhum controle dele foi violado. Os datacenters continuaram redundantes, os discos continuaram cifrados em repouso, as certificações continuaram válidas. **O incidente aconteceu inteiramente do lado do cliente da linha** — e essa linha é o assunto deste capítulo.
+
+O modelo de responsabilidade compartilhada é a coisa mais citada e menos compreendida da segurança em nuvem. Todo mundo consegue repetir a frase "o provedor cuida da segurança *da* nuvem e o cliente cuida da segurança *na* nuvem". Quase ninguém consegue dizer, para um serviço específico, de que lado da linha está a rotação de uma chave, a configuração de uma regra de rede ou o registro de um acesso. É nessa zona cinzenta que os incidentes moram.
+
+## O que a nuvem é, tecnicamente
+
+Vale começar pela definição formal, porque ela organiza o resto. Um serviço de nuvem se caracteriza por autoatendimento sob demanda, acesso amplo pela rede, agrupamento de recursos, elasticidade rápida e serviço medido [@nistsp800145]. As três primeiras características são sobre conveniência; as duas últimas são sobre economia. Nenhuma delas é sobre segurança — e essa ausência é significativa.
+
+Do ponto de vista de quem defende, três consequências importam mais do que a definição:
+
+**Tudo é uma API.** Na infraestrutura tradicional, para criar uma rede era preciso tocar em um equipamento. Na nuvem, é uma chamada autenticada. Isso significa que **o plano de controle inteiro é acessível pela internet**, protegido por credenciais, e que quem tem a credencial certa cria, destrói e reconfigura toda a infraestrutura sem passar por nenhuma porta física. O perímetro do @sec-cap028 não desapareceu: ele virou identidade, tema do @sec-cap027 e do próximo capítulo.
+
+**A infraestrutura é efêmera e programável.** Servidores nascem e morrem em segundos, endereços mudam, escalonamento automático cria dez instâncias às três da manhã. Controles que dependem de inventário estático — lista de endereços, regra de firewall por IP, agente instalado manualmente — degradam sozinhos. Em compensação, a mesma programabilidade permite reconstruir tudo a partir de código, o que é o assunto do @sec-cap054.
+
+**O erro tem alcance imediato.** Uma configuração equivocada em um datacenter próprio costuma exigir que alguém também erre no firewall de borda para virar exposição. Na nuvem, um único atributo mal marcado publica o dado na internet inteira, sem intermediário. A distância entre engano e vazamento encolheu para uma chamada de API.
+
+## Os três modelos de serviço e o gradiente da responsabilidade
+
+A linha entre provedor e cliente não é fixa: ela se move conforme o modelo de serviço. Quanto mais o provedor entrega pronto, menos superfície sobra para o cliente — e mais opaca fica a parte que ele não controla.
+
+**Infraestrutura como serviço.** O provedor entrega máquina virtual, disco, rede virtual. O cliente é dono do sistema operacional para cima: correções, hardening (@sec-cap036, @sec-cap037), agentes de detecção, configuração de rede virtual, tudo. É o modelo mais parecido com o mundo tradicional e o que transfere menos responsabilidade.
+
+**Plataforma como serviço.** O provedor entrega o tempo de execução — banco de dados gerenciado, serviço de funções, fila. Ele passa a cuidar do sistema operacional e da correção do motor do banco. O cliente cuida do que roda em cima: esquema, consultas, código da função, e — sempre — **identidade, permissões e dados**.
+
+**Software como serviço.** O provedor entrega a aplicação inteira. Sobra ao cliente a configuração da aplicação, a gestão de usuários e de acessos, a classificação e o ciclo de vida do dado. Parece pouco, mas é exatamente onde acontece a maioria dos incidentes de plataformas de colaboração e de armazenamento de arquivos: compartilhamento aberto, convidado externo que nunca sai, integração de terceiro com permissão ampla.
+
+Três itens **nunca** atravessam a linha, em nenhum modelo de serviço:
+
+- **O dado.** Classificar, decidir onde vive, decidir quem acessa e por quanto tempo é do cliente, sempre.
+- **A identidade e o acesso.** Quem entra, com qual privilégio, por qual fator, é do cliente, sempre.
+- **A configuração.** O provedor oferece o botão; apertar corretamente é do cliente, sempre.
+
+::: {#fig-gradiente-responsabilidade}
+```{.tikz}
+%%| filename: gradiente-responsabilidade
+%%| alt: Gradiente de responsabilidade entre provedor e cliente nos modelos local, IaaS, PaaS e SaaS, mostrando que dado, identidade e configuração permanecem sempre do cliente
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cli/.style={draw=manualblue, fill=manualblue!16, thick, minimum width=2.2cm,
+                minimum height=0.5cm, font=\tiny, align=center, inner sep=1pt},
+    prov/.style={draw=manualgray, fill=manualgray!14, thick, minimum width=2.2cm,
+                 minimum height=0.5cm, font=\tiny, align=center, inner sep=1pt,
+                 text=manualgray},
+    cab/.style={font=\tiny, anchor=east, align=right}}
+
+  \foreach \x/\t in {0/{Local}, 2.4/{IaaS}, 4.8/{PaaS}, 7.2/{SaaS}}
+    {\node[font=\scriptsize, manualblue] at (\x,4.55) {\textbf{\t}};}
+
+  \foreach \y/\r in {4.0/{dado e classificação}, 3.45/{identidade e acesso},
+                     2.9/{configuração do serviço}, 2.35/{aplicação},
+                     1.8/{tempo de execução}, 1.25/{sistema operacional},
+                     0.7/{virtualização e rede}, 0.15/{servidor físico},
+                     -0.4/{instalação física}}
+    {\node[cab, manualgray] at (-1.3,\y) {\r};}
+
+  \foreach \y in {4.0, 3.45, 2.9, 2.35, 1.8, 1.25, 0.7, 0.15, -0.4}
+    {\node[cli] at (0,\y) {cliente};}
+  \foreach \y in {4.0, 3.45, 2.9, 2.35, 1.8, 1.25}
+    {\node[cli] at (2.4,\y) {cliente};}
+  \foreach \y in {0.7, 0.15, -0.4} {\node[prov] at (2.4,\y) {provedor};}
+  \foreach \y in {4.0, 3.45, 2.9, 2.35} {\node[cli] at (4.8,\y) {cliente};}
+  \foreach \y in {1.8, 1.25, 0.7, 0.15, -0.4} {\node[prov] at (4.8,\y) {provedor};}
+  \foreach \y in {4.0, 3.45, 2.9} {\node[cli] at (7.2,\y) {cliente};}
+  \foreach \y in {2.35, 1.8, 1.25, 0.7, 0.15, -0.4} {\node[prov] at (7.2,\y) {provedor};}
+
+  \draw[manualred, very thick, dashed] (-1.4,2.62) -- (8.5,2.62);
+  \node[manualred, font=\tiny, anchor=west, align=left] at (8.6,3.45)
+    {\textbf{acima da linha}\\ vermelha: nunca\\ atravessa. É do\\ cliente em todos\\ os modelos.};
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (3.6,-1.9)
+    {\textbf{A linha se move; três camadas não.} Migrar de IaaS para SaaS transfere
+     muita coisa ao provedor --- e nada do que mais causa incidente. Dado,
+     identidade e configuração continuam sendo trabalho seu, com a diferença de que
+     agora você tem menos visibilidade sobre o que está embaixo.};
+\end{tikzpicture}
+```
+O gradiente de responsabilidade nos quatro arranjos. A linha vermelha marca o que nunca é do provedor.
+:::
+
+## A zona cinzenta é onde os incidentes acontecem
+
+O modelo de responsabilidade compartilhada é desenhado como duas caixas limpas. A operação real tem uma faixa no meio, em que a responsabilidade é dividida ou simplesmente indefinida — e é dela que sai a maior parte dos incidentes catalogados pela indústria [@csathreats].
+
+**Correção de vulnerabilidades em serviços gerenciados.** O provedor corrige o motor do banco de dados, mas normalmente **dentro de uma janela que o cliente precisa aceitar**, e algumas atualizações de versão maior exigem ação explícita. Um banco gerenciado rodando uma versão fora de suporte é responsabilidade de quem não clicou.
+
+**Cifragem.** Praticamente todo provedor cifra dado em repouso por padrão, com chaves que ele mesmo gerencia. Isso protege contra um cenário — alguém levando o disco físico — e contra nenhum outro. Não protege contra credencial vazada, permissão ampla demais ou repositório público, porque nesses casos a leitura é autorizada e a decifragem é automática. Quem controla a chave é a pergunta que separa cifragem decorativa de cifragem útil, e é assunto do @sec-cap055.
+
+**Registro e visibilidade.** O provedor registra as chamadas ao plano de controle, mas em geral **é preciso ligar o registro, escolher onde guardar e pagar pela retenção**. Muita investigação de incidente em nuvem começa e termina na descoberta de que o registro cobria os últimos sete dias e o acesso indevido tem quatro meses.
+
+**Configuração de rede.** O provedor oferece grupos de segurança, sub-redes e listas de controle. As regras são do cliente. O padrão de fábrica de vários serviços é permissivo em nome da facilidade de começar.
+
+**Backup.** Redundância não é backup. O provedor replica o dado para sobreviver à falha de um disco; ele não desfaz uma exclusão feita por uma credencial legítima, nem uma cifragem maliciosa por ransomware. A regra que o Volume 14 vai detalhar vale igual na nuvem — e a réplica automática não conta como cópia.
+
+**Continuidade.** O provedor garante disponibilidade dos componentes que vende, dentro do acordo de nível de serviço. Arquitetar a *sua* aplicação para sobreviver à queda de uma zona é do cliente. E o acordo de nível de serviço, quando descumprido, gera crédito na fatura — não recompõe receita perdida nem responsabilidade perante o titular do dado.
+
+::: {#fig-zona-cinzenta}
+```{.tikz}
+%%| filename: zona-cinzenta
+%%| alt: Diagrama mostrando a faixa intermediária entre provedor e cliente onde a responsabilidade é dividida e onde se concentram os incidentes
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{it/.style={draw, thick, rounded corners=2pt, font=\tiny, align=center,
+                      inner sep=3pt, minimum width=3.3cm, minimum height=0.6cm}}
+
+  \node[draw=manualgray, fill=manualgray!12, thick, rounded corners=3pt,
+        minimum width=12.2cm, minimum height=1.3cm] at (0,3.3) {};
+  \node[font=\scriptsize, manualgray] at (0,3.75) {\textbf{PROVEDOR --- nunca é seu}};
+  \node[font=\tiny, manualgray, align=center] at (0,3.1)
+    {hipervisor \quad datacenter \quad rede física \quad hardware \quad
+     energia \quad pessoal de operação};
+
+  \node[draw=manualred, fill=manualred!12, very thick, rounded corners=3pt,
+        minimum width=12.2cm, minimum height=2.2cm] at (0,1.0) {};
+  \node[font=\scriptsize, manualred] at (0,1.85)
+    {\textbf{ZONA CINZENTA --- onde os incidentes acontecem}};
+  \node[it, draw=manualred] at (-4.1,1.2) {correção de\\ serviço gerenciado};
+  \node[it, draw=manualred] at (0,1.2) {quem controla\\ a chave};
+  \node[it, draw=manualred] at (4.1,1.2) {registro: ligar,\\ guardar, reter};
+  \node[it, draw=manualred] at (-4.1,0.4) {regras de rede\\ e padrões abertos};
+  \node[it, draw=manualred] at (0,0.4) {backup real\\ vs. replicação};
+  \node[it, draw=manualred] at (4.1,0.4) {resiliência da\\ sua arquitetura};
+
+  \node[draw=manualblue, fill=manualblue!14, thick, rounded corners=3pt,
+        minimum width=12.2cm, minimum height=1.3cm] at (0,-1.35) {};
+  \node[font=\scriptsize, manualblue] at (0,-0.9) {\textbf{CLIENTE --- nunca é dele}};
+  \node[font=\tiny, manualblue, align=center] at (0,-1.55)
+    {dado \quad identidade e permissão \quad configuração \quad
+     código \quad classificação \quad retenção};
+
+  \node[draw=manualyellow, fill=manualyellow!14, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\scriptsize, text width=12.2cm] at (0,-3.1)
+    {\textbf{A pergunta que resolve a zona cinzenta é sempre a mesma:} para
+     \emph{este} serviço específico, quem aperta o botão? Se a resposta for
+     ``o provedor oferece a opção'', a responsabilidade é sua. A documentação do
+     provedor é a fonte, e ela muda --- convém reler a cada mudança de arquitetura.};
+\end{tikzpicture}
+```
+As duas caixas limpas do modelo e a faixa real no meio delas.
+:::
+
+## Certificação do provedor não é conformidade sua
+
+Um mal-entendido caro merece parágrafo próprio. Quando um provedor apresenta certificação ISO/IEC 27001, relatório SOC 2 Tipo II ou atestado equivalente, isso cobre **os controles dele, no escopo dele**. Não torna a sua aplicação conforme, não substitui a sua avaliação de risco e não transfere a sua obrigação legal.
+
+O que a certificação do provedor efetivamente entrega é **herança de controles**: você deixa de precisar auditar o controle de acesso físico ao datacenter e passa a poder apontar o relatório dele como evidência daquele item específico. Todo o resto continua seu. Frameworks de controle para nuvem existem exatamente para tornar essa divisão explícita, item a item [@csaccm; @iso27017].
+
+Vale a mesma lógica para os relatórios: eles têm escopo, período e — quase sempre — uma seção de **controles de responsabilidade complementar do cliente**, listando o que o provedor assume que você faz. Essa seção é a parte mais útil do documento e a menos lida.
+
+## Riscos que só existem porque é nuvem
+
+Alguns riscos não têm equivalente no datacenter próprio e merecem tratamento explícito na análise de risco do @sec-cap006:
+
+**Concentração e dependência.** Uma indisponibilidade regional do provedor derruba simultaneamente serviços que você acreditava independentes. E a dependência técnica cresce com o uso de serviços proprietários: quanto mais fundo a integração, mais caro é sair. Isso não é argumento contra a nuvem, é argumento a favor de decidir conscientemente o grau de acoplamento — e de manter, por escrito, um plano de saída com prazo estimado.
+
+**Vizinhança e multilocação.** Recursos compartilhados entre clientes distintos. O isolamento é responsabilidade do provedor e historicamente funciona bem, mas classes inteiras de falha em processadores mostraram que a fronteira não é absoluta.
+
+**Localização e transferência do dado.** Escolher a região é do cliente, e a escolha tem consequência jurídica. Réplica automática para outra região é conveniência que pode virar transferência internacional de dados pessoais.
+
+**A superfície de gestão.** O console e as APIs administrativas são acessíveis da internet por construção. Uma credencial administrativa vazada não dá acesso a um servidor: dá acesso a **toda** a infraestrutura, incluindo a capacidade de apagá-la. Não existe equivalente disso no mundo físico.
+
+**Custo como vetor.** Elasticidade significa que um atacante com acesso ao seu ambiente pode gerar despesa. Mineração de criptomoeda em recursos alheios é a monetização mais comum de credencial de nuvem comprometida, e a fatura costuma ser o primeiro detector — o que é um detector péssimo.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD não conhece a palavra "provedor" como excludente de responsabilidade.** Perante o titular, quem responde é o **controlador** — a empresa que decide sobre o tratamento. O provedor de nuvem atua como **operador**, e o art. 42 estabelece responsabilização solidária do operador quando ele descumprir as instruções lícitas do controlador ou as obrigações da lei. Traduzindo para a prática: contratar um provedor certificado não afasta a sua responsabilidade por um repositório público criado pela sua equipe. O art. 46 exige medidas técnicas e administrativas de segurança, e o art. 39 obriga o operador a seguir as instruções do controlador [@lgpd2018].
+
+**Transferência internacional exige base jurídica própria.** Escolher uma região fora do país, ou aceitar replicação automática para o exterior, é transferência internacional de dados pessoais e precisa se enquadrar no art. 33 da LGPD. A Resolução CD/ANPD nº 19/2024 regulamentou a matéria e aprovou as cláusulas-padrão contratuais, que hoje são o caminho mais direto para a maioria das empresas. Decisão de arquitetura virou decisão jurídica: a escolha da região no momento de criar o recurso é um ato de conformidade [@anpd2024res19].
+
+**O setor financeiro tem regra específica e detalhada.** A Resolução CMN nº 4.893/2021 e a Resolução BCB nº 85/2021 disciplinam a contratação de processamento, armazenamento de dados e computação em nuvem por instituições financeiras e de pagamento. Exigem, entre outros pontos, política de segurança cibernética formalizada, comunicação ao Banco Central sobre a contratação, cláusulas de acesso a dados e informações pelo regulador, previsão de auditoria, plano de continuidade e requisitos adicionais para contratação no exterior. Para fintechs e instituições de pagamento — segmento numeroso no Brasil —, essas normas transformam o modelo de responsabilidade compartilhada em cláusula contratual auditável [@bcb4893; @bcb85].
+
+**A administração pública federal tem requisitos mínimos publicados.** A Instrução Normativa GSI/PR nº 5/2021 estabelece requisitos mínimos de segurança da informação para uso de computação em nuvem por órgãos federais, incluindo classificação prévia da informação e exigências sobre localização e sobre o acesso do provedor. Combinada com a Lei nº 14.133/2021, que rege as contratações públicas, ela desenha o que uma empresa precisa demonstrar para vender nuvem ao governo — e a maioria dos itens são exatamente os deste capítulo [@ingsi5; @lei14133].
+
+**O Marco Civil alcança o dado mesmo fora do país.** O art. 11 determina a aplicação da lei brasileira sempre que a coleta ou o tratamento ocorrer em território nacional, ainda que o armazenamento esteja no exterior. Hospedar fora não é escapar da jurisdição [@marcocivil2014].
+
+**A Estratégia Nacional de Segurança Cibernética coloca a dependência de provedores no radar.** O Decreto nº 10.222/2020 trata a resiliência de serviços críticos como tema de política pública, o que se reflete em exigências setoriais crescentes de plano de saída e de continuidade — a mesma preocupação que o CERT.br registra na prática, com incidentes de indisponibilidade afetando múltiplas organizações simultaneamente por um único ponto comum [@decreto10222; @cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Escreva a sua matriz de responsabilidade, serviço por serviço.** Não a genérica do provedor: uma planilha com os serviços que você realmente usa e, para cada um — correção, cifragem, chave, registro, backup, rede, identidade —, a resposta "provedor", "cliente" ou "compartilhado, e o que cabe a mim é X". A planilha leva um dia e resolve metade das discussões futuras.
+
+**2. Leia a seção de controles complementares do cliente** nos relatórios de auditoria do provedor. É a lista do que ele assume que você faz. Trate como requisito.
+
+**3. Ligue o registro do plano de controle no primeiro dia**, envie para uma conta separada, com retenção compatível com o prazo real de detecção — e não com o padrão de fábrica. Registro que cobre sete dias não investiga incidente nenhum.
+
+**4. Verifique os padrões abertos antes de considerar o ambiente pronto.** Repositório de objetos público, banco com acesso irrestrito, console sem múltiplo fator, portas de administração abertas para a internet. Use as ferramentas nativas de avaliação de configuração e os benchmarks públicos do CIS como linha de partida [@cisbenchmarks].
+
+**5. Trate a conta administrativa como material radioativo.** Múltiplo fator obrigatório com chave física (@sec-cap024), sem chaves de acesso programático, uso somente para o que exige, e alerta em qualquer autenticação com ela.
+
+**6. Decida a região conscientemente e documente a decisão**, incluindo réplicas. Se houver dado pessoal e destino no exterior, ampare a transferência antes de criar o recurso — não depois.
+
+**7. Backup é sempre seu.** Cópia em conta separada, com credencial distinta, imutável quando o serviço permitir, e restauração testada. Replicação do provedor não substitui.
+
+**8. Arquitete para a falha de uma zona** se a aplicação for crítica, e escreva o que acontece quando a região inteira cai. O acordo de nível de serviço devolve crédito na fatura; ele não devolve o cliente que foi embora.
+
+**9. Coloque teto e alerta de custo.** Além do controle financeiro, é um detector barato de credencial comprometida — desde que o alerta chegue em horas, não no fechamento do mês.
+
+**10. Faça o inventário automatizado e contínuo.** Na nuvem, "quais recursos existem" muda a cada hora. Inventário manual nasce desatualizado; use as APIs do próprio provedor.
+
+**11. Escreva o plano de saída.** Onde estão os dados, em que formato saem, quanto tempo leva, o que precisa ser reescrito. Não é pessimismo: em vários setores regulados no Brasil, é exigência contratual.
+
+**12. Traga o incidente de nuvem para o plano de resposta.** Quem tem acesso de emergência, como se revoga uma credencial em minutos, quem fala com o suporte do provedor e com qual nível de contrato. Descobrir isso durante o incidente custa horas que você não tem.
+
+## Resumo
+
+- O modelo de responsabilidade compartilhada divide a segurança entre provedor e cliente, mas **a linha se move conforme o modelo de serviço** — e três camadas nunca atravessam: **dado, identidade e configuração**.
+- Migrar para SaaS transfere muita coisa ao provedor e **nada do que mais causa incidente**; em compensação, reduz a sua visibilidade sobre o que está embaixo.
+- A maioria dos incidentes nasce na **zona cinzenta**: correção de serviço gerenciado, quem controla a chave, registro que precisa ser ligado e pago, regras de rede com padrão permissivo, replicação confundida com backup e resiliência da arquitetura própria.
+- **Certificação do provedor não é conformidade sua.** Ela permite herdar controles específicos e vem acompanhada de uma lista de controles complementares do cliente — a parte mais útil e menos lida do relatório.
+- Riscos próprios da nuvem: **concentração e dependência**, multilocação, localização do dado com efeito jurídico, **superfície de gestão exposta por construção** e custo como vetor de abuso.
+- Na nuvem, o erro tem alcance imediato: **um atributo mal marcado publica o dado na internet**, sem intermediário. O perímetro virou identidade, e é isso que o próximo capítulo trata.
+- No Brasil, a LGPD mantém o controlador respondendo perante o titular (arts. 39, 42 e 46), a escolha de região com dado pessoal é decisão de conformidade sob o art. 33 e a Resolução CD/ANPD nº 19/2024, e os setores financeiro e público têm requisitos próprios e auditáveis para contratação de nuvem.
