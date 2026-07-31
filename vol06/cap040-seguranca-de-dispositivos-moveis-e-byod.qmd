@@ -1,3 +1,231 @@
 # Segurança de dispositivos móveis e BYOD {#sec-cap040}
 
-*(em elaboracao)*
+Um gerente comercial perde o celular num táxi, num sábado à noite. No aparelho estão o e-mail corporativo com três anos de histórico, o aplicativo interno de propostas com a tabela de preços, o autenticador que gera o segundo fator de acesso ao sistema de gestão, o WhatsApp com os grupos de clientes — e as fotos da família. O aparelho é dele, comprado com dinheiro dele. A empresa nunca exigiu nada além de que ele configurasse o e-mail.
+
+Na segunda-feira, a pergunta que chega à TI é simples de formular e desagradável de responder: **é possível apagar os dados da empresa sem apagar as fotos?** Se a resposta for não, a organização terá que escolher entre destruir o patrimônio pessoal de um funcionário e deixar dados corporativos num aparelho perdido. Ambas as saídas são ruins, e a escolha entre elas foi feita meses antes — no momento em que se permitiu o acesso sem separar os dois mundos.
+
+Este capítulo é sobre essa separação: técnica, jurídica e organizacional.
+
+## O que muda quando o endpoint é um celular
+
+O dispositivo móvel não é uma estação menor. Cinco diferenças alteram o que funciona.
+
+**A propriedade é ambígua.** Servidor e estação são da empresa; o celular frequentemente não é. Isso desloca o problema do técnico para o jurídico — o que a organização pode exigir, apagar ou monitorar num bem particular tem limites reais, e ignorá-los produz passivo trabalhista.
+
+**A perda física é rotina.** Um servidor não é esquecido num restaurante. Furto e extravio são o cenário base do celular, não a exceção — o que faz de criptografia e bloqueio de tela os controles primários, e não detalhes de configuração.
+
+**O modelo de segurança é mais forte, e menos ajustável.** Sistemas móveis modernos trazem, de fábrica, isolamento forte entre aplicativos, permissões granulares, criptografia por padrão ancorada em hardware e cadeia de inicialização verificada [@apple2024platform; @android2024]. Isso é uma vantagem real sobre desktops. Em compensação, o administrador tem muito menos controle fino: não existe equivalente a uma política de grupo com milhares de opções.
+
+**O software vem de loja, não de instalador.** Isso reduz muito o problema de malware clássico e cria outro: a **permissão excessiva**. O aplicativo legítimo que lê contatos, localização e arquivos sem necessidade é o risco predominante, e ele não é malware — é modelo de negócio.
+
+**O aparelho está fora do perímetro por definição.** Conecta-se por redes que a organização não controla (@sec-cap034), a partir de qualquer lugar. É o argumento prático mais forte a favor de Zero Trust (@sec-cap027): a confiança precisa vir da identidade e da postura do dispositivo, não da rede de origem.
+
+## Os modelos de propriedade, e o que cada um permite exigir
+
+A escolha do modelo determina tudo o que vem depois, e ela é organizacional antes de ser técnica.
+
+**Corporativo gerenciado.** O aparelho é da empresa, inscrito na gestão desde o primeiro uso. Permite o controle mais amplo: exigência de versão mínima, restrição de aplicativos, apagamento completo, configuração imposta. É o modelo indicado para funções de alto risco — direção, financeiro, administração de sistemas.
+
+**Corporativo de uso pessoal permitido.** Aparelho da empresa, com uso pessoal tolerado. Reduz a resistência do usuário, mas exige política clara sobre o que é monitorado, porque o uso pessoal cria expectativa de privacidade mesmo num bem da empresa.
+
+**BYOD com perfil de trabalho.** Aparelho do funcionário, com um contêiner gerenciado separando dados corporativos dos pessoais. A empresa administra apenas o perfil de trabalho: aplica política, exige criptografia e senha, e **apaga somente o contêiner**. Não vê os aplicativos pessoais, não acessa fotos, não localiza o aparelho. Tecnicamente é a solução mais elegante ao dilema do gerente do táxi.
+
+**BYOD sem gestão de dispositivo, com proteção no aplicativo.** Sem inscrição do aparelho: a proteção fica na camada do aplicativo corporativo — exigência de PIN próprio para abrir, bloqueio de copiar-e-colar para fora, impedimento de salvar anexo fora do contêiner, apagamento remoto apenas dos dados daquele aplicativo. É o modelo de menor atrito e menor controle, e frequentemente o único aceitável para terceiros, estagiários e prestadores.
+
+::: {#fig-modelos-byod}
+```{.tikz}
+%%| filename: modelos-byod
+%%| alt: Comparação dos quatro modelos de propriedade de dispositivo móvel quanto ao controle da organização, à privacidade do usuário e ao alcance do apagamento remoto
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    md/.style={draw, very thick, rounded corners=3pt, align=left, inner sep=6pt,
+               minimum width=6.2cm, minimum height=1.6cm, font=\scriptsize, anchor=west},
+    lb/.style={font=\tiny, align=center}}
+
+  \node[md, draw=manualred, fill=manualred!10] at (0,3.4)
+    {\textbf{Corporativo gerenciado}\\[1pt]
+     \tiny aparelho da empresa, inscrito desde o início\\
+     \tiny apagamento: \textbf{total} $\cdot$ indicado para função de alto risco};
+  \node[md, draw=manualyellow, fill=manualyellow!16] at (0,1.5)
+    {\textbf{Corporativo com uso pessoal}\\[1pt]
+     \tiny da empresa, uso pessoal tolerado\\
+     \tiny apagamento: total $\cdot$ \textbf{exige política explícita} sobre o que é visto};
+  \node[md, draw=manualgreen, fill=manualgreen!12] at (0,-0.4)
+    {\textbf{BYOD com perfil de trabalho}\\[1pt]
+     \tiny do funcionário, contêiner gerenciado separado\\
+     \tiny apagamento: \textbf{só o contêiner} $\cdot$ fotos e apps pessoais intactos};
+  \node[md, draw=manualblue, fill=manualblue!10] at (0,-2.3)
+    {\textbf{BYOD só com proteção no aplicativo}\\[1pt]
+     \tiny sem inscrição do aparelho; controle dentro do app\\
+     \tiny apagamento: \textbf{só os dados do app} $\cdot$ terceiros e prestadores};
+
+  \draw[->, >=stealth, very thick, manualred] (7.0,4.0) -- (7.0,-2.9)
+    node[midway, right=2pt, rotate=-90, anchor=south, font=\tiny, manualred]
+      {controle da organização diminui};
+  \draw[->, >=stealth, very thick, manualgreen] (8.4,-2.9) -- (8.4,4.0)
+    node[midway, right=2pt, rotate=-90, anchor=north, font=\tiny, manualgreen]
+      {privacidade do usuário aumenta};
+
+  \node[draw=manualgreen, fill=manualgreen!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.6cm] at (4.6,-4.4)
+    {\textbf{O perfil de trabalho resolve o dilema do aparelho perdido.} Sem
+     separação, a organização escolhe entre apagar as fotos de família de um
+     funcionário e deixar dados corporativos num aparelho em mãos
+     desconhecidas --- e essa escolha foi feita antes, quando se permitiu o
+     acesso sem contêiner.};
+\end{tikzpicture}
+```
+Os quatro modelos: o controle e a privacidade se movem em direções opostas, e o perfil de trabalho é o ponto de equilíbrio.
+:::
+
+## Os controles que efetivamente importam
+
+Reduzindo a uma lista curta, ordenada por impacto real [@nistsp800124]:
+
+**Criptografia com bloqueio de tela forte.** Nos sistemas atuais, a criptografia do armazenamento é padrão e está ancorada em hardware — mas sua eficácia depende do segredo de desbloqueio, porque é dele que a chave deriva. Um PIN de quatro dígitos protege muito pouco; seis dígitos, biometria e tempo de bloqueio curto mudam a economia do ataque. Este é o controle número um contra o cenário mais provável, que é o extravio (@sec-cap041 desenvolve o mecanismo).
+
+**Separação de dados corporativos e pessoais.** Perfil de trabalho ou proteção no aplicativo. É o que torna o apagamento remoto uma operação executável em vez de uma decisão traumática.
+
+**Atualização em dia — e vida útil do aparelho.** É o ponto que mais falha na prática, especialmente no Brasil. Aparelhos de faixa de entrada frequentemente param de receber correções de segurança poucos anos após o lançamento, e continuam em uso por muito mais tempo. Um aparelho sem atualização é um endpoint com vulnerabilidades conhecidas permanentes (@sec-cap039). A política precisa exigir **versão mínima**, não apenas "manter atualizado" — e a exigência precisa vir acompanhada de uma resposta para quem não puder cumpri-la.
+
+**Bloqueio de aparelho comprometido.** Aparelho com o modelo de segurança do fabricante desativado — por desbloqueio de restrições ou obtenção de privilégio de sistema — perde o isolamento entre aplicativos, que é a base de tudo. A gestão consegue detectar boa parte desses casos e deve negar acesso corporativo.
+
+**Origem dos aplicativos.** Instalação a partir das lojas oficiais, com bloqueio de instalação por fontes desconhecidas no perfil de trabalho. Aplicativo corporativo interno distribuído por canal gerenciado, nunca por link em mensagem.
+
+**Higiene de permissões.** Revisar periodicamente quais aplicativos têm acesso a localização, microfone, câmera, contatos e arquivos. Num aparelho que acessa dados corporativos, o aplicativo que lê a agenda inteira e a envia para um servidor no exterior é um problema de proteção de dados, ainda que perfeitamente legal em seus termos de uso.
+
+**Acesso condicional pela postura.** O elo que liga tudo: a decisão de conceder acesso ao recurso corporativo leva em conta a identidade, a conformidade do dispositivo e o contexto — versão do sistema, criptografia ativa, dispositivo inscrito, integridade preservada. É Zero Trust (@sec-cap027) aplicado ao móvel, e é o que transforma uma política escrita em controle efetivo.
+
+**Segundo fator resistente a phishing.** O celular é, para a maioria das organizações, o dispositivo de segundo fator (@sec-cap024). Isso cria uma dependência circular incômoda: perder o aparelho é perder o acesso e, potencialmente, entregá-lo. Chaves de acesso vinculadas ao hardware do aparelho e um caminho de recuperação previamente definido resolvem os dois lados.
+
+::: {#fig-postura-movel}
+```{.tikz}
+%%| filename: postura-movel
+%%| alt: Decisão de acesso condicional para dispositivo móvel, combinando identidade verificada, postura do dispositivo e sensibilidade do recurso para conceder, restringir ou negar
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    en/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=5pt,
+               minimum width=3.0cm, minimum height=1.5cm, font=\scriptsize},
+    de/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.7cm, minimum height=0.85cm, font=\scriptsize}}
+
+  \node[en, draw=manualblue, fill=manualblue!10] (id) at (0,2.6)
+    {\textbf{identidade}\\\tiny quem é, com MFA\\\tiny resistente a phishing};
+  \node[en, draw=manualyellow, fill=manualyellow!16] (po) at (0,0.6)
+    {\textbf{postura}\\\tiny inscrito, criptografado,\\\tiny versão mínima, íntegro};
+  \node[en, draw=manualgreen, fill=manualgreen!12] (re) at (0,-1.4)
+    {\textbf{recurso}\\\tiny quão sensível é\\\tiny o que se pede};
+
+  \node[draw=manualgray, fill=manualgray!12, very thick, rounded corners=3pt,
+        minimum width=2.7cm, minimum height=3.0cm, align=center, font=\scriptsize] (pol) at (5.0,0.6)
+    {\textbf{política de}\\\textbf{acesso}\\\textbf{condicional}\\[3pt]\tiny avaliada a cada acesso,\\\tiny não só no primeiro};
+
+  \foreach \n in {id, po, re} { \draw[->, >=stealth, very thick, manualgray] (\n) -- (pol); }
+
+  \node[de, draw=manualgreen, fill=manualgreen!14] (ok) at (9.6,2.2)  {\textbf{concede}};
+  \node[de, draw=manualyellow, fill=manualyellow!16] (li) at (9.6,0.6) {\textbf{restringe}\\\tiny só leitura, sem anexo};
+  \node[de, draw=manualred, fill=manualred!12] (no) at (9.6,-1.0)     {\textbf{nega}\\\tiny e orienta a correção};
+
+  \foreach \n in {ok, li, no} { \draw[->, >=stealth, very thick, manualgray] (pol) -- (\n); }
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.8cm] at (4.6,-3.0)
+    {\textbf{``Restringe'' é a saída que falta na maioria das políticas.} Entre
+     conceder tudo e negar tudo existe um caminho intermediário --- acesso ao
+     e-mail em modo leitura, sem baixar anexo, sem acesso ao sistema
+     financeiro --- que mantém a pessoa produtiva enquanto o dispositivo não
+     está conforme, em vez de empurrá-la para o desvio não gerenciado.};
+\end{tikzpicture}
+```
+Acesso condicional no móvel: identidade, postura e sensibilidade do recurso decidem juntas, a cada acesso.
+:::
+
+## O aplicativo corporativo desenvolvido em casa
+
+Muitas organizações publicam o próprio aplicativo — para clientes, para a força de vendas, para técnicos em campo. Alguns pontos que aparecem com regularidade em avaliações [@owaspmasvs]:
+
+**Segredo embutido no pacote.** Chave de API, credencial de serviço ou senha de banco compilada no aplicativo. Todo pacote publicado é recuperável e inspecionável — o que está dentro dele é público, ponto final. Segredo tem que ficar no servidor.
+
+**Autorização decidida no cliente.** Esconder o botão de administrador na interface não impede a chamada direta à API. Toda decisão de autorização é do servidor (@sec-cap022).
+
+**Armazenamento local sem proteção.** Token de sessão, dados pessoais e cache de resposta gravados sem uso do armazenamento seguro do sistema, que é ancorado em hardware.
+
+**Confiança no transporte mal implementada.** Aplicativo que aceita qualquer certificado — comum em código deixado de ambiente de testes — anula o TLS (@sec-cap020) e transforma qualquer rede hostil em ponto de interceptação.
+
+**Telemetria excessiva.** Bibliotecas de análise e publicidade que enviam identificadores e dados de uso a terceiros. Isso é compartilhamento de dados pessoais com operadores, e precisa de base legal, contrato e transparência — a discussão é de LGPD, não só de arquitetura.
+
+## Erros que se repetem
+
+- **Permitir acesso ao e-mail corporativo sem nenhuma exigência**, e descobrir o problema no primeiro aparelho perdido.
+- **Não separar contêiner corporativo do pessoal**, transformando o apagamento em decisão traumática.
+- **Apagar o aparelho inteiro sem previsão contratual**, criando passivo trabalhista.
+- **Exigir "manter atualizado"** sem definir versão mínima nem tratar o aparelho que não recebe mais correção.
+- **Monitorar navegação e localização em aparelho pessoal** sem base legal nem transparência.
+- **Depender do celular como único fator** sem caminho de recuperação definido.
+- **Publicar aplicativo com segredo embutido**, assumindo que o pacote não será inspecionado.
+
+## ⚖️ Brasil em Foco
+
+**O apagamento remoto precisa estar previsto por escrito e aceito.** Apagar dados de aparelho particular sem previsão contratual e sem consentimento informado é intervenção em bem alheio, com risco de dano material e moral. O caminho seguro é um termo de adesão ao programa de dispositivos, assinado, que descreva exatamente o que a organização pode fazer — de preferência limitando o apagamento ao contêiner corporativo, o que torna a cláusula proporcional e muito mais defensável. Onde a empresa fornece o aparelho, a previsão é mais simples, mas continua necessária [@lgpd2018].
+
+**Monitoramento de aparelho pessoal tem limite constitucional e trabalhista.** O art. 5º, X e XII da Constituição protege a intimidade e o sigilo das comunicações, e a Lei 9.296/1996 trata da interceptação. A jurisprudência trabalhista admite o monitoramento de ferramenta corporativa com finalidade legítima e ciência prévia do empregado, e rejeita o acesso indiscriminado a conteúdo pessoal. Na prática: **em BYOD, a organização deve enxergar o contêiner e nada além dele** — nem lista de aplicativos pessoais, nem localização, nem navegação fora do perfil de trabalho. Ferramentas de gestão modernas permitem exatamente essa limitação, e usá-la é escolha de conformidade, não de conveniência técnica [@marcocivil2014; @lei9296].
+
+**Teletrabalho ampliou a superfície e o debate.** A Lei 14.442/2022 consolidou o regime de teletrabalho na CLT e trouxe a discussão sobre responsabilidade pelo fornecimento de equipamentos e infraestrutura, que deve constar em contrato. Do ponto de vista de segurança, isso é oportunidade: o mesmo instrumento que trata de custeio pode estabelecer os requisitos de segurança do dispositivo usado no trabalho remoto [@lei14442].
+
+**Furto de celular é vetor de fraude financeira no Brasil, com característica própria.** O aparelho desbloqueado dá acesso imediato a aplicativos bancários e ao Pix, e o padrão observado combina furto com engenharia social para obter a senha antes da subtração. As respostas relevantes: bloqueio de tela forte com tempo curto, uso dos mecanismos de proteção contra roubo oferecidos pelas plataformas, limites de transação por período, e os mecanismos do Banco Central — o Mecanismo Especial de Devolução e o registro de ocorrência para bloqueio de chaves Pix. Para a organização, isso significa que o celular corporativo com acesso financeiro precisa de tratamento equivalente ao de uma estação de administração [@bcb4893].
+
+**Aplicativos que tratam dados pessoais têm obrigações próprias.** Transparência sobre coleta, base legal, minimização e contratos com operadores — inclusive com as bibliotecas de análise e publicidade embarcadas, que frequentemente são operadores não declarados. A ANPD tem se manifestado sobre transparência em aplicativos, e a orientação prática é inventariar cada componente de terceiro no pacote e saber o que ele envia e para onde [@lgpd2018; @anpd2023guia].
+
+**Aparelho sem suporte é risco que cresce sozinho.** Boa parte do parque brasileiro usa aparelhos que já não recebem correções. Definir versão mínima é necessário, mas exige a contrapartida: para quem não pode trocar de aparelho, ofereça acesso restrito por navegador em modo protegido, ou forneça um dispositivo corporativo para as funções de maior risco. Política sem alternativa viável produz o pior resultado possível, que é o desvio para canais não gerenciados — o funcionário que passa a encaminhar documentos para o e-mail pessoal.
+
+## 🛠️ No Campo
+
+**1. Comece pela política escrita e assinada.** Antes de qualquer ferramenta: quais modelos são aceitos por função, o que a organização enxerga, o que pode apagar, o que acontece no desligamento e qual o suporte oferecido. Sem esse documento, o resto é passivo acumulado.
+
+**2. Implante perfil de trabalho para BYOD.** É o controle que resolve o dilema central. Configure a gestão para administrar **apenas** o perfil de trabalho, e desative explicitamente a coleta de inventário de aplicativos pessoais e de localização.
+
+**3. Exija criptografia e bloqueio forte, com números concretos:**
+
+```
+Comprimento mínimo do PIN ............ 6 dígitos (ou senha alfanumérica)
+Bloqueio automático .................. 2 minutos
+Tentativas antes do apagamento ....... 10
+Biometria ............................ permitida como conveniência
+Criptografia do armazenamento ........ obrigatória
+```
+
+**4. Defina versão mínima de sistema e bloqueie o que estiver abaixo.** Com um período de aviso e um caminho alternativo para quem não puder atualizar. Revise os números a cada semestre.
+
+**5. Bloqueie dispositivo com integridade comprometida.** Configure a gestão para negar acesso a aparelhos com o modelo de segurança do fabricante desativado, e trate a detecção como incidente, não como aviso.
+
+**6. Aplique acesso condicional de verdade.** Concessão de acesso ao e-mail e às aplicações internas exigindo, em conjunto: identidade com MFA resistente a phishing, dispositivo inscrito e conforme, e nível de acesso proporcional à sensibilidade do recurso. Configure a saída intermediária — leitura sem anexo — para o dispositivo que está fora de conformidade.
+
+**7. Restrinja o fluxo de dados dentro do aparelho.** As proteções de aplicativo que mais evitam vazamento cotidiano:
+
+```
+Copiar e colar ......... apenas entre aplicativos do perfil de trabalho
+Salvar como ............ bloqueado para armazenamento pessoal e nuvem pessoal
+Captura de tela ........ bloqueada nos aplicativos com dados sensíveis
+Backup ................. apenas para o destino corporativo
+Compartilhar ........... restrito a aplicativos gerenciados
+```
+
+**8. Teste o apagamento seletivo antes de precisar dele.** Num aparelho de teste, execute o apagamento do contêiner e confirme que os dados pessoais permanecem intactos. Documente o procedimento e o tempo que ele leva — inclusive com o aparelho offline, situação em que o comando fica pendente.
+
+**9. Tenha procedimento de perda ou furto com prazo em horas.** Quem o funcionário aciona no sábado à noite, quem executa o apagamento, quem revoga as sessões ativas e os tokens, quem redefine o segundo fator. Publique um número de contato que funcione fora do horário comercial — o intervalo entre a perda e a ação é a janela inteira do risco.
+
+**10. Revogue sessões, não apenas o dispositivo.** Apagar o aparelho não invalida tokens já emitidos. O procedimento precisa incluir a revogação das sessões no provedor de identidade (@sec-cap025) e a redefinição do segundo fator.
+
+**11. Trate o desligamento de funcionário como evento de dispositivo.** No BYOD, remover o perfil de trabalho faz parte do processo de saída, com registro. Sem isso, ex-funcionários mantêm acesso a e-mail e documentos por meses — um dos achados mais frequentes em auditoria.
+
+**12. Audite os aplicativos internos.** Antes de publicar: nenhum segredo no pacote, autorização decidida no servidor, armazenamento em cofre do sistema, validação correta de certificado e inventário do que cada biblioteca de terceiro envia. Uma revisão contra um referencial público de verificação de aplicativos móveis cobre o essencial.
+
+## Resumo
+
+- O dispositivo móvel difere do endpoint tradicional em cinco pontos: **propriedade ambígua**, **perda física como cenário base**, modelo de segurança mais forte e menos ajustável, software vindo de loja — o que desloca o risco de malware para **permissão excessiva** — e ausência permanente de perímetro.
+- Os quatro modelos de propriedade movem controle e privacidade em direções opostas. O **perfil de trabalho** é o ponto de equilíbrio: a empresa administra e apaga só o contêiner, e as fotos de família não entram na conta.
+- Controles por ordem de impacto: **criptografia com bloqueio de tela forte** (a chave deriva do segredo de desbloqueio — PIN de quatro dígitos protege pouco), **separação de dados**, **versão mínima exigida**, bloqueio de aparelho com integridade comprometida, aplicativos vindos de loja oficial, higiene de permissões e **acesso condicional pela postura**.
+- A saída que falta na maioria das políticas é **"restringe"**: entre conceder tudo e negar tudo, o acesso limitado mantém a pessoa produtiva e evita o desvio para canais não gerenciados.
+- Em aplicativos internos, os achados recorrentes são **segredo embutido no pacote** (todo pacote publicado é inspecionável), autorização decidida no cliente, armazenamento local sem o cofre do sistema, validação frouxa de certificado e telemetria excessiva de bibliotecas de terceiros.
+- **Apagar o aparelho não invalida tokens já emitidos**: o procedimento de perda precisa incluir revogação de sessões e redefinição do segundo fator, com contato que funcione fora do horário comercial.
+- No Brasil, o apagamento remoto exige previsão contratual assinada; o monitoramento de aparelho pessoal encontra limite constitucional e trabalhista — em BYOD, enxergar apenas o contêiner é escolha de conformidade; a Lei 14.442/2022 dá o instrumento para fixar requisitos em teletrabalho; e furto de celular é vetor de fraude financeira com respostas específicas do Banco Central.
