@@ -59,7 +59,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 032** - Segurança de DNS: ataques, DNSSEC e DoH - `vol05/cap032-seguranca-de-dns-ataques-dnssec-e-doh.qmd`
 - [x] **cap 033** - Segurança do roteamento e BGP: sequestros, vazamentos e RPKI - `vol05/cap033-seguranca-do-roteamento-e-bgp-sequestros.qmd`
 - [x] **cap 034** - Segurança em redes sem fio e enlaces de rádio - `vol05/cap034-seguranca-em-redes-sem-fio-e-enlaces-de-radio.qmd`
-- [ ] **cap 035** - Ataques de negação de serviço e estratégias de mitigação - `vol05/cap035-ataques-de-negacao-de-servico-e-estrategias.qmd`
+- [x] **cap 035** - Ataques de negação de serviço e estratégias de mitigação - `vol05/cap035-ataques-de-negacao-de-servico-e-estrategias.qmd`
 
 ### Volume 6 — Endpoints e Sistemas Operacionais
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (34 concluidos).
+**Total:** 107 capitulos em 16 volumes (35 concluidos).
 

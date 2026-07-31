@@ -1,3 +1,266 @@
 # Ataques de negação de serviço e estratégias de mitigação {#sec-cap035}
 
-*(em elaboracao)*
+Em 21 de outubro de 2016, um provedor de DNS gerenciado nos Estados Unidos foi atingido por um ataque distribuído de negação de serviço. O alvo não era um site: era a **resolução de nomes** de centenas de serviços que dependiam daquele provedor. Durante horas, boa parte da internet norte-americana ficou inacessível — não porque os servidores dos serviços tivessem caído, mas porque ninguém conseguia descobrir onde eles estavam.
+
+O tráfego vinha de câmeras de segurança, gravadores de vídeo e roteadores domésticos infectados pelo Mirai — um programa notavelmente simples, que se propagava testando uma lista curta de credenciais de fábrica em dispositivos expostos à internet. O código-fonte havia sido publicado semanas antes, e a análise posterior mostrou que a maior parte do poder de fogo vinha de aparelhos cujos donos jamais souberam que participaram [@antonakakis2017].
+
+Três lições saíram dali, e elas estruturam este capítulo. **A disponibilidade é um pilar de segurança como os outros** (@sec-cap002), e é o único que o adversário consegue atacar sem invadir nada. **A dependência concentrada é um risco de disponibilidade**: quem terceiriza DNS, CDN ou autenticação herda a superfície do fornecedor. E **o poder de fogo do atacante é construído com a negligência de terceiros** — dispositivos mal configurados que não pertencem nem ao atacante nem à vítima.
+
+## As três famílias, e por que a distinção importa
+
+A defesa depende inteiramente de qual família está em curso, e confundi-las é a causa mais comum de resposta ineficaz.
+
+**Volumétricos.** Saturam a banda do enlace. Medem-se em bits por segundo, hoje na casa dos terabits. A característica decisiva: **o dano ocorre antes do seu equipamento**. Não importa quão bem configurado esteja o firewall se o enlace de entrada já está cheio — mitigar dentro da própria rede é chegar tarde. A defesa precisa acontecer rio acima.
+
+**De protocolo.** Exaurem recursos de estado em vez de banda. Medem-se em pacotes por segundo. A inundação de SYN é o exemplo canônico: o atacante envia pedidos de conexão e nunca completa o estabelecimento, enchendo a fila de conexões semiabertas do servidor — ou, como visto no @sec-cap029, a tabela de estado do próprio firewall, que se transforma no ponto de falha [@rfc4987].
+
+**De aplicação.** Exploram o custo assimétrico entre pedir e responder. Uma requisição de busca com muitos filtros custa milissegundos ao cliente e segundos de processamento e leitura de disco ao servidor. Medem-se em requisições por segundo, e derrubam serviços com volume ridiculamente baixo — algumas centenas de requisições podem bastar. São os mais difíceis de mitigar, porque **cada requisição é individualmente legítima**: só o conjunto é malicioso.
+
+Há uma quarta categoria que cresceu com a nuvem e raramente é chamada pelo nome: a **negação de serviço econômica**. Se a infraestrutura escala automaticamente, o serviço não cai — a fatura sobe. O ataque não derruba o alvo; ele o torna insustentável, e o "sucesso" da elasticidade é descoberto no fechamento do mês.
+
+## Reflexão e amplificação: como pouco vira muito
+
+A técnica que produz os maiores volumes não exige uma rede de dispositivos comprometidos. Exige apenas **poder forjar o endereço de origem** e encontrar serviços que respondam mais do que recebem.
+
+::: {#fig-amplificacao}
+```{.tikz}
+%%| filename: amplificacao-ddos
+%%| alt: Mecanismo de reflexão e amplificação em que o atacante envia consultas pequenas com origem forjada a servidores intermediários, que respondem com pacotes muito maiores dirigidos à vítima
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    no/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.3cm, minimum height=0.85cm, font=\scriptsize},
+    pq/.style={->, >=stealth, thin, manualgray},
+    gr/.style={->, >=stealth, ultra thick, manualred}}
+
+  \node[no, draw=manualred, fill=manualred!12] (atk) at (0,1.4)
+    {atacante\\\tiny origem forjada};
+
+  \foreach \y/\n in {3.2/s1, 2.0/s2, 0.8/s3, -0.4/s4} {
+    \node[no, draw=manualyellow, fill=manualyellow!14, minimum width=2.9cm] (\n) at (4.6,\y)
+      {\tiny resolvedor aberto / NTP / memcached};
+    \draw[pq] (atk) -- (\n);}
+
+  \node[no, draw=manualblue, fill=manualblue!12] (vit) at (9.6,1.4)
+    {vítima\\\tiny enlace saturado};
+
+  \foreach \n in {s1,s2,s3,s4} { \draw[gr] (\n) -- (vit); }
+
+  \node[font=\tiny, manualgray, align=center] at (2.3,-1.4)
+    {consultas \textbf{pequenas},\\com o endereço da vítima como origem};
+  \node[font=\tiny, manualred, align=center] at (7.2,-1.4)
+    {respostas \textbf{grandes},\\dirigidas a quem nunca perguntou};
+
+  \node[draw=manualgreen, fill=manualgreen!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=11.2cm] at (4.8,-2.9)
+    {\textbf{Duas condições sustentam o ataque, e ambas são de terceiros.}
+     Falsificar a origem só é possível onde a rede de saída não filtra (BCP 38);
+     amplificar só é possível onde há serviço mal configurado respondendo à
+     internet inteira. Fechar qualquer uma das duas na \emph{sua} rede não
+     protege você --- protege todo mundo. É por isso que a adoção é lenta,
+     e por isso ela precisa entrar em contrato.};
+\end{tikzpicture}
+```
+Reflexão e amplificação: o volume é produzido por terceiros mal configurados, não pelo atacante.
+:::
+
+O fator de amplificação varia enormemente conforme o serviço abusado:
+
+| Serviço abusado | Fator aproximado | Como se fecha |
+|---|---|---|
+| DNS (resolvedor aberto) | 30–50× | Restringir recursão, limitar taxa de resposta |
+| NTP (comando de monitoramento antigo) | até 500× | Desabilitar o comando, atualizar versão |
+| SSDP / UPnP | 30× | Não expor à internet |
+| CLDAP | 50–70× | Não expor à internet |
+| Memcached | milhares de vezes | Nunca expor; ligar autenticação |
+
+: Serviços comumente abusados para amplificação e o que os fecha. {#tbl-amplificacao}
+
+O caso do memcached, em 2018, é o mais didático: um banco de dados em memória, projetado para rede interna, exposto por padrão à internet em milhares de instalações, com fator de amplificação da ordem de milhares. Produziu os maiores ataques já registrados até então — e a correção foi simplesmente parar de expor o serviço.
+
+## A escada de mitigação
+
+Nenhuma medida isolada resolve. A defesa se organiza em degraus, do mais distante ao mais próximo do serviço.
+
+**1. Filtragem rio acima e depuração de tráfego.** Contra ataque volumétrico, é a única defesa que funciona, porque o dano ocorre antes do seu enlace. Na prática, é o provedor de trânsito ou um serviço especializado que absorve, filtra e entrega apenas o tráfego limpo. Precisa estar **contratado e testado antes**: negociar durante o ataque significa horas de indisponibilidade.
+
+**2. Buraco negro e desvio seletivo.** O descarte anunciado por comunidade BGP é o recurso extremo: pede-se ao provedor que descarte todo o tráfego para um endereço específico. Note o que isso significa — **você completa o ataque para aquele endereço**, sacrificando-o para salvar o resto da rede. É uma decisão legítima e frequentemente correta, desde que consciente. Mecanismos de especificação de fluxo permitem algo mais cirúrgico, descartando apenas o padrão do ataque, quando o provedor os suporta.
+
+**3. Distribuição e absorção.** Endereçamento anycast espalha a carga por muitos pontos de presença, e redes de distribuição de conteúdo absorvem o volume perto da origem do tráfego. É por isso que serviços grandes raramente caem por volume: eles têm mais capacidade agregada do que a maioria dos ataques consegue produzir.
+
+**4. Defesas de protocolo no servidor.** Cookies SYN eliminam a inundação de conexões semiabertas sem manter estado; temporizadores curtos, filas dimensionadas e limites por origem completam o conjunto. São ajustes de configuração com efeito imediato.
+
+**5. Defesas de aplicação.** Limitação de taxa por identidade e por endereço, cache agressivo do que é caro de gerar, desafios progressivos, filas com degradação controlada. E, sobretudo, **conhecer o custo das próprias rotas**: a busca com filtros combinados, a exportação de relatório, o endpoint que faz consulta sem índice. Uma rota cara e pública é um convite.
+
+**6. Arquitetura resiliente.** Degradação graciosa em vez de falha total — servir conteúdo em cache, desabilitar funcionalidades caras, manter uma página estática de emergência. Um serviço que responde parcialmente durante um ataque é infinitamente melhor que um que não responde.
+
+::: {#fig-escada-mitigacao}
+```{.tikz}
+%%| filename: escada-mitigacao-ddos
+%%| alt: Escada de mitigação de negação de serviço, do provedor de trânsito até a aplicação, indicando qual família de ataque cada degrau consegue tratar
+\begin{tikzpicture}[font=\footnotesize, y=1.12cm]
+  \tikzset{
+    dg/.style={draw, very thick, rounded corners=3pt, align=left, inner sep=5pt,
+               minimum width=7.4cm, minimum height=0.86cm, font=\scriptsize,
+               anchor=west},
+    tg/.style={font=\tiny, anchor=west, align=left}}
+
+  \node[dg, draw=manualred, fill=manualred!10]       at (0,4)
+    {\textbf{1. Trânsito e depuração} \tiny --- absorve o volume antes do seu enlace};
+  \node[tg, manualred]     at (7.8,4) {volumétrico};
+
+  \node[dg, draw=manualyellow, fill=manualyellow!14] at (0,3)
+    {\textbf{2. Buraco negro / especificação de fluxo} \tiny --- sacrifica um IP para salvar a rede};
+  \node[tg, manualyellow!70!black] at (7.8,3) {volumétrico};
+
+  \node[dg, draw=manualblue, fill=manualblue!10]     at (0,2)
+    {\textbf{3. Anycast e CDN} \tiny --- distribui e absorve perto da origem};
+  \node[tg, manualblue]    at (7.8,2) {volumétrico};
+
+  \node[dg, draw=manualgreen, fill=manualgreen!10]   at (0,1)
+    {\textbf{4. Cookies SYN, temporizadores, limites} \tiny --- estado sem manter estado};
+  \node[tg, manualgreen]   at (7.8,1) {protocolo};
+
+  \node[dg, draw=manualgreen, fill=manualgreen!16]   at (0,0)
+    {\textbf{5. Limite de taxa, cache, desafio} \tiny --- por identidade, não só por IP};
+  \node[tg, manualgreen]   at (7.8,0) {aplicação};
+
+  \node[dg, draw=manualgray, fill=manualgray!12]     at (0,-1)
+    {\textbf{6. Degradação graciosa} \tiny --- responder pouco é melhor que não responder};
+  \node[tg, manualgray]    at (7.8,-1) {todas};
+
+  \draw[->, >=stealth, very thick, manualgray] (-0.5,4.3) -- (-0.5,-1.3)
+    node[midway, left, rotate=90, anchor=south, font=\tiny]
+      {mais longe do serviço $\rightarrow$ mais perto};
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=9.4cm] at (4.4,-2.5)
+    {\textbf{O erro estrutural é tentar tratar volumétrico nos degraus de baixo.}
+     Nenhuma configuração de firewall resolve um enlace cheio --- e o firewall
+     costuma ser a \emph{primeira} coisa a cair, porque a tabela de estado
+     satura antes da banda.};
+\end{tikzpicture}
+```
+A escada de mitigação: cada degrau trata uma família, e nenhum trata todas.
+:::
+
+## O que decide o resultado é a preparação
+
+A diferença entre quinze minutos e oito horas de indisponibilidade quase nunca está na tecnologia disponível. Está no que foi decidido antes.
+
+**Conhecer a linha de base.** Sem saber o volume, a taxa de requisições e a distribuição geográfica normais, não há como reconhecer o anormal — nem como explicar ao provedor o que filtrar. Métricas históricas guardadas são pré-requisito.
+
+**Ter o contrato e o contato.** Quem se liga, por qual telefone, com qual identificação de cliente, e qual é o tempo de resposta acordado. Descobrir isso durante o ataque custa a primeira hora inteira.
+
+**Ter um plano escrito.** Quem decide acionar a depuração, quem autoriza o descarte de um endereço, quem comunica clientes e quem fala com a imprensa. Sem papéis definidos, a resposta vira reunião.
+
+**Baixar o tempo de vida do DNS antes.** Se a resposta envolve redirecionar tráfego para um serviço de mitigação, um registro com tempo de vida de 24 horas significa 24 horas de propagação. Reduzi-lo para 300 segundos é uma linha de configuração, feita em tempo de paz.
+
+**Testar.** Exercício de mesa com o cenário completo, e teste técnico controlado da mitigação — com autorização formal e janela combinada com o provedor, porque gerar tráfego de teste sem aviso é indistinguível de um ataque real e tem consequências contratuais e legais.
+
+Sobre a **extorsão**: é comum receber ameaça de ataque com pedido de pagamento, às vezes acompanhada de uma demonstração curta. A orientação consolidada é não pagar — não há garantia de cessação, e o pagamento marca a organização como alvo disposto. A resposta é acionar o plano, registrar a comunicação como evidência e notificar as autoridades.
+
+## Erros que se repetem
+
+- **Achar que o firewall resolve.** Ele é, tipicamente, o primeiro a cair.
+- **Contratar mitigação depois do primeiro ataque**, quando o segundo já veio.
+- **Bloquear por endereço de origem** num ataque com origem forjada — bloqueia vítimas inocentes e não alivia nada.
+- **Escalar automaticamente sem teto de gasto**, trocando indisponibilidade por fatura impagável.
+- **Concentrar dependências**: DNS, CDN e autenticação no mesmo fornecedor, com um único ponto de falha externo.
+- **Não filtrar a própria saída**, participando do problema global — e, com frequência, sendo a origem do ataque que atinge o vizinho.
+
+## ⚖️ Brasil em Foco
+
+**Indisponibilidade é incidente de segurança sob a LGPD.** O art. 46 fala em proteger dados pessoais contra destruição, perda e **acesso ou difusão não autorizados**, e o art. 6º inclui a segurança entre os princípios. Um ataque que impeça titulares de acessar serviços essenciais — ou que sirva de cortina de fumaça para outra intrusão, uso documentado da técnica — pode configurar incidente comunicável. A avaliação depende do risco aos titulares, e a Resolução 15/2024 da ANPD estabelece os critérios e prazos [@lgpd2018; @anpd2024res15].
+
+**Para prestadoras de telecomunicações, há dimensão regulatória.** A Resolução 740/2020 da Anatel trata de segurança cibernética e a 614/2013 disciplina o SCM, com obrigações de qualidade e continuidade. Uma indisponibilidade prolongada tem efeitos perante o regulador e, no elo com o assinante, perante o Código de Defesa do Consumidor — com pedidos de reparação por falha na prestação do serviço. Provedor regional atingido por ataque volumétrico enfrenta simultaneamente o problema técnico, o regulatório e o de relacionamento [@anatel740; @anatel614].
+
+**O CERT.br e o NIC.br mantêm as recomendações nacionais, e elas convergem em três medidas.** Implementar a filtragem de origem forjada (BCP 38), fechar resolvedores DNS abertos e não expor à internet serviços que amplificam. As três protegem principalmente **terceiros**, e é exatamente por isso que a adoção depende de cobrança contratual e de política de peering, não de boa vontade. O Brasil tem histórico relevante de tráfego de amplificação originado em redes nacionais mal configuradas, e cada provedor que fecha a própria porta reduz o problema para todos [@cert2024ddos; @rfc2827; @rfc3704].
+
+**A infraestrutura de troca de tráfego brasileira ajuda na mitigação.** Participar do IX.br dá acesso a mecanismos de sinalização de descarte junto aos pares e reduz a dependência de um único trânsito — que é, ele próprio, um ponto único de falha. Diversidade de trânsito é medida de resiliência tanto quanto redundância de equipamento [@nicbr2024ix].
+
+**Extorsão por ameaça de ataque é crime.** A ameaça condicionada a pagamento configura extorsão (art. 158 do Código Penal), e a execução do ataque pode caracterizar interrupção de serviço telemático (art. 266, §1º) e os tipos da Lei 12.737/2012 quando houver invasão. Para a vítima, o caminho é preservar as comunicações como evidência, registrar ocorrência e notificar o CERT.br — sem pagar [@lei12737; @lei14155].
+
+**No setor financeiro, continuidade é requisito supervisionado.** A Resolução BCB 4.893/2021 exige política de segurança cibernética com previsão de continuidade e resposta a incidentes, e instituições participantes do Pix operam sob requisitos de disponibilidade específicos. Ataque que afete canais de pagamento não é apenas problema técnico: é evento com comunicação obrigatória e potencial impacto reputacional imediato [@bcb4893; @bcbopenfinance].
+
+## 🛠️ No Campo
+
+**1. Meça sua linha de base agora, em tempo de paz.** Sem histórico, não há como reconhecer anomalia nem instruir o provedor:
+
+```bash
+# Volume por interface, guardado historicamente
+nfdump -R /var/cache/nfdump -t "$(date -d '-7 days' +%Y/%m/%d)" -s record/bytes -n 20
+
+# Taxa de requisicoes por rota — para saber o que e caro
+awk '{print $7}' /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -20
+```
+
+**2. Ative cookies SYN e ajuste as filas.** Elimina a inundação de conexões semiabertas sem manter estado:
+
+```bash
+sysctl -w net.ipv4.tcp_syncookies=1
+sysctl -w net.ipv4.tcp_max_syn_backlog=8192
+sysctl -w net.ipv4.tcp_synack_retries=2
+sysctl -w net.core.somaxconn=8192
+```
+
+**3. Feche o que amplifica na sua rede.** Verifique de fora, não de dentro:
+
+```bash
+# Resolvedor aberto? (executar de FORA da sua rede)
+dig @198.51.100.10 google.com +short
+
+# NTP com o comando de monitoramento antigo habilitado
+ntpq -c rv 198.51.100.20
+ntpdc -n -c monlist 198.51.100.20
+
+# Memcached exposto — nunca deveria responder da internet
+nc -u -w2 198.51.100.30 11211 <<< $'stats\r'
+```
+
+**4. Implemente BCP 38 na sua borda.** Protege terceiros e reduz o tráfego malicioso que nasce em você:
+
+```
+! Interface de cliente com rota unica
+interface GigabitEthernet0/1
+ ip verify unicast source reachable-via rx
+```
+
+**5. Contrate mitigação antes de precisar, e teste.** Com contato, identificação de cliente, tempo de resposta acordado e um teste anual em janela combinada. Contrato assinado e nunca exercitado costuma revelar surpresas justamente no pior momento.
+
+**6. Baixe o tempo de vida dos registros de DNS.** É o que permite redirecionar tráfego em minutos:
+
+```
+www.exemplo.com.br.  300  IN  A  203.0.113.10
+```
+
+**7. Limite taxa por identidade, não só por endereço.** Numa rede com NAT em escala de operadora, milhares de assinantes compartilham um endereço — bloquear por IP derruba gente inocente:
+
+```nginx
+limit_req_zone $http_authorization zone=api_user:20m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=api_ip:20m   rate=100r/s;
+
+location /api/ {
+    limit_req zone=api_user burst=40 nodelay;
+    limit_req zone=api_ip   burst=200;
+    limit_req_status 429;
+}
+```
+
+**8. Conheça e proteja as rotas caras.** Busca com filtros combinados, exportação de relatório, consulta sem índice. Exija autenticação, aplique cache e enfileire — uma rota cara e pública é um convite ao ataque de aplicação.
+
+**9. Ponha teto no escalonamento automático.** Elasticidade sem limite troca indisponibilidade por prejuízo. Defina teto, alerta de gasto e o que acontece ao atingi-lo.
+
+**10. Escreva o plano e ensaie.** Quem detecta, quem aciona, quem autoriza o descarte de um endereço, quem comunica clientes. Ensaie em mesa uma vez por ano e mantenha a página estática de emergência pronta e hospedada em outro lugar.
+
+## Resumo
+
+- **A disponibilidade é o único pilar que o adversário derruba sem invadir nada.** O ataque de 2016 contra um provedor de DNS tirou centenas de serviços do ar usando câmeras e roteadores domésticos com credencial de fábrica.
+- As três famílias exigem defesas distintas: **volumétricos** (o dano ocorre antes do seu enlace, só se resolve rio acima), **de protocolo** (exaurem estado — a tabela do firewall satura antes da banda) e **de aplicação** (custo assimétrico, volume baixo, cada requisição individualmente legítima).
+- A quarta categoria é a **negação de serviço econômica**: com escalonamento automático sem teto, o serviço não cai — a fatura sobe.
+- **Reflexão e amplificação dependem de duas condições, ambas de terceiros**: falsificar a origem, possível onde não há BCP 38, e serviços mal configurados respondendo à internet. Memcached exposto chegou a fatores de milhares de vezes.
+- A mitigação é uma escada: **trânsito e depuração**, **buraco negro ou especificação de fluxo** (que sacrifica um endereço conscientemente), **anycast e CDN**, **cookies SYN e temporizadores**, **limite de taxa e cache** e **degradação graciosa**. O erro estrutural é tentar tratar volumétrico nos degraus de baixo.
+- **O resultado é decidido pela preparação**: linha de base medida, contrato e contato prontos, plano com papéis definidos, tempo de vida do DNS reduzido em tempo de paz e exercícios realizados.
+- Em extorsão, a orientação consolidada é **não pagar**: não há garantia de cessação e o pagamento marca a organização como alvo disposto.
+- Erros recorrentes: confiar no firewall, contratar mitigação só após o primeiro ataque, bloquear por origem forjada, escalar sem teto, concentrar dependências num único fornecedor e não filtrar a própria saída.
+- No Brasil, indisponibilidade pode configurar incidente comunicável sob a LGPD; prestadoras respondem perante a Anatel e o CDC; o CERT.br cobra as três medidas que protegem terceiros — BCP 38, fechar resolvedores abertos e não expor serviços que amplificam —; e a extorsão por ameaça de ataque é crime, com preservação de evidência e notificação como caminho correto.
