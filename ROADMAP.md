@@ -77,7 +77,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 044** - Injeção: SQL, NoSQL e comandos de sistema - `vol07/cap044-injecao-sql-nosql-e-comandos-de-sistema.qmd`
 - [x] **cap 045** - Cross-site scripting e ataques no lado do cliente - `vol07/cap045-cross-site-scripting-e-ataques-no-lado-do.qmd`
 - [x] **cap 046** - Falhas de autenticação e gestão de sessão - `vol07/cap046-falhas-de-autenticacao-e-gestao-de-sessao.qmd`
-- [ ] **cap 047** - Falhas de controle de acesso: IDOR, SSRF e escalonamento - `vol07/cap047-falhas-de-controle-de-acesso-idor-ssrf-e.qmd`
+- [x] **cap 047** - Falhas de controle de acesso: IDOR, SSRF e escalonamento - `vol07/cap047-falhas-de-controle-de-acesso-idor-ssrf-e.qmd`
 - [ ] **cap 048** - Segurança de APIs REST e GraphQL - `vol07/cap048-seguranca-de-apis-rest-e-graphql.qmd`
 - [ ] **cap 049** - SAST, DAST, SCA e automação de testes de segurança - `vol07/cap049-sast-dast-sca-e-automacao-de-testes-de.qmd`
 

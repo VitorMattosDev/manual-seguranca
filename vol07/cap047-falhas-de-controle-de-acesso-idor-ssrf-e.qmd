@@ -1,3 +1,299 @@
 # Falhas de controle de acesso: IDOR, SSRF e escalonamento {#sec-cap047}
 
-*(em elaboracao)*
+Um provedor regional de internet moderniza a área do cliente. A segunda via do boleto passa a ser acessível por um endereço limpo: `/faturas/48219/pdf`. O cliente entra, autentica, vê a fatura. Funciona.
+
+Meses depois, um assinante curioso troca o número por `48220` e recebe o PDF de outra pessoa — com nome completo, CPF, endereço de instalação e valor. Não houve invasão, não houve exploração de falha de memória, não houve ferramenta. Houve aritmética.
+
+O que estava faltando é uma linha: verificar se a fatura solicitada pertence ao usuário autenticado. A aplicação checou **quem é você** (autenticação) e nunca checou **o que você pode ver** (autorização). E como identificadores sequenciais são a regra em bancos relacionais, a base inteira de clientes ficou legível por qualquer assinante ativo, um número por vez.
+
+Essa é a categoria A01 do OWASP Top 10 (@sec-cap043), e ela lidera a lista por um motivo estrutural: **não existe ferramenta que a encontre sozinha**. Um scanner vê a requisição responder 200 e não tem como saber que aquele PDF não deveria ser daquele usuário. Só quem conhece a regra de negócio sabe. É a classe de falha mais comum, mais fácil de explorar e mais difícil de automatizar a detecção.
+
+## Autenticação não é autorização
+
+A confusão entre as duas é a origem da maior parte dos incidentes desta classe. O @sec-cap046 tratou de estabelecer **quem** é o usuário. Este capítulo trata do que vem depois: dado que sabemos quem ele é, **a que ele tem direito**.
+
+Os modelos formais já apareceram no @sec-cap022 — DAC, MAC, RBAC, ABAC. O problema em aplicações reais raramente é a escolha do modelo. É que a decisão de autorização está **espalhada**, escrita à mão em cada controlador, e basta um endpoint em que alguém esqueceu para que o modelo inteiro deixe de valer. Uma política é tão forte quanto o ponto onde ela não foi aplicada.
+
+Vale fixar a taxonomia, porque os nomes se confundem:
+
+**Escalonamento horizontal.** O usuário acessa recursos de outro usuário do mesmo nível. É o caso da fatura. Ele tinha direito a ver *uma* fatura; passou a ver todas.
+
+**Escalonamento vertical.** O usuário obtém capacidades de um nível superior — o cliente comum alcança função administrativa. Costuma vir de endpoint administrativo sem verificação de papel, ou de parâmetro que o cliente controla e o servidor obedece.
+
+**Controle de acesso apenas no cliente.** A interface esconde o botão, a rota do frontend bloqueia a navegação, o menu não exibe a opção — e o endpoint no servidor aceita a chamada de qualquer um. Esconder não é proibir. **Tudo o que roda no navegador da pessoa está sob o controle dela**, e desabilitar um campo em JavaScript é decoração, não segurança.
+
+**Atribuição em massa.** O endpoint aceita um objeto JSON e o mapeia direto para o modelo persistido. O usuário edita o próprio perfil e inclui, no corpo, um campo que a interface nunca mostra — `"papel": "admin"`, `"saldo": 100000`, `"verificado": true`. Se o mapeamento não tem lista fechada de campos aceitos, o servidor obedece.
+
+**Falha de segregação por locatário.** Em sistemas multiempresa, a consulta filtra pelo identificador do registro e esquece de filtrar também pelo identificador do locatário. Uma empresa lê os dados da outra. É a variante mais cara da falha horizontal, porque o dano não é de um cliente: é de uma carteira inteira.
+
+## Referência direta insegura a objeto
+
+O nome oficial da categoria é longo, mas o conceito cabe em uma frase: **o identificador do recurso viaja pelo cliente, e o servidor confia nele sem verificar a posse**.
+
+O identificador aparece em todo lugar — no caminho da URL, em parâmetro de consulta, no corpo da requisição, em campo oculto de formulário, em cabeçalho personalizado, dentro de um cookie. E ele nem sempre é numérico: pode ser um nome de arquivo, um CPF, um número de contrato, um endereço de e-mail.
+
+Duas correções costumam ser propostas, e apenas uma funciona:
+
+**Trocar o identificador sequencial por UUID.** Reduz a facilidade — não dá mais para incrementar —, mas **não corrige nada**. Identificadores vazam por toda parte: em listagens, em relatórios exportados, em logs, em URLs compartilhadas, no HTML da própria página, em respostas de outros endpoints que retornam mais campos do que deveriam. Quem obtém um identificador válido continua acessando o recurso. É obscuridade, e obscuridade nunca foi controle. Serve como camada complementar, jamais como a defesa.
+
+**Verificar a posse do objeto na consulta.** É a correção real, e ela pertence à camada de dados, não à camada de apresentação:
+
+```python
+# errado — busca pelo id e confia
+fatura = Fatura.query.get(fatura_id)
+
+# certo — a posse faz parte da própria consulta
+fatura = Fatura.query.filter_by(
+    id=fatura_id,
+    cliente_id=usuario_atual.cliente_id
+).first_or_404()
+```
+
+A diferença entre as duas versões é a essência do capítulo. Na primeira, a autorização é um passo separado que alguém pode esquecer. Na segunda, **é impossível recuperar o objeto errado**, porque o escopo do usuário está embutido na consulta. Não há caminho em que a verificação seja pulada, porque não há consulta sem ela.
+
+O padrão que generaliza essa ideia é o **repositório com escopo**: a camada de acesso a dados nunca expõe um método que busca por identificador puro. Todo método recebe o contexto do usuário e já filtra por ele. Quem escrever um controlador novo herda a autorização de graça, e é isso que resolve o problema estrutural — porque o defeito não é a linha esquecida, é a arquitetura que permite esquecê-la.
+
+Um detalhe operacional que quase sempre é ignorado: **404 e 403 respondidos de formas distintas transformam a aplicação em oráculo de enumeração**. Responder 403 para um recurso existente de outro dono e 404 para um recurso inexistente informa exatamente quais identificadores existem. Para recurso que o usuário não pode ver, o correto é 404 — do ponto de vista dele, o recurso não existe mesmo.
+
+::: {#fig-onde-verificar}
+```{.tikz}
+%%| filename: onde-verificar
+%%| alt: Comparação entre a autorização espalhada pelos controladores e a autorização centralizada na camada de dados
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, thick, rounded corners=2pt, align=center, inner sep=3pt,
+               minimum width=2.3cm, minimum height=0.62cm, font=\tiny, fill=white},
+    lin/.style={->, >=stealth, thick}}
+
+  \node[font=\scriptsize, manualred, anchor=west] at (0,4.5)
+    {\textbf{ESPALHADA --- cada rota decide sozinha}};
+
+  \node[cx, draw=manualgray] (e0) at (1.2,3.6) {requisição};
+  \node[cx, draw=manualblue] (e1) at (4.2,4.15) {rota A\\\tiny verifica};
+  \node[cx, draw=manualblue] (e2) at (4.2,3.45) {rota B\\\tiny verifica};
+  \node[cx, draw=manualred]  (e3) at (4.2,2.75) {rota C\\\tiny \textbf{esqueceu}};
+  \node[cx, draw=manualgray] (e4) at (7.6,3.45) {banco de dados};
+
+  \draw[lin, manualgray] (e0) -- (e1);
+  \draw[lin, manualgray] (e0) -- (e2);
+  \draw[lin, manualgray] (e0) -- (e3);
+  \draw[lin, manualgreen] (e1) -- (e4);
+  \draw[lin, manualgreen] (e2) -- (e4);
+  \draw[lin, manualred, very thick] (e3) -- (e4);
+
+  \node[font=\tiny, manualred, anchor=west, text width=3.4cm, align=left]
+    at (9.2,3.45) {\textbf{Uma rota basta.} A política vale o ponto onde ela não foi aplicada.};
+
+  \node[font=\scriptsize, manualgreen, anchor=west] at (0,1.7)
+    {\textbf{CENTRALIZADA --- o escopo está na consulta}};
+
+  \node[cx, draw=manualgray] (c0) at (1.2,0.8) {requisição};
+  \node[cx, draw=manualblue] (c1) at (4.2,1.35) {rota A};
+  \node[cx, draw=manualblue] (c2) at (4.2,0.65) {rota B};
+  \node[cx, draw=manualblue] (c3) at (4.2,-0.05) {rota C};
+  \node[cx, draw=manualgreen, very thick] (cg) at (7.6,0.65)
+    {repositório\\\tiny com escopo};
+  \node[cx, draw=manualgray] (c4) at (10.6,0.65) {banco de dados};
+
+  \draw[lin, manualgray] (c0) -- (c1);
+  \draw[lin, manualgray] (c0) -- (c2);
+  \draw[lin, manualgray] (c0) -- (c3);
+  \draw[lin, manualgray] (c1) -- (cg);
+  \draw[lin, manualgray] (c2) -- (cg);
+  \draw[lin, manualgray] (c3) -- (cg);
+  \draw[lin, manualgreen, very thick] (cg) -- (c4);
+
+  \node[draw=manualblue, fill=manualblue!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.6cm] at (6.3,-1.6)
+    {\textbf{O defeito não é a linha esquecida --- é a arquitetura que permite
+     esquecê-la.} Quando o escopo do usuário faz parte da própria consulta,
+     recuperar o objeto de outra pessoa deixa de ser possível, e quem escrever
+     um controlador novo herda a autorização sem saber que herdou.};
+\end{tikzpicture}
+```
+Autorização espalhada e autorização centralizada. Só a segunda sobrevive ao crescimento da equipe.
+:::
+
+## Negar por padrão
+
+O princípio que organiza tudo é antigo e vem do @sec-cap001: **o que não foi explicitamente permitido está negado**. Em aplicação, isso se traduz em decisões concretas:
+
+- Rota nova nasce protegida. O middleware de autorização é aplicado globalmente, e a **exceção** — a rota pública — é que precisa ser declarada. O inverso, listar as rotas protegidas, garante que a próxima rota criada com pressa fique aberta.
+- Campo novo em resposta de API nasce oculto. Serializador com lista fechada de campos, nunca "devolve o objeto inteiro".
+- Campo novo em requisição nasce ignorado. Mapeamento com lista fechada de campos aceitos é a correção da atribuição em massa.
+- Papel novo nasce sem permissão. Herança de permissão por padrão é como um estagiário acaba com acesso ao faturamento.
+
+E o **menor privilégio** aplicado ao tempo: acesso administrativo elevado por período determinado, com registro, em vez de permanente. É a mesma lógica do PAM (@sec-cap026) trazida para dentro da aplicação.
+
+Um ponto que raramente aparece nas listas: **verifique o método HTTP também**. Aplicações que autorizam por prefixo de caminho — "tudo em `/admin` exige papel administrativo" — às vezes deixam passar `POST` onde só o `GET` foi considerado, ou aceitam sobrescrita de método por cabeçalho. E controle de acesso por expressão regular sobre a URL sofre de normalização: `/Admin`, `/admin/`, `/./admin`, `/admin%2f` e a versão codificada duas vezes podem escapar do padrão e chegar íntegras ao roteador da aplicação.
+
+## Falsificação de requisição do lado do servidor
+
+A SSRF pertence ao mesmo capítulo por um motivo que costuma escapar: **ela também é uma falha de controle de acesso** — só que o limite violado não é o do usuário, é o da rede [@owaspssrf].
+
+O mecanismo é simples. A aplicação recebe do usuário uma URL e vai buscá-la. É um requisito legítimo e comum: importar um documento a partir de um endereço, gerar uma miniatura de uma imagem remota, validar um webhook, converter uma página em PDF, consultar uma integração cujo endereço é configurável.
+
+O servidor faz essa requisição **de dentro da rede**, com o alcance que ele tem e o usuário não. E é aí que a coisa vira: o atacante deixa de estar limitado ao que a internet enxerga e passa a alcançar o que o servidor enxerga — serviços internos sem autenticação, painéis administrativos na rede de gerência, bancos de dados que confiam na origem, e, na nuvem, o serviço de metadados da instância.
+
+Este último merece destaque porque converte uma falha média em comprometimento total. Em provedores de nuvem, um endereço de enlace local devolve, para quem consultar de dentro da máquina, as credenciais temporárias associadas ao papel da instância. Uma SSRF que alcance esse endereço entrega essas credenciais ao atacante — e com elas vem o acesso aos recursos que o papel permite. A mitigação específica é exigir a versão do serviço de metadados que demanda um token obtido por requisição prévia com método distinto, o que quebra a maioria das SSRF simples; é configuração de instância e deve ser padrão da organização (tema do Volume 8).
+
+Vale distinguir as duas formas, porque a segunda é subestimada:
+
+**SSRF direta.** A resposta da requisição interna volta para o atacante. Ele lê o que quiser.
+
+**SSRF cega.** A resposta não volta, mas o comportamento observável — tempo de resposta, mensagem de erro distinta, código de status — revela informação suficiente para mapear a rede interna porta a porta. E, mais importante, ela ainda **executa** a requisição: se o serviço interno aceita uma operação por `POST` sem autenticação, o efeito acontece mesmo que o atacante nunca veja a resposta.
+
+### Por que a lista de bloqueio não funciona
+
+A tentação é filtrar: bloquear `localhost`, `127.0.0.1` e as faixas privadas (@sec-cap009). Falha de forma previsível, e vale enumerar porque cada item já causou incidente:
+
+- **Notações alternativas do mesmo endereço** — decimal, octal, hexadecimal, formas abreviadas de IPv6, `0.0.0.0`, e o endereço IPv4 embutido em IPv6.
+- **DNS que resolve para endereço interno.** O atacante controla um domínio público e aponta o registro para um endereço privado. O nome passa por qualquer filtro que examine a cadeia de texto.
+- **Reamarração de DNS.** O nome resolve para um endereço externo na hora da validação e para um interno na hora da requisição, porque são duas resoluções distintas separadas por milissegundos. É o contorno que derrota validação de nome por construção.
+- **Redirecionamento.** A URL fornecida é externa e legítima; o servidor a busca e recebe um redirecionamento para o endereço interno. Se o cliente HTTP segue redirecionamentos automaticamente — e o padrão de quase toda biblioteca é seguir —, o filtro foi contornado sem nunca ter sido testado.
+- **Esquemas não previstos** — `file://` para ler arquivo local, `gopher://` para falar com serviços de texto, `dict://`, e os esquemas internos de cada plataforma.
+
+A defesa que funciona tem quatro camadas, e a mais importante não é a validação:
+
+1. **Lista de permissão de destinos**, quando o requisito comporta — e comporta com mais frequência do que se supõe. Integração com parceiro conhecido não precisa aceitar URL arbitrária.
+2. **Resolver o nome primeiro, validar o endereço resolvido, e conectar-se àquele endereço** — não ao nome. É o que fecha a reamarração de DNS, porque elimina a segunda resolução.
+3. **Desabilitar o seguimento automático de redirecionamentos**, ou revalidar o destino a cada salto.
+4. **Isolar a saída na rede.** Colocar o componente que busca URLs externas em uma sub-rede sem rota para a rede interna, com proxy de saída explícito e política de egresso. **É a única camada que continua valendo quando as outras três falham**, e é a que transforma uma SSRF de crítica em irrelevante. Vale o mesmo raciocínio de segmentação do @sec-cap028: controle de egresso não é luxo.
+
+::: {#fig-ssrf-camadas}
+```{.tikz}
+%%| filename: ssrf-camadas
+%%| alt: Fluxo de uma falsificação de requisição do lado do servidor e as quatro camadas de defesa, destacando o isolamento de rede como a última que resta
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=2pt, align=center, inner sep=3pt,
+               minimum width=2.5cm, minimum height=0.75cm, font=\tiny, fill=white},
+    lin/.style={->, >=stealth, thick}}
+
+  \node[bx, draw=manualred]   (at) at (0,2.6)   {atacante\\\tiny envia a URL};
+  \node[bx, draw=manualblue]  (ap) at (3.6,2.6) {aplicação\\\tiny busca a URL};
+  \node[bx, draw=manualgray]  (in) at (7.4,3.5) {serviço interno\\\tiny sem autenticação};
+  \node[bx, draw=manualred]   (md) at (7.4,2.4) {metadados\\\tiny credenciais do papel};
+  \node[bx, draw=manualgray]  (ad) at (7.4,1.3) {rede de gerência\\\tiny painéis, bancos};
+
+  \draw[lin, manualred] (at) -- (ap);
+  \draw[lin, manualred] (ap) -- (in);
+  \draw[lin, manualred, very thick] (ap) -- (md);
+  \draw[lin, manualred] (ap) -- (ad);
+
+  \node[font=\tiny, manualred, anchor=west, text width=3.0cm, align=left] at (9.0,2.4)
+    {a requisição parte \emph{de dentro} --- com o alcance do servidor,
+     não o do usuário};
+
+  \node[draw=manualgreen, very thick, rounded corners=3pt, fill=manualgreen!10,
+        align=left, inner sep=5pt, font=\tiny, text width=5.6cm, anchor=north west]
+    at (0,0.4)
+    {\textbf{1.} lista de permissão de destinos\\[2pt]
+     \textbf{2.} resolver o nome, validar o \emph{endereço},\\
+     \phantom{\textbf{2.}} conectar ao endereço resolvido\\[2pt]
+     \textbf{3.} não seguir redirecionamento automático};
+
+  \node[draw=manualblue, very thick, rounded corners=3pt, fill=manualblue!12,
+        align=left, inner sep=5pt, font=\tiny, text width=5.6cm, anchor=north west]
+    at (6.2,0.4)
+    {\textbf{4. isolar a saída na rede} --- sub-rede sem rota
+     para a rede interna, proxy de egresso explícito.\\[3pt]
+     \textbf{É a única camada que sobra quando as outras três falham}, e a que
+     torna a SSRF irrelevante em vez de crítica.};
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=left,
+        inner sep=5pt, font=\scriptsize, text width=12.2cm] at (6.0,-2.4)
+    {\textbf{Por que validar a cadeia de texto não basta:} notação decimal ou
+     octal do mesmo endereço, domínio público apontando para faixa privada,
+     reamarração de DNS (duas resoluções separadas por milissegundos),
+     redirecionamento para o alvo interno e esquemas como
+     \texttt{file://} atravessam qualquer lista de bloqueio.};
+\end{tikzpicture}
+```
+SSRF e suas quatro camadas de defesa. As três primeiras são código; a quarta é arquitetura de rede — e é a que resiste.
+:::
+
+## Erros que se repetem
+
+- **Confiar no identificador que veio do cliente** sem verificar a posse do objeto na consulta.
+- **Trocar identificador sequencial por UUID e considerar corrigido.** Reduz a facilidade, não o acesso.
+- **Verificar autorização apenas na interface**, escondendo o botão e deixando o endpoint aberto.
+- **Mapear o corpo da requisição direto para o modelo**, permitindo atribuição em massa de campos que a interface nunca mostra.
+- **Esquecer o identificador do locatário** no filtro, em sistema multiempresa.
+- **Listar as rotas protegidas** em vez de listar as exceções públicas.
+- **Devolver o objeto inteiro** na resposta da API, incluindo campos que a interface não usa e o usuário não deveria ver.
+- **Autorizar por prefixo de URL**, vulnerável a normalização e a métodos HTTP não previstos.
+- **Diferenciar 403 de 404**, transformando a aplicação em oráculo de enumeração de identificadores.
+- **Filtrar SSRF por lista de bloqueio de endereços**, sem isolamento de egresso por trás.
+- **Seguir redirecionamentos automaticamente** no cliente HTTP que busca URLs fornecidas pelo usuário.
+
+## ⚖️ Brasil em Foco
+
+**IDOR em sistema com dado pessoal é vazamento comunicável, e a extensão costuma ser a base inteira.** Diferentemente de um comprometimento pontual, a falha de referência direta permite iteração — um identificador por vez, milhares por hora. Para a comunicação exigida pelo art. 48 da LGPD e pela Resolução ANPD 15/2024, a pergunta que a organização precisa responder é *quantos titulares foram efetivamente acessados*, e ela só é respondível se houver **registro de acesso por recurso e por sessão**. Sem esse registro, não há como distinguir o assinante curioso que leu duas faturas do raspador que leu duzentas mil, e a comunicação precisa assumir o pior caso [@lgpd2018; @anpd2024res15].
+
+**O caso da fatura é o padrão brasileiro mais recorrente, e o CPF é o agravante.** Boleto, segunda via, comprovante, contrato, laudo, holerite e protocolo são documentos que sistemas brasileiros expõem por identificador sequencial com frequência desconfortável. E quase todos carregam CPF, nome completo e endereço — a combinação exata que alimenta fraude de tomada de conta e abertura de crédito em nome de terceiro (@sec-cap046). O impacto de um IDOR em documento fiscal ou cadastral brasileiro é sistematicamente maior do que a mesma falha em outro contexto, porque o CPF é identificador universal e não rotacionável.
+
+**Acessar dado de outro usuário por troca de identificador é crime, e a facilidade não é excludente.** O art. 154-A do Código Penal, na redação da Lei 12.737/2012, tipifica a invasão de dispositivo informático para obter dados sem autorização, e a Lei 14.155/2021 ampliou seu alcance e endureceu as penas. Não existe "estava aberto, então era público" — a ausência de barreira técnica não converte dado alheio em dado público. Para quem pesquisa, vale a advertência de sempre: teste em laboratório próprio (@sec-cap014) ou com autorização escrita e escopo delimitado (@sec-cap007) [@lei12737; @lei14155].
+
+**Open finance é um ambiente de referências cruzadas entre instituições.** A arquitetura brasileira de compartilhamento de dados faz uma instituição consultar dados de titulares mantidos por outra, mediante consentimento — o que significa que **o identificador de consentimento vira a chave de autorização**, e uma falha de posse nele expõe dados de um cliente a outra instituição. A regulamentação do Banco Central impõe requisitos de segurança e trilha de auditoria justamente porque a superfície de autorização é grande e distribuída [@bcbopenfinance].
+
+**Setor público concentra o problema por escala e por sequencialidade.** Sistemas de protocolo, processo administrativo, benefício e consulta de situação cadastral trabalham com números sequenciais por natureza — o número do processo *é* sequencial, e não há como não ser. A consequência é que o controle de posse precisa ser explícito e testado, e não pode se apoiar na dificuldade de adivinhar o identificador, porque adivinhar é trivial por construção. É o cenário em que o padrão de repositório com escopo dá mais retorno.
+
+**PCI-DSS trata a categoria explicitamente.** O Requisito 6 do PCI-DSS v4 cobre falhas de controle de acesso em aplicações que tocam dados de cartão, e o Requisito 7 exige o menor privilégio com negação por padrão. Para adquirentes, subadquirentes e provedores de meio de pagamento brasileiros — um setor grande e em crescimento —, IDOR não é apenas risco: é não conformidade auditável [@pcidss4; @owaspaccesscontrol].
+
+## 🛠️ No Campo
+
+**1. Faça o teste dos dois usuários.** É o teste mais barato e mais produtivo desta classe. Crie duas contas comuns, A e B. Autentique-se como A, capture os identificadores que aparecem. Autentique-se como B e repita cada requisição de A com o cookie de B. **Toda resposta 200 é um achado.**
+
+```bash
+# com a sessão de B, pedindo o recurso de A
+curl -s -o /dev/null -w '%{http_code}\n' -b sessao_b.txt \
+     https://app.exemplo.com.br/faturas/48219/pdf
+```
+
+**2. Automatize a comparação em CI.** Um teste de integração por recurso sensível: usuário B pede o objeto de A e o teste **exige** 404. É a única forma de impedir que a falha volte quando alguém escrever o próximo controlador.
+
+**3. Inverta a lista do middleware.** Aplique a autorização globalmente e declare apenas as exceções públicas. Depois, confirme que a lista de exceções é curta e que cada item foi justificado.
+
+**4. Mova o escopo para dentro da consulta.** Procure as buscas por identificador puro, que são o padrão do defeito:
+
+```bash
+grep -rnE "\.(get|find|findById|findOne|get_object_or_404)\( *[a-z_]*id" src/
+```
+
+Cada ocorrência precisa provar que o escopo do usuário entra no filtro, ou vira chamada ao repositório com escopo.
+
+**5. Feche o serializador e o mapeador.** Lista fechada de campos na saída e lista fechada de campos aceitos na entrada. Procure os pontos onde o corpo inteiro vira modelo:
+
+```bash
+grep -rnE "fields *= *'__all__'|Object\.assign\( *[a-z]+ *, *req|update\(\*\*" src/
+```
+
+**6. Padronize 404 para recurso não autorizado.** Mesma resposta, mesmo tempo, para "não existe" e "não é seu".
+
+**7. Teste a normalização do caminho.** Se há autorização por prefixo, confirme que `/Admin`, `/admin/`, `/./admin`, `/admin%2f` e a forma codificada duas vezes recebem o mesmo tratamento — e prefira autorizar no controlador, não no proxy reverso.
+
+**8. Encontre os pontos de SSRF pelo requisito, não pelo código.** Liste as funcionalidades em que a aplicação busca uma URL: importação, miniatura, webhook, geração de PDF, integração configurável, verificação de imagem de perfil. Cada uma é um candidato.
+
+```bash
+grep -rnE "requests\.(get|post)\(|urlopen\(|HttpClient|curl_exec|fetch\( *[a-z]+Url" src/
+```
+
+**9. Exija a versão com token no serviço de metadados** em todas as instâncias de nuvem, como padrão da organização. É configuração, quebra a maioria das SSRF e não exige alteração de código.
+
+**10. Isole o egresso do componente que busca URLs.** Sub-rede sem rota para a rede interna, proxy de saída explícito, política que só permite os destinos previstos. Essa é a camada que resta quando a validação falha — e a validação vai falhar.
+
+**11. Desligue o seguimento automático de redirecionamento** no cliente HTTP desses pontos, ou revalide o destino a cada salto.
+
+**12. Registre e monitore o acesso a recurso por identificador.** Um usuário que consulta duzentos identificadores distintos em cinco minutos tem um nome, e não é "cliente". A regra de detecção é simples e o retorno é alto (@sec-cap031). Registre também as negações de autorização: um volume anormal de 404 autenticados é o sinal mais limpo de varredura de IDOR em andamento.
+
+## Resumo
+
+- Autenticação estabelece **quem** é o usuário; autorização estabelece **a que ele tem direito**. A categoria lidera o OWASP Top 10 porque nenhuma ferramenta a encontra sozinha — só quem conhece a regra de negócio sabe que aquela resposta 200 estava errada.
+- As formas se repetem: escalonamento **horizontal** (dados de outro usuário), **vertical** (capacidades de nível superior), **controle apenas no cliente**, **atribuição em massa** e **falha de segregação por locatário**.
+- Trocar identificador sequencial por UUID **não corrige IDOR** — identificadores vazam em listagens, relatórios, logs e URLs compartilhadas. A correção é fazer o escopo do usuário parte da própria consulta.
+- O padrão que resolve estruturalmente é o **repositório com escopo**: a camada de dados não expõe busca por identificador puro, e quem escreve o próximo controlador herda a autorização sem saber.
+- **Negar por padrão**: rota nova nasce protegida (liste as exceções públicas, não as rotas protegidas), campo novo nasce oculto na saída e ignorado na entrada, papel novo nasce sem permissão.
+- **SSRF é falha de controle de acesso à rede.** A aplicação busca uma URL fornecida pelo usuário e emite a requisição de dentro, com o alcance que o servidor tem e o usuário não — inclusive o serviço de metadados da instância em nuvem, que devolve credenciais.
+- Lista de bloqueio não contém SSRF: notações alternativas, DNS apontando para faixa privada, **reamarração de DNS**, redirecionamento e esquemas alternativos a atravessam. Resolver o nome e conectar ao **endereço validado**, não seguir redirecionamento — e, acima de tudo, **isolar o egresso na rede**, que é a camada que sobra quando as outras falham.
+- No Brasil, o IDOR em documento com CPF é o padrão recorrente e o impacto é amplificado por um identificador universal e não rotacionável; dimensionar o vazamento para a comunicação à ANPD exige registro de acesso por recurso e por sessão, que precisa existir **antes** do incidente.
