@@ -1,3 +1,225 @@
 # Segurança em redes sem fio e enlaces de rádio {#sec-cap034}
 
-*(em elaboracao)*
+Entre 2005 e 2007, uma rede varejista norte-americana perdeu dados de dezenas de milhões de cartões. O ponto de entrada não foi um servidor exposto nem um funcionário enganado: foi o **estacionamento de uma loja**. A rede sem fio usada pelos leitores de código de barras estava protegida por WEP — um esquema já publicamente quebrado — e o adversário, sentado no carro, capturou tráfego suficiente para recuperar a chave. Da rede da loja, alcançou a rede corporativa. Da corporativa, o ambiente de pagamento.
+
+O padrão é o mesmo do @sec-cap028 e do @sec-cap033: um ponto de entrada periférico, uma rede plana o bastante, e um alcance que ninguém mediu. Mas há aqui um elemento que nenhum outro capítulo deste volume tem, e que muda todo o raciocínio de defesa: **o meio não pode ser contido**. Não existe a tomada de rede que se pode trancar numa sala. O sinal atravessa a parede, chega ao estacionamento, à calçada e ao prédio vizinho, e qualquer pessoa com uma antena participa do meio físico sem pedir licença a ninguém.
+
+Este capítulo trata do que isso implica — para a rede corporativa, para a rede de visitantes e para os enlaces de rádio que sustentam boa parte da conectividade brasileira.
+
+## O que muda quando o meio é compartilhado
+
+Três consequências decorrem diretamente da natureza do rádio, e elas orientam tudo o que vem depois:
+
+- **Não há controle de acesso físico.** A defesa precisa ser inteiramente criptográfica. Esconder o identificador da rede não é controle: ele aparece nas requisições dos clientes que a procuram.
+- **Todo mundo ouve todo mundo.** A confidencialidade depende de a chave de sessão ser individual. Em esquemas com chave compartilhada, quem tem a senha e capturou o estabelecimento da conexão de outro cliente pode decifrar o tráfego dele.
+- **Quadros de controle são um vetor.** Em redes que não protegem os quadros de gerenciamento, é possível forçar a desconexão de um cliente — o que abre a porta para o ponto de acesso falso e para a captura do estabelecimento de conexão.
+
+## A evolução, e por que ela importa hoje
+
+**WEP** (1997) foi quebrado de forma irreparável no início dos anos 2000, por reuso de vetor de inicialização e por uso incorreto do RC4. Recuperar a chave leva minutos. Não existe configuração de WEP que seja segura, e ele ainda aparece em equipamento industrial e em impressoras antigas.
+
+**WPA com TKIP** (2003) foi um paliativo para rodar no hardware existente. Também está quebrado, e sua presença hoje serve principalmente para um efeito colateral: em modo misto, ele **rebaixa** a segurança da rede inteira.
+
+**WPA2 com CCMP** (2004) trouxe AES no modo CCM e é ainda a base instalada dominante [@ieee80211]. Sua criptografia permanece sólida; os problemas estão em torno dela.
+
+O primeiro é o **estabelecimento de conexão em quatro vias**, que deriva a chave de sessão. Em 2017, Vanhoef e Piessens mostraram que era possível forçar a reinstalação de uma chave já em uso, reiniciando o contador de pacotes e permitindo decifrar e, em alguns casos, injetar tráfego — o ataque KRACK. Foi corrigido em software, mas revelou algo estrutural: **o padrão estava especificado de forma ambígua**, e a maioria das implementações errava da mesma maneira [@vanhoef2017].
+
+O segundo é mais grave na prática: numa rede com chave compartilhada, é possível capturar material suficiente para tentar **quebra fora de linha** da senha — inclusive sem esperar que um cliente se conecte, usando o identificador derivado que alguns pontos de acesso enviam espontaneamente. A consequência operacional é direta: em rede com senha compartilhada, **a segurança é exatamente a força da senha**, atacável em ritmo de bilhões de tentativas por segundo em hardware acessível (@sec-cap023).
+
+**WPA3** (2018) corrige a raiz do problema. A autenticação por senha passa a usar SAE, um protocolo de acordo de chave autenticado por senha: cada tentativa exige interação com o ponto de acesso, o que **elimina o ataque fora de linha** e traz sigilo futuro. Proteção de quadros de gerenciamento passa a ser obrigatória, o que encerra a desconexão forçada trivial. E, para redes abertas, a cifragem oportunista dá confidencialidade contra observação passiva sem exigir senha alguma [@wifialliance2024].
+
+Duas ressalvas honestas sobre o WPA3. Primeiro, as falhas conhecidas como Dragonblood mostraram problemas de implementação e canais laterais no SAE, corrigidos depois — a lição é que protocolo novo precisa de firmware atualizado, não apenas de configuração [@vanhoef2020]. Segundo, e mais relevante no dia a dia: o **modo de transição**, que aceita WPA2 e WPA3 na mesma rede para compatibilidade, permite que um adversário force o cliente ao modo antigo. Rede em modo de transição tem a segurança do WPA2, não a do WPA3.
+
+| | WPA2-PSK | WPA2-Enterprise | WPA3-SAE | WPA3-Enterprise |
+|---|---|---|---|---|
+| Credencial | Senha única compartilhada | Identidade individual | Senha única compartilhada | Identidade individual |
+| Ataque fora de linha à senha | Sim | Não se aplica | **Não** | Não se aplica |
+| Sigilo futuro | Não | Depende do método EAP | Sim | Sim |
+| Proteção de quadros de gerenciamento | Opcional | Opcional | **Obrigatória** | Obrigatória |
+| Revogar um usuário | Trocar a senha de todos | Desativar a conta | Trocar a senha de todos | Desativar a conta |
+| Uso adequado | Casa, visitantes | Corporativo | Casa, visitantes | Corporativo |
+
+: O que cada modo entrega, e onde cada um é adequado. {#tbl-modos-wifi}
+
+A linha que decide a arquitetura é a da revogação. Com chave compartilhada, desligar uma pessoa exige trocar a senha de todo mundo — o que ninguém faz, e por isso a senha da rede corporativa continua funcionando anos depois do desligamento de quem a levou embora.
+
+## Corporativo é 802.1X, e o problema mora no certificado
+
+A rede corporativa exige identidade individual, e isso significa 802.1X com um servidor de autenticação: cada usuário ou dispositivo autentica com credencial própria, recebe chave de sessão exclusiva e pode ser atribuído dinamicamente a uma VLAN conforme perfil e postura [@ieee8021x]. É a mesma admissão de porta do @sec-cap028, aplicada ao rádio.
+
+Há, porém, um erro de implantação tão comum que merece destaque: **o cliente que não valida o certificado do servidor de autenticação**.
+
+Nos métodos baseados em túnel TLS — que são a maioria —, o cliente estabelece um canal com o servidor de autenticação e só então envia a credencial. Se ele não verificar que o certificado pertence ao servidor correto, um ponto de acesso falso com o mesmo nome de rede recebe a credencial diretamente. Quando o método interno é o antigo desafio-resposta baseado em senha, o que se captura é material suficiente para recuperar a senha de rede do usuário — que costuma ser a mesma do diretório corporativo.
+
+A correção é de configuração do **cliente**, não do servidor: fixar o certificado da autoridade esperada e o nome do servidor, e impedir que o usuário aceite exceções. Distribuir esse perfil por ferramenta de gerenciamento é a única forma que funciona em escala. A alternativa estruturalmente melhor é usar autenticação por certificado de cliente, que elimina a senha do fluxo (@sec-cap019).
+
+## O mapa de ataque
+
+::: {#fig-ataques-wifi}
+```{.tikz}
+%%| filename: ataques-wifi
+%%| alt: Mapa dos ataques a redes sem fio, incluindo ponto de acesso falso, desconexão forçada, captura para quebra fora de linha, ponto de acesso não autorizado instalado internamente e rebaixamento de modo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    el/.style={draw, very thick, rounded corners=3pt, align=center, inner sep=4pt,
+               minimum width=2.9cm, minimum height=0.9cm, font=\scriptsize},
+    ct/.style={draw=manualblue, very thick, fill=manualblue!12, circle,
+               minimum size=2.0cm, align=center, font=\scriptsize\bfseries},
+    fx/.style={->, >=stealth, thick, manualred}}
+
+  \node[ct] (rede) at (0,0) {rede\\sem fio};
+
+  \node[el, draw=manualred, fill=manualred!10] (evil) at (-4.6,2.3)
+    {\textbf{Ponto de acesso falso}\\\tiny mesmo nome, sinal mais forte};
+  \node[el, draw=manualred, fill=manualred!10] (deau) at (0,3.2)
+    {\textbf{Desconexão forçada}\\\tiny quadros de gerência não protegidos};
+  \node[el, draw=manualred, fill=manualred!10] (off) at (4.6,2.3)
+    {\textbf{Quebra fora de linha}\\\tiny captura + dicionário};
+  \node[el, draw=manualred, fill=manualred!10] (rog) at (-4.6,-2.3)
+    {\textbf{Ponto não autorizado}\\\tiny instalado por dentro, sem senha};
+  \node[el, draw=manualred, fill=manualred!10] (dow) at (0,-3.2)
+    {\textbf{Rebaixamento}\\\tiny modo de transição, WPA/TKIP};
+  \node[el, draw=manualred, fill=manualred!10] (cred) at (4.6,-2.3)
+    {\textbf{Captura de credencial}\\\tiny cliente que não valida certificado};
+
+  \foreach \n in {evil, deau, off, rog, dow, cred} { \draw[fx] (\n) -- (rede); }
+
+  \node[draw=manualgreen, fill=manualgreen!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=5.4cm] at (9.6,0.9)
+    {\textbf{Contramedidas, na ordem de efeito:}\\
+     $\bullet$ WPA3 ou, no mínimo, proteção de quadros de gerenciamento ativa\\
+     $\bullet$ 802.1X com validação de certificado imposta por perfil gerenciado\\
+     $\bullet$ WPS desabilitado\\
+     $\bullet$ modo de transição desligado onde a base permitir\\
+     $\bullet$ varredura periódica por pontos não autorizados};
+
+  \node[draw=manualyellow, fill=manualyellow!10, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\scriptsize, text width=5.4cm] at (9.6,-2.4)
+    {\textbf{O ponto não autorizado é o mais difícil.} Não é um ataque de rádio:
+     é alguém de dentro ligando um roteador doméstico numa tomada de rede.
+     Quem resolve isso é o 802.1X com fio, não o controlador sem fio.};
+\end{tikzpicture}
+```
+A superfície de ataque de uma rede sem fio, e as contramedidas em ordem de efeito.
+:::
+
+Alguns dos vetores merecem comentário adicional:
+
+**WPS.** O método de conexão por PIN de oito dígitos tem uma falha de projeto que reduz o espaço de busca a cerca de 11 mil tentativas, e várias implementações permitem recuperação praticamente instantânea. Desligar o WPS é uma linha de configuração e elimina a classe inteira.
+
+**Ponto de acesso não autorizado.** Alguém instala um roteador doméstico numa tomada de rede porque "o sinal do canto não pega". Costuma vir sem senha ou com senha trivial, e cria uma ponte direta para a rede interna, contornando toda a arquitetura do @sec-cap028. É o vetor mais comum e o menos técnico — e a defesa efetiva é o 802.1X na rede cabeada, não a varredura de rádio.
+
+**Redes salvas e o ataque de perfil.** Dispositivos anunciam as redes que procuram. Um adversário responde a qualquer uma delas, e o dispositivo se conecta a uma rede aberta memorizada — o cliente entrega a si mesmo. Limpar perfis salvos e desabilitar a conexão automática a redes abertas é higiene de endpoint com efeito real.
+
+## Além do Wi-Fi: enlaces de rádio
+
+Boa parte da conectividade brasileira, especialmente fora dos grandes centros, é entregue por **enlaces de rádio ponto a ponto e ponto-multiponto** — o alicerce técnico dos provedores regionais. Esses enlaces têm um perfil de risco distinto e frequentemente subestimado.
+
+**A interface de gerência é o alvo principal.** Rádios em torre são instalados uma vez e esquecidos. Credencial padrão, firmware de anos atrás e interface de administração alcançável pela rede de transporte — às vezes pela internet. Já houve campanhas de larga escala explorando exatamente isso em equipamentos de provedores. A contramedida é a rede de gestão fora de banda do @sec-cap028, aplicada à infraestrutura de torre.
+
+**O enlace pode ser observado e interrompido.** Um enlace ponto a ponto é direcional, o que reduz a exposição, mas não a elimina: quem estiver no lóbulo da antena ou próximo à linha de visada pode receber o sinal. Se o enlace não for cifrado, o tráfego de transporte inteiro está disponível. E, em faixas não licenciadas, a interferência — acidental ou deliberada — é uma forma trivial de negação de serviço contra a qual não há defesa criptográfica; a resposta é planejamento de espectro, diversidade de caminho e monitoramento.
+
+**A configuração propaga erro.** Rádios costumam ser configurados em lote a partir de um modelo. Um modelo com senha embutida ou com gerência aberta replica a falha por toda a rede de distribuição. Configuração como código, com segredo por equipamento, resolve — e é raro.
+
+Para redes de sensores e dispositivos conectados por outros protocolos de rádio — Bluetooth de baixa energia, Zigbee, LoRa —, o princípio é o mesmo (cifragem, identidade por dispositivo, atualização de firmware), mas as restrições de energia e processamento mudam bastante o que é viável. Esse é o tema do Volume 16.
+
+## Rede de visitantes: um problema de arquitetura, não de senha
+
+A rede de visitantes existe para dar internet a quem não é da organização. Isso significa três coisas: **isolamento total** da rede interna — ela é uma zona externa que entra pela DMZ, não uma sub-rede interna —, **isolamento entre clientes**, para que um visitante não alcance outro, e **limite de banda**, para que não canibalize a operação.
+
+E é preciso decidir o que fazer com o registro. Uma rede aberta sem qualquer identificação pode ser usada para ilícitos, e a organização será a primeira procurada. A contrapartida é que exigir e guardar identificação de visitantes é coleta de dado pessoal, com todas as obrigações que isso traz — assunto da próxima seção.
+
+## ⚖️ Brasil em Foco
+
+**A Anatel disciplina o uso das faixas não licenciadas.** A Resolução 680/2017 trata dos equipamentos de radiocomunicação de radiação restrita, estabelecendo limites de potência e condições de uso para as faixas em que operam Wi-Fi e boa parte dos enlaces de provedores. Operar acima do limite ou com equipamento não homologado é infração, além de gerar interferência que prejudica vizinhos — e, na prática, é a origem de boa parte dos problemas de qualidade em áreas com muitos provedores disputando o mesmo espectro. Equipamento homologado e potência dentro do limite não são burocracia: são a condição para que a faixa funcione para todos [@anatel680].
+
+**Provedores de acesso via rádio estão sob o regime do SCM e da Resolução 740.** A Resolução 614/2013 disciplina o Serviço de Comunicação Multimídia, e a 740/2020 acrescenta as obrigações de segurança cibernética — inclusive a proteção das interfaces de gerência dos equipamentos, que é exatamente o ponto fraco dos rádios em torre. Para o provedor regional brasileiro, este é o item de conformidade com maior distância entre a exigência e a prática de campo [@anatel614; @anatel740].
+
+**Rede de visitantes e o Marco Civil.** Quem oferece conexão a terceiros — hotel, shopping, café, condomínio, hospital — assume a posição de quem provê acesso e enfrenta a questão dos registros. O Marco Civil impõe a guarda de registros de conexão aos provedores de conexão à internet, e o entendimento aplicável a redes abertas de terceiros exige análise caso a caso; o que é pacífico é que a ausência total de registro transfere para a organização a responsabilidade prática de responder por ilícitos praticados a partir do seu enlace. A postura equilibrada: registrar o mínimo necessário — identificador do dispositivo, horário, endereço atribuído —, definir prazo de retenção, e informar isso ao usuário no momento do acesso [@marcocivil2014; @lei9296].
+
+**Portais de visitantes coletam dado pessoal e a LGPD se aplica integralmente.** Pedir CPF, nome e telefone para liberar Wi-Fi é tratamento de dado pessoal e exige base legal, finalidade declarada, minimização e prazo de descarte. Pedir CPF apenas para "identificar o usuário" quando um identificador de sessão bastaria falha no teste da necessidade. E há um caso específico que merece atenção: a análise de fluxo de pessoas por captura de identificadores de dispositivo em shoppings e lojas trata dado que permite rastrear indivíduos — a prática exige transparência e, na maioria das configurações, técnica de anonimização real, não apenas a promessa de que "não identificamos ninguém" [@lgpd2018; @anpd2023guia].
+
+**Interferência deliberada e bloqueadores de sinal.** Equipamentos bloqueadores de sinal são proibidos no Brasil, com uso restrito a hipóteses legais específicas, como estabelecimentos prisionais mediante autorização. Instalar bloqueador em empresa, escola ou evento é infração à regulamentação da Anatel — e vale registrar aqui, porque é uma "solução" ocasionalmente sugerida como resposta a pontos de acesso não autorizados. A resposta correta é 802.1X e política, não interferência [@anatel680].
+
+## 🛠️ No Campo
+
+**1. Elimine WEP, TKIP e WPS do parque.** Não é ajuste fino, é remoção de coisa quebrada:
+
+```bash
+# Levantar o parque: modos de seguranca em uso na area
+nmcli -f SSID,SECURITY,CHAN,SIGNAL device wifi list
+
+# Alvos: qualquer linha com WEP, TKIP ou WPS habilitado
+```
+
+**2. Use WPA3 onde a base de clientes permitir, e desligue o modo de transição.** Rede em transição tem a segurança do WPA2. Onde ainda for necessário WPA2, **ative a proteção de quadros de gerenciamento** — encerra a desconexão forçada trivial:
+
+```
+# hostapd — WPA3 puro
+wpa=2
+wpa_key_mgmt=SAE
+rsn_pairwise=CCMP
+ieee80211w=2          # protecao de quadros obrigatoria
+sae_require_mfp=1
+wps_state=0
+```
+
+**3. Corporativo é 802.1X, e a validação de certificado é imposta por perfil.** Sem isso, um ponto de acesso falso colhe credenciais de diretório:
+
+```xml
+<!-- Perfil distribuido por gerenciamento: o usuario nao pode aceitar excecao -->
+<ServerValidation>
+  <DisableUserPromptForServerValidation>true</DisableUserPromptForServerValidation>
+  <ServerNames>radius.exemplo.com.br</ServerNames>
+  <TrustedRootCA>&lt;impressão digital da AC interna&gt;</TrustedRootCA>
+</ServerValidation>
+```
+
+**4. Trate a rede de visitantes como zona externa.** Ela sai pela DMZ, com isolamento entre clientes e limite de banda:
+
+```
+# Isolamento entre estacoes no proprio ponto de acesso
+ap_isolate=1
+```
+
+```
+# Politica: visitante nao alcanca nada interno
+deny   grp-visitantes -> rede-interna  any   log
+allow  grp-visitantes -> internet      tcp/80,tcp/443
+```
+
+**5. Procure pontos de acesso não autorizados, e resolva na porta cabeada.** A varredura acha; o 802.1X impede:
+
+```bash
+# Pontos anunciando o SSID corporativo com BSSID desconhecido
+iw dev wlan0 scan | grep -E 'SSID|BSS' | grep -A1 'CORPORATIVA'
+```
+
+**6. Coloque os rádios de torre na rede de gestão.** Credencial única por equipamento, firmware atualizado, interface administrativa inalcançável a partir do transporte e da internet. É o achado mais comum e mais grave em provedores regionais.
+
+```bash
+# Auditoria rapida: interfaces de gerencia alcancaveis a partir do transporte
+nmap -Pn -p 22,23,80,443,8080,8291 10.200.0.0/22 --open
+```
+
+Porta 23 aberta num rádio em produção é um incidente esperando data.
+
+**7. Cifre o transporte nos enlaces de rádio.** Onde o enlace carrega tráfego de clientes ou de gestão, a cifragem do enlace ou um túnel sobre ele (@sec-cap030) deixa de ser opcional. Direcionalidade não é confidencialidade.
+
+**8. Segmente a rede sem fio como qualquer outra.** Visitantes, dispositivos pessoais, dispositivos conectados e corporativo em zonas distintas, com política entre elas. Wi-Fi corporativo que entrega acesso à VLAN de servidores repete o erro do estacionamento da TJX.
+
+**9. Documente e minimize a coleta no portal de visitantes.** Se um identificador de sessão resolve, não peça CPF. Declare a finalidade, defina o prazo de descarte e cumpra-o.
+
+**10. Faça uma caminhada de medição, e refaça anualmente.** Percorra o perímetro físico com um analisador: onde o sinal chega, quem mais está anunciando, que redes seus dispositivos procuram. É a única forma de saber qual é, de fato, a extensão do seu meio — e ela quase sempre é maior do que a planta indica.
+
+## Resumo
+
+- **O meio de rádio não pode ser contido**: não há tomada para trancar, o sinal atravessa a parede e qualquer um com antena participa. A defesa é inteiramente criptográfica, e esconder o nome da rede não é controle.
+- A evolução importa porque o legado persiste: **WEP e TKIP estão quebrados** e ainda aparecem em equipamento antigo; em modo misto, rebaixam a rede inteira.
+- **WPA2 tem criptografia sólida e problemas em torno dela**: o KRACK explorou ambiguidade na especificação do estabelecimento de conexão, e a captura para **quebra fora de linha** faz a segurança de uma rede com senha compartilhada ser exatamente a força dessa senha.
+- **WPA3 corrige a raiz** — SAE elimina o ataque fora de linha e traz sigilo futuro, proteção de quadros de gerenciamento é obrigatória, e redes abertas ganham cifragem oportunista. Mas **o modo de transição anula o ganho**, e as falhas Dragonblood lembram que protocolo novo exige firmware atualizado.
+- A diferença decisiva entre chave compartilhada e 802.1X é a **revogação**: desligar uma pessoa não pode exigir trocar a senha de todo mundo.
+- **O erro mais comum do 802.1X é o cliente que não valida o certificado do servidor** — um ponto de acesso falso colhe a credencial de diretório. A correção é perfil gerenciado que impede exceções, ou autenticação por certificado de cliente.
+- **O ponto de acesso não autorizado é o vetor mais comum e o menos técnico**, e quem o resolve é o 802.1X na rede cabeada, não o controlador sem fio.
+- Nos **enlaces de rádio** que sustentam a conectividade regional brasileira, o alvo principal é a interface de gerência esquecida com credencial padrão; e a interferência em faixa não licenciada é uma negação de serviço contra a qual não há defesa criptográfica.
+- No Brasil, a Resolução 680/2017 da Anatel disciplina potência e homologação nas faixas não licenciadas, a 740/2020 cobra a proteção das interfaces de gerência, o Marco Civil levanta a questão dos registros em redes de visitantes, e a LGPD alcança tanto o portal que pede CPF sem necessidade quanto a análise de fluxo por captura de identificadores de dispositivo.
