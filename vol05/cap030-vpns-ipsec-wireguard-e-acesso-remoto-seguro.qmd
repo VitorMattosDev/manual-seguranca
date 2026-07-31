@@ -1,3 +1,236 @@
 # VPNs: IPsec, WireGuard e acesso remoto seguro {#sec-cap030}
 
-*(em elaboracao)*
+Em março de 2020, milhões de trabalhadores foram para casa numa mesma semana e as equipes de infraestrutura fizeram a única coisa possível: escalaram o concentrador de VPN às pressas. Concentradores dimensionados para 10% do quadro passaram a atender 100%; licenças foram compradas em regime de emergência; a autenticação de dois fatores foi adiada "para a segunda fase".
+
+Nos três anos seguintes, o concentrador de VPN se tornou um dos vetores de acesso inicial mais explorados em ataques de ransomware. Duas famílias de causa dominam os relatos: **falhas críticas em equipamentos de borda não corrigidos** — com exploração em massa poucos dias após a divulgação — e **credenciais válidas sem segundo fator**, obtidas por phishing ou vazamento [@verizondbir2024].
+
+O padrão é instrutivo. A VPN é um controle de segurança que, mal operado, vira o caminho mais curto para dentro. E há uma ironia estrutural nisso: o dispositivo que existe para proteger o acesso remoto é, por definição, **exposto à internet, alcançável por qualquer um e confiado por toda a rede interna**.
+
+Este capítulo trata do que a VPN garante, de como IPsec e WireGuard chegam lá por caminhos opostos, e de por que o acesso remoto corporativo está migrando para o modelo do @sec-cap027.
+
+## O que uma VPN garante — e o que não
+
+Uma rede privada virtual estabelece um canal com três propriedades sobre uma rede não confiável: **confidencialidade** (o intermediário não lê), **integridade** (não altera sem ser detectado) e **autenticidade de origem** (o outro lado é quem diz ser). É criptografia aplicada ao tráfego de rede — o material dos capítulos @sec-cap016, @sec-cap017 e @sec-cap018, operando abaixo da aplicação.
+
+Três coisas que a VPN **não** garante, e que são fonte constante de mal-entendido:
+
+- **Não garante que o dispositivo conectado é confiável.** Um notebook comprometido continua comprometido dentro do túnel — só que agora com uma rota para a rede interna.
+- **Não garante autorização.** Ela concede alcance de rede. Quem pode fazer o quê é decisão de camada de aplicação (@sec-cap022).
+- **Não garante anonimato.** A VPN comercial de consumo desloca a visibilidade do provedor de acesso para o provedor de VPN. É uma troca de quem confia, não uma eliminação de confiança. O tema volta no Volume 16.
+
+A distinção que mais importa na prática é entre os dois usos: o túnel **site a site**, que conecta redes de forma permanente, e o **acesso remoto**, que conecta pessoas. O primeiro tem risco contido e problemas conhecidos; o segundo é onde a maior parte dos incidentes acontece.
+
+## IPsec: completo, negociado e complexo
+
+IPsec opera na camada 3 e protege qualquer coisa que passe por IP, sem que a aplicação saiba [@rfc4301]. Sua arquitetura tem três partes que vale distinguir com clareza.
+
+**Os protocolos de proteção.** O AH oferece integridade e autenticidade, mas não confidencialidade — e por isso é raro na prática. O **ESP** oferece confidencialidade, integridade e autenticidade, e é o que se usa [@rfc4303]. A recomendação atual é ESP com algoritmo autenticado (AES-GCM ou ChaCha20-Poly1305), pelas razões do @sec-cap016: cifrar sem autenticar é um erro clássico, e IPsec teve sua parcela de ataques que exploraram exatamente isso [@rfc8221].
+
+**Os modos.** No **modo transporte**, apenas a carga útil é protegida e o cabeçalho IP original permanece — usado entre dois hosts. No **modo túnel**, o pacote inteiro é encapsulado num novo pacote IP — usado entre gateways, que é o caso da esmagadora maioria das implantações.
+
+::: {#fig-ipsec-modos}
+```{.tikz}
+%%| filename: ipsec-modos
+%%| alt: Comparação entre o pacote IP original, o modo transporte do IPsec que protege apenas a carga útil e o modo túnel que encapsula o pacote inteiro num novo cabeçalho IP
+\begin{tikzpicture}[font=\footnotesize, x=1cm, y=1cm]
+  \tikzset{
+    cx/.style={draw, thin, minimum height=0.72cm, font=\tiny, align=center,
+               inner sep=2pt, anchor=west},
+    ip/.style={cx, fill=manualgray!16, draw=manualgray, minimum width=1.7cm},
+    tc/.style={cx, fill=manualblue!14, draw=manualblue, minimum width=1.5cm},
+    dt/.style={cx, fill=manualgreen!16, draw=manualgreen, minimum width=2.6cm},
+    es/.style={cx, fill=manualred!14, draw=manualred, minimum width=1.2cm},
+    lb/.style={font=\scriptsize\bfseries, anchor=east}}
+
+  % original
+  \node[lb] at (-0.2,3.4) {Original};
+  \node[ip] at (0,3.4)   {IP orig.};
+  \node[tc] at (1.7,3.4) {TCP};
+  \node[dt] at (3.2,3.4) {dados da aplicação};
+
+  % transporte
+  \node[lb] at (-0.2,2.0) {Transporte};
+  \node[ip] at (0,2.0)   {IP orig.};
+  \node[es] at (1.7,2.0) {ESP};
+  \node[tc] at (2.9,2.0) {TCP};
+  \node[dt] at (4.4,2.0) {dados da aplicação};
+  \node[es, minimum width=1.4cm] at (7.0,2.0) {ESP auth};
+  \draw[<->, >=stealth, thick, manualgreen] (2.9,1.45) -- (7.0,1.45)
+    node[midway, below, font=\tiny, manualgreen] {cifrado e autenticado};
+
+  % tunel
+  \node[lb] at (-0.2,0.2) {Túnel};
+  \node[ip, fill=manualyellow!18, draw=manualyellow] at (0,0.2) {IP novo\\(gateways)};
+  \node[es] at (1.7,0.2) {ESP};
+  \node[ip] at (2.9,0.2) {IP orig.};
+  \node[tc] at (4.6,0.2) {TCP};
+  \node[dt] at (6.1,0.2) {dados da aplicação};
+  \node[es, minimum width=1.4cm] at (8.7,0.2) {ESP auth};
+  \draw[<->, >=stealth, thick, manualgreen] (2.9,-0.35) -- (8.7,-0.35)
+    node[midway, below, font=\tiny, manualgreen]
+      {cifrado e autenticado --- \textbf{inclusive os endereços originais}};
+
+  \node[align=left, font=\scriptsize, text width=10.2cm, draw=manualblue,
+        fill=manualblue!8, thick, rounded corners=3pt, inner sep=6pt] at (4.4,-1.75)
+    {No modo túnel, quem observa a rede vê apenas dois gateways conversando:
+     a topologia interna, os endereços de origem e destino reais e as portas
+     ficam ocultos. É por isso que ele é o modo usado entre sites --- e o que
+     custa 20 bytes a mais de cabeçalho, com efeito direto sobre a MTU.};
+\end{tikzpicture}
+```
+Modo transporte e modo túnel: o que cada um protege e o que continua visível na rede.
+:::
+
+**A negociação de chaves (IKEv2).** Estabelece as associações de segurança, autentica os pares (por certificado ou por segredo compartilhado), negocia algoritmos e faz Diffie-Hellman com sigilo futuro [@rfc7296]. É também a origem da fama de complexidade do IPsec: a quantidade de combinações negociáveis é enorme, dois lados podem "funcionar" com parâmetros fracos, e diagnosticar por que dois equipamentos de fabricantes diferentes não fecham o túnel é um rito de passagem da profissão.
+
+Duas armadilhas práticas do IPsec merecem menção porque consomem tempo real:
+
+- **Segredo compartilhado fraco em modo agressivo do IKEv1** permite ataque de força bruta fora de linha sobre o material capturado. IKEv1 em modo agressivo deve ser desabilitado; IKEv2 é o padrão desde 2005.
+- **MTU e fragmentação.** O encapsulamento reduz a MTU efetiva. O sintoma clássico é "a VPN funciona, mas o sistema web trava ao carregar páginas grandes" — pacotes grandes com o bit de não fragmentar sendo descartados. A correção é ajustar a MSS na interface do túnel.
+
+## WireGuard: o oposto filosófico
+
+WireGuard partiu de uma premissa diferente: em vez de negociar, **decidir de antemão** [@donenfeld2017]. Não há suíte de algoritmos negociável — a escolha é fixa (ChaCha20-Poly1305, Curve25519, BLAKE2s, HKDF), e trocá-la significa trocar de versão do protocolo. Isso elimina de uma vez toda a classe de ataques de rebaixamento e a maior parte da complexidade de configuração.
+
+A ideia central é o **roteamento por chave**: cada par tem um par de chaves Curve25519, e a configuração associa uma chave pública a um conjunto de endereços permitidos. Um pacote só sai pelo túnel se seu destino estiver na lista daquele par; um pacote só é aceito se vier autenticado pela chave do par a que aquele endereço de origem pertence. Autenticação e roteamento são a mesma decisão, o que remove uma categoria inteira de erro de configuração.
+
+O resultado é uma implementação de poucos milhares de linhas — ordens de grandeza menor que as pilhas IPsec —, com superfície de ataque proporcionalmente menor e desempenho notavelmente melhor, por rodar no núcleo do sistema com um caminho de dados curto.
+
+| | IPsec (IKEv2) | WireGuard | TLS (OpenVPN) |
+|---|---|---|---|
+| Camada | 3 | 3 (sobre UDP) | 4–7 |
+| Negociação de algoritmos | Ampla | Nenhuma | Ampla |
+| Superfície de código | Muito grande | Muito pequena | Grande |
+| Autenticação | Certificado ou segredo | Chave pública estática | Certificado ou usuário/senha |
+| Atravessa NAT e proxy | Com dificuldade | Bem (UDP) | Muito bem (443/tcp) |
+| Identidade por usuário | Via EAP/certificado | Não nativa | Nativa |
+| Revogação | CRL/OCSP | Remover a chave da configuração | CRL/OCSP |
+| Desempenho | Bom | Excelente | Moderado |
+
+: IPsec, WireGuard e VPNs sobre TLS lado a lado. {#tbl-comparativo-vpn}
+
+As limitações do WireGuard são reais e é honesto declará-las. Ele **não tem noção de usuário**: a identidade é a chave, não a pessoa, e não há integração nativa com diretório, MFA ou postura de dispositivo. Não há revogação além de editar a configuração dos pares. Não usa PKI. Por isso é excelente para túneis site a site, para malhas entre servidores e como transporte sob um plano de controle que resolva identidade — e insuficiente, sozinho, para acesso remoto corporativo com centenas de pessoas.
+
+Uma nota de privacidade frequentemente esquecida: WireGuard mantém no equipamento a associação entre chave pública e o último endereço de origem visto, e por padrão não expira essa informação. Em ambientes com exigência de minimização, isso é um dado a considerar.
+
+## VPN sobre TLS
+
+OpenVPN e os portais de acesso remoto usam TLS para estabelecer o canal. A vantagem é operacional e decisiva em campo: rodando sobre a porta 443, atravessam praticamente qualquer rede restritiva — hotel, aeroporto, rede de cliente. A desvantagem é o desempenho, especialmente quando se encapsula TCP dentro de TCP, cujo efeito de retransmissão em cascata degrada a conexão sob perda.
+
+Uma distinção importante: os "portais SSL VPN" sem cliente, que publicam aplicações via navegador, **já são um passo em direção ao acesso por aplicação** e não ao acesso por rede — a diferença que o @sec-cap027 desenvolve.
+
+## Acesso remoto: onde os incidentes acontecem
+
+O túnel site a site raramente é o problema. Ele é fixo, autenticado por certificado ou segredo bem guardado, e não muda. O acesso remoto de pessoas é outra história, e três decisões definem seu risco.
+
+**Segundo fator, sem exceção.** É a medida isolada de maior efeito. Uma VPN corporativa protegida apenas por usuário e senha é uma credencial vazada de distância. E o segundo fator precisa ser resistente a phishing para administradores — os fatores baseados em código de uso único são contornáveis por intermediário em tempo real (@sec-cap024).
+
+**Túnel dividido ou completo.** No túnel completo, todo o tráfego passa pela empresa: máximo controle e inspeção, custo de banda e latência. No túnel dividido, apenas o tráfego corporativo entra no túnel: melhor desempenho, e o dispositivo fica simultaneamente na internet e na rede interna — o que reduz a visibilidade e cria uma ponte. A posição defensável hoje é túnel dividido **com controle compensatório**: proteção de DNS no endpoint, EDR obrigatório e postura verificada. Túnel completo sem inspeção entrega o custo sem o benefício.
+
+**Postura do dispositivo.** É o que separa "a pessoa provou quem é" de "o dispositivo dela está em condições de acessar". Disco cifrado, EDR ativo, sistema dentro da janela de atualização. Sem esse sinal, a VPN autentica a pessoa e admite a máquina comprometida junto.
+
+E há a decisão de arquitetura que é o assunto de fundo: **a VPN entrega alcance de rede**. Ela coloca o dispositivo numa sub-rede, e a partir dali o que ele alcança é decidido por firewall. Se a política for `permitir da VPN para a rede interna`, um notebook comprometido em casa varre a rede da empresa. Por isso, mesmo mantendo a VPN, o desenho correto é aplicar segmentação sobre o segmento de VPN, com política tão restritiva quanto qualquer outra da matriz de fluxos (@sec-cap028).
+
+## O concentrador é um alvo de primeira linha
+
+Por estar exposto por definição, o concentrador de VPN concentra risco:
+
+- **Correção urgente.** Falhas críticas em equipamentos de borda são exploradas em massa em poucos dias. O prazo aceitável de aplicação é medido em horas, não em janelas mensais. Se o fornecedor emite alerta de exploração ativa, o procedimento é de emergência.
+- **Superfície mínima.** Interface administrativa jamais exposta à internet; recursos não usados desligados; portal de acesso separado do plano de gestão.
+- **Registro e alerta.** Autenticação bem-sucedida a partir de país incomum, viagem impossível, mesma conta de vários endereços, volume anômalo de dados — os sinais clássicos, que só existem se o registro for enviado ao SIEM.
+- **Contenção de credencial.** Após um comprometimento, trocar a senha não basta: sessões ativas precisam ser encerradas e, em plataformas que usam segredo compartilhado ou perfil de conexão embutido, o material precisa ser rotacionado.
+
+## ⚖️ Brasil em Foco
+
+**A VPN foi o que tornou o teletrabalho viável, e a LGPD alcança essa arquitetura.** Quando o acesso a sistemas com dado pessoal passa a ocorrer de dispositivos domésticos, o controlador continua responsável pelas medidas técnicas do art. 46. A resposta adequada não é a política formal de "proibido usar equipamento pessoal", que ninguém consegue fazer cumprir, e sim verificação de postura, cifragem de disco e acesso restrito ao necessário. Registrar quem acessou o quê, e de onde, é o que permite delimitar o escopo quando o incidente ocorre [@lgpd2018; @anpd2024res15].
+
+**Túnel completo transforma a empresa em ponto de observação do tráfego pessoal.** Se o dispositivo é de uso misto — e quase sempre é —, encaminhar todo o tráfego para a rede corporativa significa que navegação pessoal, banco e saúde passam pela infraestrutura do empregador. Sob a LGPD isso é tratamento de dado pessoal, com necessidade de base legal, transparência e minimização; combinado com inspeção de TLS (@sec-cap029), o risco jurídico cresce proporcionalmente. Túnel dividido, além de melhor tecnicamente na maioria dos casos, é a opção que reduz esse risco.
+
+**Para provedores, o túnel entre sites é infraestrutura crítica.** Enlaces entre POPs, acesso ao ambiente de gerência e conexões com o IX.br carregam tráfego de gestão cuja interceptação ou alteração compromete a rede inteira. A Resolução 740/2020 da Anatel exige proteção do plano de gerência, e a implementação concreta é: nenhum acesso administrativo trafegando em claro, autenticação por certificado nos túneis entre sites e a rede de gestão do @sec-cap028 alcançável apenas por caminho cifrado e autenticado [@anatel740; @nicbr2024ix].
+
+**No setor financeiro, o acesso remoto tem exigência explícita de autenticação robusta.** A Resolução BCB 4.893/2021 requer controles de acesso proporcionais ao risco e rastreabilidade; para instituições participantes do Pix, o acesso remoto ao ambiente que toca a infraestrutura do Banco Central é tratado como acesso privilegiado, com segundo fator e registro individualizado. É o encontro entre este capítulo e o @sec-cap026 [@bcb4893].
+
+**Registros de acesso remoto e o Marco Civil.** Para provedores de aplicação, os registros de acesso são obrigação legal de guarda por seis meses, sob sigilo. Para qualquer organização, o registro de VPN costuma ser a evidência decisiva numa investigação — e a retenção precisa estar definida *antes* do incidente, ponderando a obrigação de guardar contra o princípio da minimização [@marcocivil2014; @lei9296].
+
+## 🛠️ No Campo
+
+**1. Trate o concentrador como sistema de correção emergencial.** Inscreva-se nos avisos do fornecedor, tenha janela de emergência pré-aprovada e um procedimento que dispense reunião. Falha crítica em equipamento de borda com exploração ativa se mede em horas.
+
+**2. Exija segundo fator, resistente a phishing para quem é privilegiado.** E verifique se não sobrou caminho de autenticação legado — o protocolo antigo que aceita só a senha é o desvio favorito (@sec-cap024).
+
+**3. Aplique segmentação ao segmento da VPN.** A regra `permitir da VPN para a rede interna` anula o @sec-cap028 inteiro:
+
+```
+# Ruim: a VPN vira porta de entrada para tudo
+allow  grp-vpn -> rede-interna  any
+
+# Bom: acesso por serviço, com registro
+allow  grp-vpn-ti     -> bastiao-adm     tcp/22        log
+allow  grp-vpn-geral  -> srv-intranet    tcp/443       log
+allow  grp-vpn-geral  -> srv-arquivos    tcp/445       log
+deny   grp-vpn        -> any             any           log
+```
+
+**4. Corrija a MTU antes que os usuários abram chamado.** O sintoma é sempre o mesmo — "abre a página, mas trava no anexo":
+
+```bash
+# Descobrir a MTU real que passa sem fragmentar
+ping -M do -s 1400 10.10.0.1
+
+# Ajustar a MSS na saida do tunel (nftables)
+nft add rule inet filter forward oifname "wg0" tcp flags syn \
+  tcp option maxseg size set rt mtu
+```
+
+**5. WireGuard: restrinja os endereços permitidos, sempre.** É onde mora o controle de acesso do protocolo — `0.0.0.0/0` num par de servidor equivale a confiar plenamente naquela chave:
+
+```ini
+[Interface]
+PrivateKey = <chave-privada-do-servidor>
+ListenPort = 51820
+
+# Cada par alcanca apenas o proprio endereco no tunel
+[Peer]
+PublicKey  = <chave-publica-do-par>
+AllowedIPs = 10.88.0.7/32
+PersistentKeepalive = 25
+```
+
+```bash
+# Auditoria: nenhum par deve ter AllowedIPs amplo demais
+wg show all allowed-ips | grep -E '0\.0\.0\.0/0|/(8|16)$'
+```
+
+**6. IPsec: desabilite IKEv1 e exija algoritmos autenticados.** Sem modo agressivo, sem DES ou 3DES, sem grupos Diffie-Hellman pequenos:
+
+```bash
+# strongSwan — perfil moderno
+ike  = aes256gcm16-prfsha384-ecp384!
+esp  = aes256gcm16-ecp384!
+keyexchange = ikev2
+
+# Verificar o que foi efetivamente negociado (nao o que foi proposto)
+ipsec statusall | grep -E 'IKE proposal|ESP proposal'
+```
+
+O `!` no final da proposta é o que impede a negociação de algo mais fraco. Sem ele, a lista é sugestão.
+
+**7. Envie o registro do concentrador ao SIEM e alerte no que importa.** Viagem impossível, mesma conta de endereços distintos simultâneos, autenticação a partir de país sem operação, volume de saída anômalo, e falhas repetidas seguidas de sucesso.
+
+**8. Prefira túnel dividido com controle compensatório.** Resolução de DNS protegida no endpoint, EDR obrigatório, postura verificada. E documente a decisão: ela tem consequência de privacidade e será perguntada.
+
+**9. Rotacione o material criptográfico com procedimento pronto.** Chaves de WireGuard, certificados de IPsec, segredos compartilhados. Saiba de antemão quanto tempo leva trocar tudo — é essa a duração da sua janela de exposição depois de um comprometimento.
+
+**10. Planeje a saída da VPN por aplicação, não de uma vez.** Publique uma aplicação interna por acesso mediado, meça a experiência real, ajuste e siga (@sec-cap027). A VPN não desaparece: ela deixa de ser o caminho padrão e passa a ser a exceção para o que não pode ser publicado de outra forma.
+
+## Resumo
+
+- **A VPN é hoje um dos principais vetores de acesso inicial**, por duas causas dominantes: falha crítica em equipamento de borda não corrigida e credencial válida sem segundo fator. O aparelho que protege o acesso remoto é, por definição, exposto e confiado.
+- Ela garante **confidencialidade, integridade e autenticidade de origem**; não garante que o dispositivo é confiável, não é autorização e não é anonimato.
+- **IPsec** protege qualquer tráfego IP, com ESP no modo túnel entre gateways ocultando inclusive a topologia interna. Sua complexidade está na negociação: IKEv1 em modo agressivo deve morrer, algoritmos autenticados são obrigatórios e a MTU quebra o que "funciona mas trava".
+- **WireGuard inverte a filosofia**: nada é negociado, a suíte é fixa, e o roteamento por chave funde autenticação e roteamento numa decisão só — poucas milhares de linhas de código e desempenho excelente. Em troca, não tem noção de usuário, MFA, postura nem revogação além de editar a configuração.
+- **VPN sobre TLS** ganha em atravessar redes restritivas pela porta 443 e perde em desempenho, especialmente com TCP dentro de TCP.
+- No acesso remoto, três decisões definem o risco: **segundo fator sem exceção**, túnel dividido com controle compensatório em vez de completo sem inspeção, e **postura do dispositivo** como insumo da decisão.
+- **A VPN entrega alcance de rede, e por isso o segmento dela precisa de política tão restritiva quanto qualquer outro.** `Permitir da VPN para a rede interna` anula a segmentação inteira.
+- O concentrador exige correção em regime emergencial, superfície mínima, registro enviado ao SIEM e procedimento de rotação de material criptográfico pronto antes de ser necessário.
+- No Brasil, o teletrabalho manteve o controlador responsável pelas medidas técnicas do art. 46 da LGPD; túnel completo em dispositivo de uso misto cria tratamento de dado pessoal que exige base legal; e a Resolução 740 da Anatel cobra a proteção do plano de gerência, que na prática significa nenhum acesso administrativo em claro.
