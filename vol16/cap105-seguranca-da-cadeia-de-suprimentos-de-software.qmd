@@ -1,3 +1,206 @@
 # Segurança da cadeia de suprimentos de software {#sec-cap105}
 
-*(em elaboracao)*
+Em março de 2024, um desenvolvedor da Microsoft investigava por que uma conexão SSH estava demorando meio segundo a mais do que deveria numa máquina de testes. Meio segundo. Ele foi atrás da anomalia e encontrou, no fim da linha, uma porta dos fundos deliberadamente plantada na biblioteca de compressão `xz`, que o daemon SSH carregava indiretamente por causa da integração com o gerenciador de serviços da distribuição [@xzbackdoor].
+
+O que torna o caso instrutivo não é o código malicioso — é como ele chegou lá. A biblioteca era mantida havia anos por uma única pessoa, sobrecarregada e sem apoio. Uma conta apareceu na comunidade, contribuiu com correções legítimas por cerca de dois anos, ganhou reputação, recebeu ajuda de contas de pressão que reclamavam da lentidão do mantenedor original e acabou promovida a co-mantenedora. Só então, com poder de publicar versões, introduziu o código — não no repositório de código-fonte, onde seria revisado, mas nos arquivos de distribuição gerados para empacotamento, que quase ninguém audita, ofuscado dentro de arquivos de teste binários.
+
+Nenhuma ferramenta de análise estática pegaria isso. Nenhum SBOM apontaria. **O ataque foi contra o processo humano de confiança, executado com paciência de dois anos, e falhou por meio segundo de latência e por um engenheiro curioso.** É o melhor argumento disponível contra a ideia de que segurança de cadeia de suprimentos se resolve comprando ferramenta.
+
+## O que é a cadeia, exatamente
+
+A cadeia de suprimentos de software é tudo que entra no artefato que roda em produção sem ter sido escrito pela sua equipe — e tudo que toca esse artefato entre o código e a execução. O código próprio, hoje, costuma ser a menor parte: uma aplicação típica tem alguns milhares de linhas próprias e centenas de milhares vindas de dependências, muitas delas transitivas, que ninguém escolheu e cujos nomes ninguém reconhece.
+
+A cadeia inclui, no mínimo: **dependências diretas e transitivas**; **imagens base de contêiner**; **ferramentas de construção** — compilador, empacotador, gerador de código; **ações e plugins do pipeline**, que executam com as credenciais do pipeline; **o próprio ambiente de construção**; **o repositório e o registro** de onde o artefato é publicado; e **o mecanismo de atualização** que o entrega ao destino final.
+
+Cada elo é um ponto de injeção, e a característica que diferencia esta classe de ataque de todas as outras deste manual é a **assimetria de alcance**: comprometer um elo bem escolhido alcança milhares de organizações que fizeram tudo certo. O adversário não precisa vencer as suas defesas — precisa vencer as de alguém em quem você confia por padrão.
+
+::: {#fig-cadeia-sw}
+```{.tikz}
+%%| filename: cadeia-sw
+%%| alt: Cadeia de suprimentos de software do desenvolvedor ate a producao com os quatro pontos de injecao e os controles correspondentes
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    etapa/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                  inner sep=4pt, text width=2.05cm, minimum height=1.0cm},
+    injecao/.style={draw=manualred, thick, fill=manualred!11, rounded corners=2pt,
+                    align=center, font=\tiny, inner sep=3pt, text width=2.05cm},
+    ctrl/.style={draw=manualgreen, thick, fill=manualgreen!12, rounded corners=2pt,
+                 align=center, font=\tiny, inner sep=3pt, text width=2.05cm},
+    fl/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[etapa, draw=manualblue, fill=manualblue!12] (dev) at (-5.1,0) {código\\próprio};
+  \node[etapa, draw=manualblue, fill=manualblue!12] (dep) at (-2.55,0) {dependências\\e imagem base};
+  \node[etapa, draw=manualblue, fill=manualblue!12] (bld) at (0,0) {construção\\(pipeline)};
+  \node[etapa, draw=manualblue, fill=manualblue!12] (art) at (2.55,0) {artefato\\e registro};
+  \node[etapa, draw=manualblue, fill=manualblue!12] (prd) at (5.1,0) {distribuição\\e produção};
+
+  \draw[fl] (dev) -- (dep);
+  \draw[fl] (dep) -- (bld);
+  \draw[fl] (bld) -- (art);
+  \draw[fl] (art) -- (prd);
+
+  \node[injecao] (i1) at (-2.55,1.55)
+    {\textbf{typosquatting, confusão de dependência, conta de mantenedor}};
+  \node[injecao] (i2) at (0,1.55)
+    {\textbf{ação de terceiro no pipeline, segredo do executor}};
+  \node[injecao] (i3) at (2.55,1.55)
+    {\textbf{artefato adulterado após a construção}};
+  \node[injecao] (i4) at (5.1,1.55)
+    {\textbf{canal de atualização assinado pelo fornecedor}};
+
+  \draw[-{Stealth[length=2mm]}, manualred, thick] (i1) -- (dep);
+  \draw[-{Stealth[length=2mm]}, manualred, thick] (i2) -- (bld);
+  \draw[-{Stealth[length=2mm]}, manualred, thick] (i3) -- (art);
+  \draw[-{Stealth[length=2mm]}, manualred, thick] (i4) -- (prd);
+
+  \node[ctrl] at (-2.55,-1.6) {fixação por hash, espelho interno, política de dependência};
+  \node[ctrl] at (0,-1.6) {construção isolada e efêmera, procedência assinada};
+  \node[ctrl] at (2.55,-1.6) {assinatura, atestação, SBOM do que foi construído};
+  \node[ctrl] at (5.1,-1.6) {verificação na admissão, atualização assinada};
+
+  \node[font=\tiny, manualgray, anchor=east, align=right] at (-6.0,1.55)
+    {\textbf{onde}\\\textbf{injetam}};
+  \node[font=\tiny, manualgray, anchor=east, align=right] at (-6.0,-1.6)
+    {\textbf{o que}\\\textbf{defende}};
+\end{tikzpicture}
+```
+Os quatro pontos de injeção da cadeia de suprimentos e o controle que corresponde a cada um.
+:::
+
+## As quatro formas de comprometer
+
+**Comprometer a dependência.** É a mais barata e a mais comum. As variantes que aparecem na prática:
+
+*Typosquatting*: publicar um pacote com nome quase idêntico ao de um popular, apostando no erro de digitação e no copiar-colar de tutorial desatualizado.
+
+*Confusão de dependência*: publicar num repositório público um pacote com o mesmo nome de um pacote interno da empresa e uma versão maior. Gerenciadores que consultam público e privado sem prioridade explícita puxam o de versão mais alta — que é o do atacante. A correção é configurar prioridade de repositório e reservar os nomes internos no público.
+
+*Sequestro de conta de mantenedor*: credencial reutilizada, sem multifator, ou tomada por engenharia social. Uma versão maliciosa publicada com a conta legítima passa por toda verificação de assinatura, porque a assinatura é legítima.
+
+*Doação ou promoção de mantenedor*: o caso do `xz`, e antes dele o do `event-stream`, em que um mantenedor cansado transferiu o projeto a um voluntário prestativo que depois adicionou código para roubar carteiras de criptomoeda.
+
+*Pacote abandonado*: sem manutenção, com vulnerabilidades conhecidas, ainda presente em milhares de aplicações porque é dependência transitiva de outra coisa.
+
+**Comprometer a construção.** O caso SolarWinds é o marco: o adversário obteve acesso ao ambiente de compilação e injetou código durante a construção, de forma que **o código-fonte no repositório permanecia limpo e o binário publicado saía com a porta dos fundos, devidamente assinado com a chave legítima da empresa** [@solarwinds2020]. Nenhuma revisão de código encontraria; nenhuma verificação de assinatura reprovaria.
+
+A variante moderna e mais acessível é o pipeline em si: uma ação de terceiro referenciada por tag móvel, com acesso aos segredos do fluxo, é execução de código de terceiro dentro do seu ambiente de construção. O caso Codecov mostrou o padrão em sua forma mais simples — um script auxiliar hospedado em servidor comprometido, baixado e executado por milhares de pipelines, exfiltrando variáveis de ambiente, que é onde ficam as credenciais [@codecov2021].
+
+**Comprometer o artefato ou o registro.** Substituir a imagem ou o pacote depois de construído, ou publicar sobre uma tag existente. É o motivo pelo qual **imagem de contêiner deve ser referenciada por digest, não por tag** — tag é ponteiro móvel, digest é conteúdo.
+
+**Comprometer a distribuição.** O canal de atualização assinado pelo fornecedor é o mais poderoso de todos, porque contorna toda defesa de perímetro por desenho: é um mecanismo cuja função é executar código novo com privilégio, e o cliente confia por construção.
+
+## SBOM: o que resolve e o que não resolve
+
+O inventário de componentes de software — SBOM — é a lista de tudo que compõe um artefato: componentes, versões, identificadores e relações de dependência. Os dois formatos consolidados são o CycloneDX e o SPDX, ambos com adoção ampla e ferramental maduro [@cyclonedx; @spdx; @ntiasbom].
+
+O SBOM resolve **uma** pergunta, e a resolve muito bem: *"eu tenho isso?"*. Quando sai o aviso de uma vulnerabilidade crítica numa biblioteca de registro amplamente usada, a diferença entre responder em minutos e responder em semanas é ter ou não ter inventário. Organizações que passaram pelo episódio da falha de execução remota na biblioteca de registro do Java aprenderam isso do jeito caro: a maior parte do tempo de resposta foi gasta descobrindo onde a biblioteca estava, e não corrigindo.
+
+O que o SBOM **não** resolve, e convém dizer com todas as letras:
+
+Não diz se você está **vulnerável**. Ter o componente não significa que o caminho vulnerável seja alcançável na sua configuração. É para isso que existe o formato de troca de exploitabilidade — o VEX —, que permite ao fornecedor afirmar "este componente está presente, mas este produto não é afetado, pela seguinte razão". Sem VEX, um programa de SBOM produz uma fila de milhares de achados irrelevantes e treina a equipe a ignorar a fila [@cisasbom].
+
+Não detecta **código malicioso**. Um SBOM do `xz` comprometido listaria `xz` na versão correta. A porta dos fundos estava dentro do componente legítimo.
+
+Não é **prova de nada**, se não for gerado durante a construção. SBOM produzido depois, por varredura de artefato, é aproximação; SBOM gerado pelo próprio pipeline, assinado junto com o artefato, é evidência.
+
+E, sobretudo: **SBOM sem processo é papel**. Recebido de fornecedor e arquivado, não faz nada. O valor aparece quando existe um lugar onde consultá-lo por componente e por versão, e um procedimento que dispara essa consulta quando sai um aviso.
+
+## Procedência: provar de onde veio
+
+O passo além do inventário é a **atestação de procedência** — uma afirmação assinada e verificável sobre como o artefato foi produzido: de qual commit, por qual pipeline, com quais entradas, em que momento.
+
+O **in-toto** define o modelo geral: cada passo da cadeia produz uma declaração assinada, e um esquema de layout descreve quais passos devem ocorrer, em que ordem e por quem, permitindo verificar ao final que a cadeia inteira foi cumprida [@intoto]. O **SLSA** organiza isso em níveis progressivos de garantia, e sua utilidade prática é ser um roteiro em vez de um ideal: começa por construção com script versionado e procedência gerada automaticamente, e avança até construção em plataforma isolada, com parâmetros não influenciáveis por quem dispara e procedência não falsificável [@slsa]. O **Sigstore** removeu a maior barreira prática da assinatura de artefatos, que era a gestão de chaves de longa duração, usando certificados efêmeros ligados a uma identidade e um registro público de transparência — o mesmo princípio dos registros de transparência de certificados do @sec-cap019 [@sigstore]. O **TUF** trata do problema específico do repositório e da atualização, resistindo a repositório comprometido, a ataques de congelamento e de reversão de versão [@tuf].
+
+E há a **construção reprodutível**: se dois construtores independentes, partindo do mesmo fonte, produzem binários idênticos bit a bit, então é possível verificar que o binário publicado corresponde ao fonte revisado — o que teria detectado o caso SolarWinds [@reproduciblebuilds]. É tecnicamente exigente e ainda pouco comum fora de projetos que fizeram disso uma prioridade, mas é o único mecanismo que fecha completamente a lacuna entre fonte e binário.
+
+Vale notar o limite comum a todos: **procedência prova origem, não bondade**. Um pacote malicioso construído corretamente, a partir de fonte malicioso, tem procedência impecável. Assinatura e atestação garantem que o que você tem é o que o autor publicou — não que o autor seja confiável. Confundir as duas coisas é o erro conceitual mais frequente no assunto.
+
+## O que fazer na segunda-feira
+
+O programa completo é grande. A ordem de retorno é esta:
+
+**Fixe versões por conteúdo.** Arquivo de bloqueio comprometido no repositório, dependências fixadas por hash quando o ecossistema permitir, imagens de contêiner por digest, ações de pipeline por hash de commit e nunca por tag móvel. Isso sozinho neutraliza a classe inteira de "a versão mudou embaixo de mim".
+
+**Configure prioridade de repositório e reserve nomes internos.** É a defesa contra confusão de dependência, custa uma tarde e evita um incidente que já aconteceu com dezenas de empresas grandes.
+
+**Espelho interno com curadoria.** Todo pacote passa por um repositório proxy da organização. Além do controle, resolve o problema de disponibilidade quando o repositório público sai do ar ou um pacote é removido.
+
+**Análise de composição no pipeline, com fila que a equipe consiga atender.** As ferramentas do @sec-cap049 fazem o trabalho; o desafio é de priorização, não de detecção. Bloquear a construção por qualquer achado produz ferramenta desligada em duas semanas — o critério precisa combinar gravidade, alcançabilidade e exposição, como no @sec-cap039.
+
+**Trate o pipeline como produção.** O ambiente de construção tem as credenciais mais poderosas da organização. Isolamento, execução efêmera, segredos de escopo mínimo com federação de identidade em vez de credencial de longa duração, e as demais medidas do @sec-cap054.
+
+**Assine o que você publica e verifique o que você consome.** Assinatura no pipeline, verificação na admissão — em Kubernetes, por controlador de admissão que rejeita imagem sem assinatura válida, conforme o @sec-cap053.
+
+**Gere SBOM na construção e saiba onde consultá-lo.** Junto do artefato, assinado com ele, num lugar consultável por componente.
+
+**Tenha política de dependência nova.** Perguntas simples, respondidas antes de adotar: quantos mantenedores tem? Quando foi a última publicação? Quantas dependências transitivas traz? Existe alternativa na biblioteca padrão? Uma dependência de dez linhas com quarenta dependências transitivas é um passivo permanente, não uma economia.
+
+**Exija do fornecedor.** SBOM, procedência, política de divulgação de vulnerabilidade e prazo de correção entram na diligência e no contrato do @sec-cap101.
+
+## O elo que nenhuma ferramenta cobre
+
+A infraestrutura digital do mundo repousa, em grande medida, sobre bibliotecas mantidas de graça por pouca gente. O caso `xz` não foi acidente estatístico: **um mantenedor único, sobrecarregado e sem apoio é uma vulnerabilidade estrutural**, e o vetor foi exatamente a oferta de ajuda que ele não tinha como recusar.
+
+Isso tem implicação prática para quem consome. Métricas de saúde de projeto — número de mantenedores ativos, cadência de resposta, existência de política de segurança, revisão por mais de uma pessoa antes de publicar — pertencem à avaliação de risco de uma dependência tanto quanto a contagem de vulnerabilidades conhecidas. E, para organizações que dependem economicamente de um componente crítico mantido por uma pessoa, contribuir com tempo, revisão ou financiamento não é filantropia: é redução de risco próprio, e é mais barata que o incidente.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD alcança o componente de terceiro que trata dados.** Uma biblioteca de análise incorporada ao aplicativo que envia dados a servidor externo é tratamento de dados pessoais realizado pela sua organização, com sua base legal e sua responsabilidade. O SDK integrado sem análise é um operador que ninguém contratou formalmente — e a responsabilidade não se transfere pelo fato de o código ser de outro [@lgpd2018; @lei13709art46].
+
+**A Lei nº 14.133/2021 permite exigir SBOM e procedência em contratação pública.** A lei de licitações admite requisitos técnicos e de qualidade e prevê a fiscalização da execução contratual. Órgãos que incluem exigência de inventário de componentes, política de divulgação de vulnerabilidades e prazo de correção no termo de referência estão dentro da lei — e quem fornece ao setor público faz bem em se preparar para isso, seguindo o caminho que a ordem executiva norte-americana abriu no mercado global [@lei14133; @eo14028].
+
+**A assinatura de código tem infraestrutura nacional.** Certificados da ICP-Brasil, sob a MP 2.200-2, permitem assinar artefatos com validade jurídica reconhecida no país. Para quem distribui software a clientes brasileiros — especialmente ao setor público e ao financeiro —, isso é caminho disponível e frequentemente exigido, e a gestão dessas chaves segue as regras do @sec-cap055 [@mp2200; @iti2024].
+
+**O setor financeiro já trata desenvolvimento e terceiros como matéria regulada.** As resoluções de segurança cibernética do Banco Central alcançam o ciclo de desenvolvimento, a contratação de serviços relevantes de processamento e a diligência sobre prestadores. Uma dependência crítica em produto financeiro é, para o regulador, parte do risco operacional da instituição [@bcb4893; @bcb85].
+
+**Provedores de telecomunicações herdam a cadeia de seus equipamentos.** O regulamento de segurança cibernética do setor e os requisitos aplicáveis a equipamentos trazem para dentro da obrigação regulatória o cuidado com firmware, atualização e origem dos produtos instalados na rede — inclusive nos equipamentos deixados na casa do cliente [@anatel740; @anatel680].
+
+**Referenciais nacionais e internacionais convergem.** As práticas de segurança para provedores publicadas pelo CERT.br, o referencial de práticas para gestão de risco cibernético da cadeia de suprimentos do NIST e o arcabouço de desenvolvimento seguro compõem, juntos, o material mínimo de consulta para montar o programa [@cert2024praticas; @nistsp800161; @nistsp800218].
+
+## 🛠️ No Campo
+
+**1. Fixe tudo por conteúdo, não por rótulo.** Arquivo de bloqueio versionado, imagem por digest, ação de pipeline por hash de commit. Tag é ponteiro móvel.
+
+**2. Configure prioridade de repositório e reserve seus nomes internos no público.** Defesa contra confusão de dependência: custa uma tarde.
+
+**3. Monte espelho interno com curadoria.** Controle de entrada e disponibilidade quando o repositório público falha ou remove um pacote.
+
+**4. Trate o pipeline como ambiente de produção.** É onde estão as credenciais mais poderosas da organização.
+
+**5. Nunca use ação de terceiro por tag móvel.** É execução de código de terceiro com acesso aos seus segredos.
+
+**6. Prefira federação de identidade a credencial de longa duração no pipeline.** Segredo que não existe não vaza.
+
+**7. Gere SBOM durante a construção, assinado junto ao artefato.** SBOM produzido depois é aproximação; produzido no pipeline é evidência.
+
+**8. Tenha onde consultar o SBOM por componente e versão.** Sem isso, ele é papel — e o valor aparece justamente no dia do aviso crítico.
+
+**9. Use VEX para conter a fila de achados.** Sem afirmação de não afetação, o programa gera milhares de itens irrelevantes e ensina a equipe a ignorar a fila.
+
+**10. Não confunda procedência com bondade.** Assinatura prova origem; pacote malicioso bem construído tem procedência impecável.
+
+**11. Assine o que publica e verifique na admissão.** Controlador de admissão que rejeita imagem sem assinatura válida fecha o ciclo.
+
+**12. Adote o SLSA como roteiro por níveis, não como ideal.** Começar por procedência automática já muda o patamar.
+
+**13. Crie política de dependência nova.** Quantos mantenedores, última publicação, quantas transitivas, existe alternativa na biblioteca padrão.
+
+**14. Avalie saúde do projeto, não só CVEs abertos.** Mantenedor único e sobrecarregado é vulnerabilidade estrutural — foi exatamente o vetor do `xz`.
+
+**15. Calibre o bloqueio da construção por gravidade, alcançabilidade e exposição.** Bloquear em qualquer achado resulta em ferramenta desligada.
+
+**16. Exija SBOM, procedência e prazo de correção no contrato.** Entra na diligência de terceiros, junto das demais cláusulas.
+
+**17. Trate SDK de terceiro embutido como operador de dados.** Biblioteca que envia dados para fora é tratamento seu, com sua responsabilidade.
+
+## Resumo
+
+- O caso `xz` mostra o formato mais difícil de ataque à cadeia: **dois anos de construção de confiança contra um mantenedor único e sobrecarregado**, com o código inserido nos artefatos de distribuição e não no fonte revisado. Nenhuma ferramenta o detectaria.
+- A cadeia é tudo que entra no artefato sem ter sido escrito pela equipe, mais tudo que o toca até a execução. A característica que a diferencia é a **assimetria de alcance**: comprometer um elo alcança milhares de organizações que fizeram tudo certo.
+- Quatro formas de comprometimento: **a dependência** (typosquatting, confusão de dependência, sequestro ou promoção de mantenedor, pacote abandonado), **a construção** (SolarWinds, ação de terceiro no pipeline, Codecov), **o artefato ou registro** e **o canal de distribuição**.
+- **SBOM responde "eu tenho isso?" e nada mais.** Não diz se você está vulnerável — para isso existe VEX —, não detecta código malicioso e não vale como evidência se não for gerado durante a construção. Sem processo de consulta, é papel.
+- **Procedência prova origem, não bondade.** in-toto define o modelo, SLSA dá o roteiro por níveis, Sigstore resolve a gestão de chaves com certificados efêmeros e registro de transparência, TUF protege repositório e atualização.
+- **Construção reprodutível** é o único mecanismo que fecha a lacuna entre fonte e binário — teria detectado o SolarWinds — e continua exigente demais para a maioria.
+- A ordem de retorno prática: fixar por conteúdo, prioridade de repositório e nomes reservados, espelho interno, análise de composição com fila atendível, pipeline tratado como produção, assinar e verificar, SBOM na construção e política de dependência nova.
+- **O elo humano não é coberto por ferramenta.** Métricas de saúde do projeto pertencem à avaliação de risco, e contribuir com um componente crítico do qual se depende é redução de risco próprio, não filantropia.
+- No Brasil, a LGPD alcança o SDK de terceiro embutido, a Lei nº 14.133/2021 permite exigir SBOM e procedência em contratação pública, a ICP-Brasil oferece caminho para assinatura de código com validade jurídica, e os setores financeiro e de telecomunicações já tratam a cadeia como matéria regulada.
