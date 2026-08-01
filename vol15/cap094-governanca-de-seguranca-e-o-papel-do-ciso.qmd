@@ -1,3 +1,261 @@
 # Governança de segurança e o papel do CISO {#sec-cap094}
 
-*(em elaboracao)*
+Em março, o responsável pela segurança apresentou ao comitê executivo um pedido de orçamento para implantar autenticação multifator no acesso remoto e segmentar a rede administrativa. O pedido foi adiado para o ciclo seguinte, com a observação de que o momento pedia contenção de custos. Em agosto, a empresa parou por onze dias. O acesso inicial veio de uma credencial de VPN sem segundo fator.
+
+O detalhe que interessa não é o ataque. É que ninguém, em março, assinou nada. O pedido foi "adiado", não "recusado". Não existia registro de quem decidiu, com base em qual avaliação de risco, nem qual risco a organização estava conscientemente aceitando ao adiar. Quando a conta chegou, cada participante daquela reunião lembrava a conversa de um jeito diferente — e o responsável pela segurança descobriu que carregava a responsabilidade por uma decisão que jamais teve autoridade para tomar.
+
+Governança de segurança existe para eliminar essa ambiguidade. Ela não trata de firewall, de detecção ou de resposta a incidente — trata de **quem decide o quê, com base em qual informação, e quem responde pelo resultado**. É o assunto menos técnico deste manual e, com frequência, o que mais determina se todo o resto funciona.
+
+## Governança não é gestão
+
+A distinção é a base de tudo o que vem depois e costuma ser tratada como sinônimo.
+
+**Governança** define direção e limites: qual risco a organização está disposta a correr, quanto vai investir, quem tem alçada para aceitar exceções, quais obrigações externas precisam ser atendidas. É atividade de conselho e de alta administração, e o seu produto são decisões, políticas e prestação de contas.
+
+**Gestão** opera dentro desses limites: implanta controles, mede, corrige, responde a incidentes. É atividade da equipe de segurança e das áreas de tecnologia, e o seu produto são controles funcionando.
+
+O erro clássico é pedir à gestão que faça o trabalho da governança. Quando o time de segurança define sozinho o apetite de risco da organização — porque ninguém acima quis definir —, o resultado é previsível: ou a segurança fica excessivamente restritiva para se proteger, e o negócio a contorna, ou fica permissiva demais, e a exposição se acumula sem que ninguém tenha decidido corrê-la. Nos dois casos, a organização terceirizou para um gerente técnico uma escolha que pertence a quem responde pelo negócio [@iso27014; @cobit2019].
+
+O inverso também falha. Conselhos que querem discutir a configuração do firewall estão gastando a sua escassa atenção no lugar errado. O que o conselho precisa saber é: quais são os nossos riscos materiais, o que estamos fazendo a respeito, o que estamos deixando de fazer e por quê, e qual é o prazo.
+
+## A hierarquia documental que sustenta as decisões
+
+Organizações que não conseguem responder "onde está escrito?" para uma pergunta de segurança geralmente têm um problema estrutural: os documentos existem, mas em camadas confusas, com política de vinte páginas cheia de comandos de configuração e procedimentos que tentam justificar princípios.
+
+A separação em quatro camadas resolve isso, e cada camada tem um público, um dono e um ritmo de atualização diferentes.
+
+::: {#fig-hierarquia-documental}
+```{.tikz}
+%%| filename: hierarquia-documental
+%%| alt: Piramide de quatro camadas de documentos de seguranca da politica ao procedimento com dono e ritmo de revisao
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    nd/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, minimum height=1.15cm},
+    lb/.style={font=\tiny, manualgray, anchor=west, align=left}}
+
+  \node[nd, draw=manualred, fill=manualred!13, text width=5.6cm] (p1) at (0,3.0)
+    {\textbf{POLÍTICA} --- por que e até onde\\
+     princípios, apetite de risco, papéis, alçadas};
+  \node[nd, draw=manualyellow, fill=manualyellow!18, text width=6.8cm] (p2) at (0,1.55)
+    {\textbf{NORMA} --- o que é obrigatório\\
+     requisitos verificáveis por domínio (acesso, dados, rede)};
+  \node[nd, draw=manualblue, fill=manualblue!13, text width=8.0cm] (p3) at (0,0.1)
+    {\textbf{PADRÃO} --- com o que se cumpre\\
+     parâmetros concretos: algoritmos, versões, linhas de base};
+  \node[nd, draw=manualgreen, fill=manualgreen!13, text width=9.2cm] (p4) at (0,-1.35)
+    {\textbf{PROCEDIMENTO} --- como se faz, passo a passo\\
+     roteiros operacionais, playbooks, guias de configuração};
+
+  \node[lb] at (3.1,3.0) {aprova: conselho\\revisão: anual};
+  \node[lb] at (3.7,1.55) {aprova: comitê\\revisão: anual};
+  \node[lb] at (4.3,0.1) {aprova: CISO\\revisão: semestral};
+  \node[lb] at (4.9,-1.35) {aprova: gestor\\revisão: contínua};
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray]
+    (-5.4,3.4) -- (-5.4,-1.9);
+  \node[font=\tiny, manualgray, rotate=90, anchor=south] at (-5.65,0.75)
+    {estável $\rightarrow$ volátil};
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.0cm]
+    at (0,-3.1)
+    {\textbf{O sintoma de uma hierarquia mal construída} é a política que
+     precisa ser reaprovada pelo conselho toda vez que uma versão de TLS é
+     descontinuada. Se um parâmetro técnico está na política, ele está na
+     camada errada --- e a organização vai escolher entre burocracia
+     paralisante ou documento desatualizado.};
+\end{tikzpicture}
+```
+As quatro camadas documentais. Quanto mais alto, mais estável o conteúdo e mais alta a alçada de aprovação.
+:::
+
+Um teste rápido de sanidade: se a alteração de um item exige reunião de conselho, esse item precisa ser estável por anos. Nome de fabricante, versão de protocolo e tamanho de chave não são estáveis por anos e não pertencem à política.
+
+## As três linhas: quem faz, quem supervisiona, quem verifica
+
+O modelo das três linhas resolve um problema recorrente: a mesma pessoa que implanta o controle não pode ser a única a atestar que ele funciona [@iia2020].
+
+**A primeira linha** é quem opera: infraestrutura, desenvolvimento, o próprio time de operações de segurança. Detém o risco no dia a dia e implanta os controles.
+
+**A segunda linha** supervisiona e define: gestão de riscos, conformidade, e, na maioria das estruturas, a função de segurança da informação enquanto área normativa. Define requisitos, consolida a visão de risco, questiona a primeira linha. Não opera o que fiscaliza — ou, quando opera, precisa que a separação esteja explícita.
+
+**A terceira linha** é a auditoria interna, que verifica se as duas primeiras funcionam e reporta com independência ao conselho ou ao comitê de auditoria — não ao executivo cujo trabalho está auditando. Essa independência de reporte é a única coisa que faz a terceira linha valer alguma coisa.
+
+Em organizações pequenas, as três linhas colapsam em duas ou três pessoas. Isso é aceitável e comum; o que não é aceitável é fingir que a separação existe. A alternativa honesta é documentar a sobreposição, compensá-la com verificação externa periódica e registrar isso como um risco conhecido e aceito.
+
+## O CISO: uma função com quatro caras diferentes
+
+Não existe um perfil único de CISO, e boa parte das frustrações da função vem de a organização contratar um perfil esperando outro.
+
+**O CISO técnico** vem de arquitetura ou de operações, domina a matéria e é forte em construir capacidade. Costuma ser a escolha certa para uma organização que está começando do zero.
+
+**O CISO de risco** vem de gestão de riscos e traduz exposição técnica em linguagem de negócio. É a escolha para organizações que já têm controles e precisam priorizar investimento.
+
+**O CISO de conformidade** vem de auditoria ou do jurídico e é forte em regime regulatório denso. Faz sentido nos setores financeiro, de saúde e de telecomunicações — e é onde mora o maior risco de a organização confundir certificado com segurança.
+
+**O CISO de negócio** é essencialmente um executivo que administra um programa: orçamento, pessoas, fornecedores, relação com o conselho. É a função em empresas grandes, onde a profundidade técnica vem da equipe.
+
+Duas confusões merecem correção explícita. A primeira: **encarregado de dados e CISO são funções distintas**, com objetivos que às vezes se opõem — o encarregado defende os direitos dos titulares, inclusive contra decisões da própria organização, enquanto o CISO defende os ativos da organização. Acumular as duas cria conflito de interesse em incidentes de dados pessoais, que é exatamente o momento em que ambos são mais necessários. A segunda: **o CISO não é o dono do risco**. O dono do risco é o gestor da área que o gera e o executivo que responde por ela. O CISO informa, mede, recomenda e registra a decisão; não a toma no lugar de quem tem a autoridade.
+
+## A quem o CISO reporta, e por que isso decide o resto
+
+::: {#fig-reporte-ciso}
+```{.tikz}
+%%| filename: reporte-ciso
+%%| alt: Tres linhas de reporte possiveis do CISO com o conflito de interesse do reporte ao CIO em destaque
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.2cm, minimum height=0.8cm},
+    ct/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=3.2cm, minimum height=1.9cm},
+    sx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[bx, draw=manualgray, fill=manualgray!12] (a1) at (-4.3,2.6) {CEO};
+  \node[bx, draw=manualred, fill=manualred!13]   (a2) at (-4.3,1.2) {CIO / CTO};
+  \node[bx, draw=manualblue, fill=manualblue!13] (a3) at (-4.3,-0.2) {CISO};
+  \draw[sx] (a3) -- (a2);
+  \draw[sx] (a2) -- (a1);
+  \node[ct, draw=manualred, fill=manualred!8] at (-4.3,-2.1)
+    {\textbf{sob o CIO}\\
+     ágil e barato, mas o CISO reporta ao executivo cujas entregas ele
+     precisa atrasar. O risco é o filtro na subida.};
+
+  \node[bx, draw=manualgray, fill=manualgray!12] (b1) at (0,2.6) {CEO};
+  \node[bx, draw=manualblue, fill=manualblue!13] (b3) at (-0.8,1.2) {CISO};
+  \node[bx, draw=manualgray, fill=manualgray!8]  (b2) at (1.4,1.2) {CIO};
+  \draw[sx] (b3) -- (b1);
+  \draw[sx] (b2) -- (b1);
+  \node[ct, draw=manualblue, fill=manualblue!8] at (0,-2.1)
+    {\textbf{sob o CEO}\\
+     independência real e disputa direta por orçamento. Exige um CEO que
+     entenda o assunto o bastante para arbitrar.};
+
+  \node[bx, draw=manualgreen, fill=manualgreen!13] (c1) at (4.3,2.6) {Conselho};
+  \node[bx, draw=manualgray, fill=manualgray!12]   (c2) at (4.3,1.2) {CEO};
+  \node[bx, draw=manualblue, fill=manualblue!13]   (c3) at (4.3,-0.2) {CISO};
+  \draw[sx] (c3) -- (c2);
+  \draw[sx] (c2) -- (c1);
+  \draw[sx, manualgreen, dashed] (c3) to[bend right=55] (c1);
+  \node[ct, draw=manualgreen, fill=manualgreen!8] at (4.3,-2.1)
+    {\textbf{linha direta ao conselho}\\
+     reporte funcional ao CEO, acesso garantido ao conselho. Padrão em
+     setores regulados.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.0cm]
+    at (0,-4.0)
+    {\textbf{Nenhum arranjo é universalmente correto}, mas todos precisam da
+     mesma garantia: um canal em que a segurança consiga levar um risco
+     material ao topo sem depender da autorização de quem tem interesse em
+     abafá-lo. Sem isso, a linha do organograma é decorativa.};
+\end{tikzpicture}
+```
+Três arranjos de reporte do CISO. A pergunta que separa os bons dos ruins é se existe caminho para o risco material chegar ao conselho.
+:::
+
+## Apetite de risco: a decisão que ninguém quer assinar
+
+Apetite de risco é a quantidade de risco que a organização aceita correr para atingir seus objetivos. Tolerância é a variação aceitável em torno disso na prática operacional. Ambos precisam sair do abstrato para servirem para alguma coisa.
+
+"Temos baixo apetite a risco cibernético" não orienta decisão nenhuma. O que orienta é um conjunto de declarações verificáveis: nenhum sistema classificado como crítico opera sem autenticação multifator; vulnerabilidades de severidade crítica em ativos expostos à internet são corrigidas em até quinze dias; não aceitamos indisponibilidade superior a quatro horas nos serviços de faturamento; qualquer exceção a esses limites exige aprovação nominal do diretor da área, com prazo e plano de saída.
+
+Repare no último item. **Exceções são inevitáveis e precisam de um caminho legítimo.** Uma organização sem processo de exceção não tem menos exceções — tem exceções invisíveis, tomadas informalmente por quem estava com pressa, sem registro e sem prazo. O processo de exceção transforma isso em uma decisão consciente, com dono, com data de expiração e com revisão obrigatória. É um dos instrumentos mais baratos e mais subutilizados da governança.
+
+A aceitação formal de risco fecha o ciclo. Quando a recomendação da segurança não é seguida, o registro precisa conter: qual é o risco, qual foi a recomendação, qual foi a decisão, quem decidiu, por quê, e até quando essa decisão vale. Não é um instrumento para punir ninguém depois — é o que permite que a organização revise decisões quando o contexto muda, e é o que protege tanto o executivo quanto o CISO de reconstruções de memória convenientes após um incidente. Esse registro, no caso da abertura deste capítulo, teria mudado a conversa de agosto inteira.
+
+## Do risco técnico à conversa com o conselho
+
+O conselho não quer saber quantas vulnerabilidades foram corrigidas. Quer saber se a organização está mais ou menos exposta do que no trimestre anterior, quanto isso custa e o que muda se o investimento for cortado.
+
+Métricas que funcionam nessa conversa compartilham três características: ligam-se a um objetivo de negócio, têm tendência ao longo do tempo e vêm acompanhadas do que a organização pretende fazer a respeito. Cobertura de controles críticos sobre os ativos que sustentam a receita; tempo mediano para corrigir vulnerabilidades críticas expostas; percentual de fornecedores críticos com avaliação de segurança válida; resultado dos testes de recuperação dos sistemas essenciais (@sec-cap091); exposição residual dos riscos aceitos formalmente, com seus prazos de expiração.
+
+Métricas que não funcionam: número absoluto de alertas, quantidade de ataques bloqueados, e qualquer número que só cresça. Elas geram a impressão de atividade sem informar decisão nenhuma — e sofrem do problema apontado no @sec-cap081, em que a métrica vira o alvo e deixa de medir o que interessava.
+
+Há ainda o dever de reportar más notícias. Um programa de segurança que só apresenta indicadores verdes ao conselho ou está mentindo ou não está olhando. Parte do valor da função é ser o canal por onde a organização descobre o que não quer ouvir enquanto ainda dá tempo de agir.
+
+## Responsabilidade pessoal: um risco novo da função
+
+Ao longo da última década, a exposição pessoal de quem lidera segurança deixou de ser hipotética. Há precedentes internacionais de responsabilização criminal de executivos de segurança por ocultação de incidente perante autoridades, e de ações regulatórias contra empresas e indivíduos por declarações públicas sobre postura de segurança consideradas enganosas. O padrão comum a esses casos não é falha técnica: é **o que foi dito, a quem, e o que foi omitido**.
+
+Para quem exerce a função, as implicações práticas são diretas. Registrar recomendações e decisões por escrito deixa de ser burocracia defensiva e vira higiene profissional. Declarações públicas sobre postura de segurança — em contratos, em materiais comerciais, em respostas a questionários de clientes — precisam ser verdadeiras e verificáveis, porque elas são exatamente o material que uma autoridade vai comparar com a realidade depois de um incidente. E a decisão de comunicar ou não comunicar um incidente nunca é uma decisão isolada da área técnica: envolve jurídico, encarregado e alta administração, com o raciocínio registrado.
+
+Vale dizer o outro lado com a mesma clareza: uma organização que responsabiliza pessoalmente o CISO sem lhe dar autoridade, orçamento e canal de reporte está construindo uma função que ninguém competente vai querer ocupar por muito tempo. Responsabilidade sem autoridade não é governança — é preparação de bode expiatório.
+
+## Construir o programa: por onde se começa
+
+Programas de segurança que sobrevivem seguem mais ou menos a mesma ordem, e ela é bem menos glamourosa do que se imagina.
+
+Primeiro, **inventário e classificação**: saber o que existe e o que importa. Não há priorização possível sem isso, e é a lacuna mais comum em organizações que já gastam bastante com segurança.
+
+Segundo, **avaliação de risco** contra um referencial reconhecido, para saber onde se está (@sec-cap006). Aqui entram os arcabouços que os dois próximos capítulos detalham.
+
+Terceiro, **um plano plurianual com escolhas explícitas**, dizendo o que será feito e — igualmente importante — o que não será feito neste ciclo e qual risco isso mantém aberto.
+
+Quarto, **medição e revisão em cadência fixa**, com o comitê de segurança reunindo-se com pauta, quórum e ata. Comitê que não delibera e não registra não é órgão de governança; é reunião.
+
+O erro mais caro nessa construção é começar pelas ferramentas. Ferramenta comprada antes de processo definido vira licença ociosa, e a organização acumula consoles sem dono enquanto o inventário continua desatualizado.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD criou uma função de governança com nome e endereço.** O encarregado pelo tratamento de dados pessoais é obrigatório para os agentes de tratamento, com identidade divulgada publicamente, e atua como canal de comunicação com titulares e com a ANPD. A autoridade regulamentou a figura, admitindo que seja pessoa natural ou jurídica, interna ou contratada, e enfatizando a necessidade de autonomia e de ausência de conflito de interesse — o que reforça a separação entre encarregado e CISO discutida acima. Para agentes de tratamento de pequeno porte, a ANPD flexibilizou parte das obrigações formais sem eliminar o dever de segurança [@lgpd2018; @anpd2021agentes; @anpd2023guia].
+
+**No sistema financeiro, a governança de segurança é norma prudencial.** A Resolução CMN nº 4.893/2021 exige que instituições financeiras tenham política de segurança cibernética aprovada pelo conselho de administração, plano de ação e resposta a incidentes, e — o ponto central para este capítulo — **um diretor estatutário formalmente responsável** pela política, com relatório anual submetido ao conselho. A Resolução BCB nº 85/2021 estende exigência equivalente às instituições de pagamento. Não é recomendação: é requisito de funcionamento, com o nome de uma pessoa registrado perante o regulador [@bcb4893; @bcb85].
+
+**Telecomunicações têm regime próprio.** A Resolução Anatel nº 740/2020 estabeleceu o Regulamento de Segurança Cibernética aplicado ao setor, com obrigações de política de segurança, tratamento e notificação de incidentes relevantes e cuidados na cadeia de fornecimento — atingindo desde as grandes operadoras até prestadoras de menor porte, com gradação. O @sec-cap099 detalha o conjunto de obrigações do provedor [@anatel740].
+
+**Na administração pública federal, a estrutura é prescrita.** As normas do Gabinete de Segurança Institucional determinam a instituição de política de segurança da informação, a designação formal de gestor de segurança da informação e a criação de equipe de tratamento de incidentes, com notificação ao CTIR Gov. Órgãos e entidades públicas somam a isso as obrigações da LGPD como agentes de tratamento e a fiscalização do Tribunal de Contas da União sobre governança de tecnologia [@ingsi5; @gtcsg2024].
+
+**O dever de diligência dos administradores alcança o tema.** A Lei das Sociedades por Ações impõe aos administradores os deveres de diligência e de lealdade no exercício de suas funções. Decisões sobre risco cibernético material tomadas sem informação adequada, sem registro e sem acompanhamento entram nesse campo — o que dá à ata do comitê de segurança e ao registro formal de aceitação de risco um valor que ultrapassa a organização interna do trabalho. Para companhias abertas, soma-se o regime de divulgação de informações relevantes ao mercado, que pode alcançar incidentes com impacto material [@lei6404].
+
+**Contratações passaram a cobrar postura de segurança.** A Lei nº 14.133/2021 permite exigir requisitos de qualidade e de segurança em contratações de tecnologia, e é cada vez mais comum que editais públicos e contratos com grandes empresas exijam política de segurança formalizada, plano de resposta a incidentes e, em alguns casos, certificação. Para muitas organizações brasileiras, essa é a alavanca comercial que finalmente destrava o orçamento de segurança — e é legítimo usá-la como argumento na conversa com a diretoria [@lei14133].
+
+**A ANPD já aplica sanções.** O processo sancionador da autoridade está em operação, e as manifestações públicas mostram que falhas de governança — ausência de encarregado, ausência de registro das operações de tratamento, ausência de resposta a titulares — figuram entre os achados, não apenas falhas técnicas. Governança documentada é, na prática, parte da defesa da organização perante a autoridade [@lgpd2018].
+
+## 🛠️ No Campo
+
+**1. Separe governança de gestão por escrito.** Quem define apetite de risco não é quem opera controle. Se a mesma pessoa faz as duas coisas, registre isso como risco conhecido.
+
+**2. Monte a hierarquia documental em quatro camadas.** Política, norma, padrão, procedimento — com dono, alçada de aprovação e ritmo de revisão diferentes em cada uma.
+
+**3. Tire parâmetro técnico da política.** Versão de TLS, tamanho de chave e nome de fabricante pertencem à camada de padrão. Se muda em menos de dois anos, não é política.
+
+**4. Constitua o comitê de segurança com pauta, quórum e ata.** Reunião sem deliberação registrada não é órgão de governança.
+
+**5. Escreva o apetite de risco em declarações verificáveis.** "Baixo apetite" não orienta ninguém. Prazo de correção, cobertura de controle e limite de indisponibilidade orientam.
+
+**6. Crie um processo formal de exceção.** Com dono nominal, prazo de expiração e revisão obrigatória. A alternativa não é ter menos exceções — é tê-las invisíveis.
+
+**7. Registre toda aceitação de risco com nome, data e prazo.** É o que muda a conversa depois do incidente, e protege os dois lados da mesa.
+
+**8. Garanta um canal do CISO ao conselho que não dependa de autorização intermediária.** Sem ele, a linha do organograma é decorativa.
+
+**9. Não acumule encarregado de dados e CISO na mesma pessoa.** Os objetivos divergem exatamente no momento em que ambos são mais necessários.
+
+**10. Atribua cada risco a um dono de negócio, não à segurança.** O CISO informa, mede e recomenda; quem responde pela área decide.
+
+**11. Leve ao conselho tendência, não volume.** Cobertura de controles críticos, tempo de correção, resultado dos testes de recuperação, exposição residual aceita.
+
+**12. Apresente risco em aberto, não só indicador verde.** Programa que só reporta boa notícia não está olhando.
+
+**13. Revise as declarações públicas de segurança da empresa.** Contratos, material comercial e respostas a questionários de clientes precisam ser verdadeiros e verificáveis.
+
+**14. Comece pelo inventário, não pela ferramenta.** Console sem dono é o resíduo mais comum de programa que começou pela compra.
+
+**15. Documente o que o plano deste ciclo deixa de fora.** A escolha explícita é um produto da governança; a omissão silenciosa é uma dívida sem dono.
+
+**16. Se a organização é regulada, mapeie o responsável formal exigido pela norma.** Diretor estatutário no financeiro, gestor de segurança na administração pública federal, responsável setorial em telecomunicações.
+
+## Resumo
+
+- Governança define **direção e limites** — apetite de risco, alçadas, obrigações externas, prestação de contas. Gestão opera dentro desses limites. Pedir à gestão que faça o trabalho da governança produz ou excesso de restrição contornada pelo negócio, ou exposição acumulada que ninguém decidiu correr.
+- A hierarquia documental em quatro camadas — política, norma, padrão, procedimento — separa o estável do volátil. Parâmetro técnico dentro da política condena a organização a escolher entre burocracia e documento desatualizado.
+- O modelo das três linhas separa quem opera, quem supervisiona e quem verifica. Em organizações pequenas as linhas se sobrepõem; o problema não é a sobreposição, é fingir que ela não existe.
+- O CISO tem perfis distintos — técnico, de risco, de conformidade, de negócio — e boa parte da frustração da função vem de contratar um esperando outro. Encarregado de dados e CISO são funções separadas, com objetivos que se opõem em incidentes de dados pessoais.
+- **O CISO não é o dono do risco.** O dono é o gestor da área que o gera. O CISO informa, mede, recomenda e registra a decisão.
+- Nenhum arranjo de reporte é universalmente correto, mas todos precisam do mesmo elemento: um caminho pelo qual um risco material chega ao topo sem depender de quem tem interesse em abafá-lo.
+- Apetite de risco só serve quando escrito em declarações verificáveis, e todo programa precisa de um caminho legítimo para exceções — com dono, prazo e revisão. Sem ele, as exceções continuam existindo, mas invisíveis.
+- A aceitação formal de risco, com nome e data, é o instrumento mais barato da governança e o que mais muda a conversa depois de um incidente.
+- A exposição pessoal de quem lidera segurança cresceu, e o padrão dos precedentes não é falha técnica: é o que foi declarado e o que foi omitido. Registro escrito virou higiene profissional.
+- No Brasil, a governança de segurança é obrigação normativa em vários setores: diretor estatutário responsável no sistema financeiro, gestor formal na administração pública federal, regulamento próprio em telecomunicações e encarregado de dados sob a LGPD — cada um com nome, endereço e prestação de contas definidos.

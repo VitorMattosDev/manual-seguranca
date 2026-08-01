@@ -157,7 +157,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 15 — Governança, Risco e Conformidade
 
-- [ ] **cap 094** - Governança de segurança e o papel do CISO - `vol15/cap094-governanca-de-seguranca-e-o-papel-do-ciso.qmd`
+- [x] **cap 094** - Governança de segurança e o papel do CISO - `vol15/cap094-governanca-de-seguranca-e-o-papel-do-ciso.qmd`
 - [ ] **cap 095** - ISO/IEC 27001 e 27002 - `vol15/cap095-iso-iec-27001-e-27002.qmd`
 - [ ] **cap 096** - NIST Cybersecurity Framework e CIS Controls - `vol15/cap096-nist-cybersecurity-framework-e-cis-controls.qmd`
 - [ ] **cap 097** - LGPD na prática: bases legais, incidentes e a ANPD - `vol15/cap097-lgpd-na-pratica-bases-legais-incidentes-e-a.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (93 concluidos).
+**Total:** 107 capitulos em 16 volumes (94 concluidos).
 
