@@ -1,3 +1,228 @@
 # Forense de rede e análise de tráfego {#sec-cap088}
 
-*(em elaboracao)*
+O adversário fez tudo certo, do ponto de vista dele. Formatou as duas máquinas que usou como ponto de apoio, limpou os registros de eventos, removeu a persistência antes de sair e não deixou um único arquivo para trás. A perícia de disco em um provedor de internet do Centro-Oeste não encontrou praticamente nada.
+
+O que ele não podia apagar era o registro de conexões do coletor de fluxos, que ficava em outra máquina, em outro segmento, sob outra credencial. Ali estava tudo o que importava: a conexão de saída de um servidor interno para um endereço estrangeiro, repetida a cada 47 segundos com variação de dois segundos, durante dezenove dias. O volume total transferido do banco de dados de assinantes para fora, em três madrugadas consecutivas. E o primeiro contato, catorze dias antes de qualquer alerta, que redefiniu por completo a janela da investigação.
+
+A rede tem uma propriedade que nenhuma outra fonte de evidência tem: **ela é observada por terceiros**. O adversário controla o host que comprometeu; não controla o switch, o firewall, o resolvedor de DNS nem o coletor de fluxos. Este capítulo trata de como usar isso — quais fontes existem, o que cada uma custa, como investigar quando tudo está cifrado, e onde ficam os limites legais que no Brasil são mais rígidos do que muita gente imagina.
+
+## As fontes, e o que cada uma custa
+
+Não existe uma única fonte de evidência de rede. Existem camadas, com relação inversa entre riqueza e retenção viável.
+
+::: {#fig-fontes-rede}
+```{.tikz}
+%%| filename: fontes-rede
+%%| alt: Fontes de evidencia de rede comparando riqueza de conteudo com o custo de retencao
+\begin{tikzpicture}[font=\footnotesize]
+  \begin{axis}[
+      width=11.8cm, height=7.0cm,
+      xlabel={\tiny retenção viável $\longrightarrow$},
+      ylabel={\tiny riqueza da evidência $\longrightarrow$},
+      xmin=0, xmax=10, ymin=0, ymax=10,
+      xtick={1,3,5,7,9},
+      xticklabels={\tiny horas,\tiny dias,\tiny semanas,\tiny meses,\tiny anos},
+      ytick=\empty,
+      tick label style={font=\tiny},
+      label style={font=\tiny},
+      grid=major, grid style={manualgray!22},
+      axis lines=left]
+
+    \node[ponto, manualred] at (axis cs:1.2,9.2) {};
+    \node[font=\tiny, anchor=west, align=left] at (axis cs:1.4,9.2)
+      {\textbf{captura completa (pcap)}\\conteúdo integral --- caríssimo};
+
+    \node[ponto, manualyellow!70!black] at (axis cs:4.6,6.6) {};
+    \node[font=\tiny, anchor=west, align=left] at (axis cs:4.8,6.9)
+      {\textbf{logs do Zeek}\\metadados estruturados por sessão:\\
+       conn, dns, ssl, http, files};
+
+    \node[ponto, manualgreen] at (axis cs:7.4,4.2) {};
+    \node[font=\tiny, anchor=west, align=left] at (axis cs:6.0,3.2)
+      {\textbf{fluxos (NetFlow/IPFIX)}\\quem falou com quem,\\quanto e quando};
+
+    \node[ponto, manualblue] at (axis cs:6.2,5.4) {};
+    \node[font=\tiny, anchor=west, align=left] at (axis cs:6.4,5.6)
+      {\textbf{proxy e DNS}\\domínio, URL, cliente};
+
+    \node[ponto, manualgray] at (axis cs:8.6,2.0) {};
+    \node[font=\tiny, anchor=east, align=right] at (axis cs:8.4,1.4)
+      {\textbf{firewall}\\aceito/negado};
+
+    \addplot[destaque, domain=0.8:9.2, samples=2, forget plot]
+      {9.6 - 0.85*x};
+    \node[font=\tiny, manualred, anchor=west] at (axis cs:2.0,7.4)
+      {a fronteira do orçamento};
+  \end{axis}
+\end{tikzpicture}
+```
+Fontes de evidência de rede. A escolha não é qual usar, e sim onde investir: captura completa apenas na borda e nos segmentos críticos, metadados em todo lugar.
+:::
+
+**Captura completa** guarda o conteúdo dos pacotes. Responde a qualquer pergunta e custa tanto em armazenamento que sua retenção realista é de horas a poucos dias, e apenas nos pontos mais críticos.
+
+**Metadados de sessão** — o que o Zeek produz — registram, por conexão, quem falou com quem, quando, por quanto tempo, quanto trafegou, qual protocolo, qual domínio consultado, qual certificado apresentado, qual arquivo transferido. É a fonte de melhor relação custo-benefício da forense de rede, e a que mais frequentemente falta [@zeek2024].
+
+**Fluxos** — NetFlow, IPFIX, sFlow — registram apenas o essencial da conversa: endereços, portas, protocolo, bytes, pacotes, horários [@rfc7011]. Baratíssimos, retêm-se por meses, e respondem à pergunta mais valiosa de todas: *com quem esta máquina falou, e desde quando?*
+
+**Logs de aplicação de rede** — proxy, resolvedor DNS, firewall, gateway de e-mail, balanceador. Já existem, geralmente estão subaproveitados, e o log de DNS interno em particular tem valor forense desproporcional ao seu custo.
+
+A recomendação prática para a maioria das organizações brasileiras: **fluxos e DNS em todo o ambiente, metadados de sessão na borda e nos segmentos críticos, captura completa apenas onde houver justificativa específica**. Essa combinação cobre a maior parte das perguntas de um incidente por uma fração do custo da captura universal.
+
+## Investigando a partir de um indicador
+
+A investigação de rede quase sempre começa com um fato pequeno: um endereço IP, um domínio, um horário. O método é sempre o mesmo — **expandir no tempo, depois no espaço**.
+
+**Expandir no tempo.** Dado o indicador, buscar todas as ocorrências dele em todo o histórico disponível, não apenas em torno do alerta. É essa busca que descobre que o primeiro contato aconteceu duas semanas antes e redefine a janela de toda a investigação. É também o argumento mais forte a favor de reter fluxos por meses: eles são baratos e são o que permite olhar para trás.
+
+**Expandir no espaço.** Quais outros hosts internos falaram com aquele mesmo destino? Quais outros destinos aquele host interno procurou? Duas ou três iterações desse movimento revelam o conjunto real de máquinas envolvidas — quase sempre maior que o inicialmente suspeitado.
+
+**Cruzar com identidade.** A rede fala em endereços; a investigação precisa de pessoas e sistemas. Isso exige amarrar o endereço ao host e ao usuário no momento do evento — o que depende de registros de DHCP, de NAT e de autenticação. Em ambiente com endereçamento dinâmico ou NAT em larga escala, **sem esses registros o endereço não identifica ninguém**, e boa parte do trabalho investigativo se perde.
+
+Um lembrete que atravessa todo o volume: as fontes de rede vivem em máquinas distintas, com relógios distintos. Alinhar tudo em UTC e verificar o desvio entre os relógios é pré-requisito, não refinamento (@sec-cap086).
+
+## Quando tudo está cifrado
+
+A objeção mais comum à forense de rede é que o TLS tornou o conteúdo invisível. É verdade — e muito menos limitante do que parece, porque **os metadados não são cifrados**.
+
+O que continua visível em uma conexão TLS moderna:
+
+**Quem, quando, quanto e por quanto tempo.** O padrão de tráfego é frequentemente mais revelador que o conteúdo.
+
+**O nome do servidor solicitado** no início do handshake, exceto quando há mecanismos de ocultação do nome, ainda pouco difundidos.
+
+**As características do cliente e do servidor.** A combinação de versões, cifras, extensões e ordem de apresentação forma uma impressão digital do software que está falando — famílias como JA3 e JA4 exploram isso. Um cliente cuja impressão não corresponde a nenhum navegador ou aplicação conhecida do parque é anomalia forte, independentemente do conteúdo [@ja42023].
+
+**O certificado do servidor.** Emissor, validade, nomes cobertos. Certificados autoassinados, com campos genéricos ou com validade muito curta em destino incomum são sinal clássico de infraestrutura de comando e controle.
+
+**As consultas DNS que precederam a conexão.** É por isso que o log do resolvedor interno é tão valioso: ele mostra a intenção antes da cifragem.
+
+E há o padrão que a cifragem não esconde de jeito nenhum: **o batimento**. Comunicação automatizada com servidor de comando e controle tende a produzir conexões em intervalos regulares, com tamanhos semelhantes, por longos períodos — inclusive de madrugada, feriado e fim de semana. Tráfego humano é irregular, agrupado em rajadas e segue o horário de trabalho. A regularidade é a assinatura.
+
+::: {#fig-beaconing}
+```{.tikz}
+%%| filename: beaconing
+%%| alt: Comparacao entre o padrao regular de conexoes de comando e controle e o padrao irregular do trafego humano
+\begin{tikzpicture}[font=\footnotesize]
+  \begin{axis}[
+      width=12.0cm, height=6.4cm,
+      xlabel={\tiny hora do dia},
+      ylabel={\tiny conexões ao destino},
+      xmin=0, xmax=24, ymin=0, ymax=15,
+      xtick={0,4,8,12,16,20,24},
+      ytick={0,5,10,15},
+      tick label style={font=\tiny},
+      label style={font=\tiny},
+      legend style={font=\tiny, at={(0.5,1.16)}, anchor=north,
+                    legend columns=2, draw=manualgray},
+      grid=major, grid style={manualgray!22},
+      axis lines=left]
+
+    \addplot[destaque, mark=*, mark size=0.8pt, samples=25, domain=0:24]
+      {3.1 + 0.12*sin(deg(x*3))};
+    \addlegendentry{comando e controle: regular, ininterrupto}
+
+    \addplot[curva, mark=*, mark size=0.8pt] coordinates {
+      (0,0.2) (1,0.1) (2,0) (3,0) (4,0) (5,0.1) (6,0.4) (7,1.6)
+      (8,6.2) (9,11.4) (10,9.8) (11,12.6) (12,4.2) (13,7.8)
+      (14,11.1) (15,9.4) (16,10.7) (17,6.1) (18,2.2) (19,1.1)
+      (20,0.7) (21,0.5) (22,0.3) (23,0.2) (24,0.1)};
+    \addlegendentry{tráfego humano: rajadas em horário de trabalho}
+
+    \node[font=\tiny, manualred, align=left, anchor=west]
+      at (axis cs:1.2,6.4)
+      {a madrugada é onde\\a diferença aparece};
+    \draw[-{Stealth[length=1.8mm]}, thick, manualred]
+      (axis cs:2.6,5.4) -- (axis cs:2.2,3.5);
+  \end{axis}
+\end{tikzpicture}
+```
+Batimento de comando e controle contra tráfego humano. A regularidade sobrevive à cifragem — e é frequentemente o único sinal disponível.
+:::
+
+## Exfiltração e túneis
+
+**Exfiltração** se detecta por assimetria e por contexto, não por conteúdo. Um host interno que normalmente envia poucos megabytes por dia e envia dez gigabytes numa madrugada de domingo para um destino nunca visto é sinal completo — direção invertida, volume anômalo, horário anômalo, destino novo. Três refinamentos importam: comparar com a linha de base **daquele host**, e não com a média do ambiente; observar transferências fatiadas ao longo de dias, que escapam de qualquer limiar diário; e lembrar que destino em serviço legítimo de nuvem ou de compartilhamento é o caminho mais comum hoje — o destino não parece suspeito, o padrão sim.
+
+**Túneis** escondem tráfego dentro de protocolos permitidos. O caso emblemático é o **túnel de DNS**: como o DNS quase sempre é liberado, dados podem ser codificados em subdomínios de consultas e nas respostas. Os sinais são característicos e detectáveis: volume desproporcional de consultas a um mesmo domínio pai, nomes muito longos e com alta entropia, alta proporção de tipos de registro incomuns, e um cliente que gera mais consultas do que qualquer atividade legítima justificaria (@sec-cap032). Os mesmos princípios valem para túnel sobre ICMP e para tráfego encapsulado em HTTPS: o que denuncia é a **desproporção entre a forma do tráfego e a função declarada do protocolo**.
+
+## Trabalhando com captura completa
+
+Quando há pcap, a análise segue um caminho eficiente:
+
+**Comece pelas estatísticas, não pelos pacotes.** Conversas ordenadas por volume, protocolos por participação, destinos por frequência. O primeiro olhar deve ser agregado — abrir uma captura grande e rolar pacote a pacote é a forma mais lenta possível de investigar [@wireshark2024].
+
+**Filtre para o que interessa e reduza.** Extrair do arquivo grande apenas as conversas relevantes cria um arquivo de trabalho manejável.
+
+**Siga o fluxo.** A reconstrução da sessão mostra a conversa completa em ordem, que é como o conteúdo faz sentido.
+
+**Extraia objetos.** A recuperação de arquivos transferidos em protocolos não cifrados frequentemente entrega diretamente o binário usado ou o dado exfiltrado.
+
+**Automatize com processamento em linha de comando.** Para extrair campos de milhões de pacotes, a ferramenta gráfica não serve; a versão de terminal, combinada com processamento de texto, resolve em minutos.
+
+Uma prática que economiza muito tempo: **passar o pcap pelo Zeek**. Em vez de analisar pacotes, obtém-se um conjunto de logs estruturados por sessão — conexões, consultas DNS, handshakes TLS, requisições HTTP, arquivos vistos — que é imensamente mais fácil de consultar e correlacionar.
+
+## Nuvem e o que muda
+
+Em ambiente de nuvem, não há switch para espelhar. As fontes equivalentes são os **registros de fluxo de rede virtual** — que correspondem ao NetFlow tradicional —, os logs dos balanceadores e gateways, os logs de resolução DNS do provedor e os registros de chamadas de API do plano de controle. Esta última fonte não tem equivalente no mundo local e é frequentemente a mais importante: em nuvem, a ação adversária mais relevante costuma ser uma chamada de API autenticada, não um pacote (@sec-cap051).
+
+Três cuidados específicos: esses registros geralmente **não são habilitados por padrão** e têm custo por volume, o que leva a desligá-los justamente onde mais importam; sua retenção padrão costuma ser curta demais para investigar permanência longa; e o tráfego entre serviços gerenciados do próprio provedor pode não aparecer em nenhuma dessas fontes.
+
+## ⚖️ Brasil em Foco
+
+**Interceptar comunicação é matéria de reserva de jurisdição.** A Lei 9.296/1996 disciplina a interceptação de comunicações e a submete a autorização judicial. Capturar o **conteúdo** de comunicações de terceiros em tempo real é território dela, e a captura ampla de pacotes em rede que transporta comunicação de usuários — o caso típico de um provedor — precisa de fundamentação jurídica cuidadosa. A distinção operacional que importa: **metadados de tráfego da própria rede corporativa, com política prévia e finalidade de segurança, é atividade distinta da interceptação de conteúdo de comunicação alheia**. Onde houver dúvida, a conversa com o jurídico precede a captura, não a sucede [@lei9296; @marcocivil2014].
+
+**Guarda de registros: obrigação, prazo e sigilo.** O Marco Civil obriga provedores de conexão a guardar registros de conexão por um ano e provedores de aplicação a guardar registros de acesso a aplicações por seis meses, sob sigilo, e a disponibilizá-los **somente mediante ordem judicial**. Três consequências: o registro que a lei manda guardar é justamente o mais útil na investigação; entregá-lo a terceiro sem ordem judicial é ilícito, mesmo que o pedido venha de outra empresa "ajudando na apuração"; e a preservação cautelar requerida por autoridade prevalece sobre a política interna de rotação [@marcocivil2014].
+
+**NAT em larga escala sem registro inutiliza a evidência.** Provedores brasileiros que usam CGNAT precisam registrar a tradução — endereço interno, endereço público, porta e horário — para que um endereço IP identifique alguém. Sem esse registro, a resposta a um ofício judicial é "não é possível identificar", com consequências regulatórias e processuais. É simultaneamente uma obrigação de conformidade e a peça que torna a investigação interna possível [@marcocivil2014; @anatel717].
+
+**Monitorar tráfego de empregado exige política prévia.** A inspeção do tráfego gerado em recursos corporativos é admitida quando há política clara, prévia e comunicada, com finalidade legítima e proporcionalidade. Interceptar comunicação pessoal — mensageria privada, e-mail pessoal — permanece fora do alcance, ainda que trafegue na rede da empresa (@sec-cap085).
+
+**Inspeção TLS cria um repositório de dados sensíveis.** Terminar TLS na borda para inspecionar conteúdo é técnica legítima e cria, no equipamento que inspeciona, acesso em claro a comunicações que podem incluir dados bancários, de saúde e pessoais. Sob a LGPD, isso exige base legal, avaliação de necessidade, exclusão de categorias sensíveis do escopo de inspeção — a prática consagrada é não inspecionar tráfego bancário e de saúde — e controle de acesso rigoroso ao equipamento (@sec-cap020) [@lgpd2018].
+
+**Captura de pacotes é dado pessoal.** Um pcap de rede de produção contém dados pessoais de clientes e de terceiros. Retenção definida, acesso nominal e registrado, descarte comprovado, e **nunca envio de captura de produção para serviço público de análise** — o material fica acessível a terceiros [@lgpd2018].
+
+**CERT.br, operadoras e o ecossistema de bloqueio.** Comunicar indicadores de infraestrutura maliciosa ao CERT.br e às operadoras envolvidas contribui para a derrubada de servidores de comando e controle hospedados no país e costuma devolver contexto sobre a campanha. É medida barata e subutilizada na resposta brasileira [@cert2024incidentes; @nicbr2024ix].
+
+## 🛠️ No Campo
+
+**1. Priorize fluxos e DNS em todo o ambiente.** São baratos, retêm-se por meses e respondem à pergunta mais valiosa: com quem esta máquina falou, e desde quando?
+
+**2. Coloque metadados de sessão na borda e nos segmentos críticos.** É a melhor relação custo-benefício da forense de rede e a fonte que mais frequentemente falta.
+
+**3. Reserve captura completa para poucos pontos.** Retenção de horas a dias, onde houver justificativa específica.
+
+**4. Guarde o log do resolvedor DNS interno.** Ele mostra a intenção antes de a conexão ser cifrada.
+
+**5. Expanda no tempo antes de expandir no espaço.** Buscar o indicador em todo o histórico é o que descobre que a intrusão começou semanas antes.
+
+**6. Registre DHCP, NAT e autenticação.** Sem eles, o endereço não identifica ninguém — e, em provedor com CGNAT, isso também é conformidade.
+
+**7. Procure regularidade, não conteúdo.** Conexões em intervalo constante, inclusive de madrugada e no fim de semana, são a assinatura que a cifragem não esconde.
+
+**8. Use a impressão digital do cliente TLS.** Cliente cuja assinatura não corresponde a nada do parque é anomalia forte por si só.
+
+**9. Compare com a linha de base do próprio host.** Exfiltração se detecta por assimetria em relação ao comportamento daquela máquina, não à média do ambiente.
+
+**10. Vigie o DNS por volume e entropia.** Muitas consultas ao mesmo domínio pai, com nomes longos e aleatórios, é túnel até prova em contrário.
+
+**11. Passe o pcap pelo Zeek antes de abrir pacote.** Logs estruturados por sessão são muito mais rápidos de consultar do que a captura crua.
+
+**12. Comece pelas estatísticas agregadas.** Conversas por volume e destinos por frequência antes de qualquer pacote individual.
+
+**13. Em nuvem, habilite os registros de fluxo e de chamadas de API — e amplie a retenção.** Vêm desligados ou com retenção curta demais para investigar permanência longa.
+
+**14. Confirme a base jurídica antes de capturar conteúdo.** Interceptação de comunicação alheia exige ordem judicial; a conversa com o jurídico vem antes da captura.
+
+**15. Trate o pcap como base de dados pessoais.** Retenção definida, acesso nominal, descarte comprovado, e nunca envio para serviço público de análise.
+
+## Resumo
+
+- A rede é a única fonte de evidência que o adversário **não controla**: ele domina o host comprometido, mas não o switch, o firewall, o resolvedor DNS nem o coletor de fluxos. É o que sustenta a investigação quando o disco foi limpo.
+- As fontes formam uma escala inversa entre riqueza e retenção. A combinação que funciona para a maioria: **fluxos e DNS em todo o ambiente, metadados de sessão na borda e nos segmentos críticos, captura completa apenas onde se justificar**.
+- O método é expandir no tempo — buscar o indicador em todo o histórico, o que costuma redefinir a janela do incidente — e depois no espaço, iterando entre hosts e destinos até fechar o conjunto real de máquinas envolvidas.
+- A cifragem esconde o conteúdo, não os metadados. Continuam visíveis quem, quando, quanto, o nome do servidor solicitado, a impressão digital do cliente, o certificado e as consultas DNS anteriores — e o **batimento regular**, que é a assinatura de comando e controle.
+- Exfiltração se detecta por assimetria contra a linha de base **do próprio host**, considerando transferências fatiadas e destinos em serviços legítimos de nuvem. Túneis se denunciam pela desproporção entre a forma do tráfego e a função do protocolo.
+- Com captura completa, comece pelas estatísticas agregadas e prefira processar o pcap com Zeek a examinar pacotes: logs por sessão são muito mais rápidos de correlacionar.
+- Em nuvem, as fontes equivalentes são registros de fluxo virtual, logs de balanceador e DNS, e sobretudo os **registros de chamadas de API** — que não têm equivalente local e vêm desligados ou com retenção curta por padrão.
+- No Brasil, interceptar conteúdo de comunicação alheia exige ordem judicial (Lei 9.296/1996); o Marco Civil impõe guarda de registros sob sigilo, entregues só por ordem judicial; CGNAT sem registro de tradução inutiliza a evidência e cria exposição regulatória; e captura de pacotes é dado pessoal, com todas as obrigações que isso implica.
