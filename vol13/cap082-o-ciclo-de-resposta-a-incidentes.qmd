@@ -1,3 +1,283 @@
 # O ciclo de resposta a incidentes {#sec-cap082}
 
-*(em elaboracao)*
+O gerente de infraestrutura de uma operadora regional recebeu a ligação às 22h de uma quinta-feira: um servidor de arquivos estava lento e um usuário reclamava de arquivos com extensão estranha. Ele fez o que qualquer pessoa razoável faria sob pressão — conectou-se ao servidor, olhou, entendeu que era ransomware e **desligou a máquina pelo botão**.
+
+A decisão parecia óbvia e interrompeu a criptografia. Mas junto com ela foram embora a memória volátil — que continha a chave de sessão do processo de cifragem, as conexões ativas para o servidor de comando e controle e a linha de comando completa do binário que ninguém conseguiu recuperar depois. Nas seis horas seguintes, mais três decisões igualmente razoáveis e igualmente isoladas: restaurar o backup por cima do disco original, trocar a senha do administrador de domínio (uma vez só) e enviar uma mensagem ao grupo de mensageria da equipe, do qual participava um celular já comprometido.
+
+Nenhuma dessas ações foi tomada por incompetência. Foram tomadas por **ausência de sequência**. Cada uma resolvia o problema imediatamente à frente e destruía a resposta ao problema seguinte.
+
+Resposta a incidentes é, antes de tudo, a disciplina de impor ordem a decisões que, tomadas isoladamente, parecem todas corretas. Este capítulo apresenta o ciclo que dá essa ordem, o vocabulário que evita que a organização discuta o nome do problema em vez de tratá-lo, e os relógios — técnicos e legais — que começam a correr no instante em que alguém entende o que está acontecendo.
+
+## Evento, alerta, incidente e crise
+
+A confusão de vocabulário custa tempo real. Quando uma organização não distingue esses quatro termos, a primeira meia hora de um incidente é gasta discutindo se aquilo "é um incidente mesmo" — enquanto o adversário trabalha.
+
+**Evento** é qualquer ocorrência observável em um sistema: uma autenticação, uma conexão de rede, um processo criado. Um ambiente de porte médio produz centenas de milhões por dia. Eventos não são bons nem ruins; são o material bruto (@sec-cap076).
+
+**Alerta** é um evento — ou uma correlação de eventos — que uma regra julgou digno de atenção humana. Alerta é uma hipótese, não um veredito. A maior parte dos alertas de qualquer operação honesta é falso positivo, e isso não é defeito: é o custo de detectar cedo.
+
+**Incidente de segurança** é o evento, confirmado ou razoavelmente suspeito, que **compromete ou ameaça comprometer** a confidencialidade, a integridade ou a disponibilidade de um ativo, ou viola política de segurança [@nistsp80061]. A palavra decisiva é *confirmado ou razoavelmente suspeito*: esperar certeza para declarar incidente é a forma mais comum de perder as horas que importam.
+
+**Crise** é o incidente cujo impacto ultrapassa a capacidade da estrutura normal de resposta e passa a exigir decisão executiva — porque afeta a operação do negócio, a obrigação legal, a relação com clientes ou a reputação. Nem todo incidente vira crise; todo ransomware relevante vira.
+
+A relação entre os quatro é de funil com saltos. Milhões de eventos produzem milhares de alertas, que produzem dezenas de incidentes, dos quais um ou dois por ano viram crise. O problema de desenho está nos **critérios de transição**: quem decide que um alerta virou incidente, e quem decide que um incidente virou crise. Se essas duas perguntas não têm resposta escrita com nome de papel — não de pessoa —, a transição acontece tarde e por acidente.
+
+Vale registrar uma distinção que a LGPD tornou operacional no Brasil: **incidente de segurança** e **incidente com dado pessoal** não são a mesma coisa. Um ataque de negação de serviço bem-sucedido é incidente de segurança sem ser, necessariamente, incidente com dado pessoal. Um dispositivo removível perdido com a folha de pagamento é incidente com dado pessoal sem envolver adversário algum. A segunda categoria dispara obrigações legais próprias, com prazo próprio — e o momento de descobrir isso não é durante o incidente.
+
+## O ciclo, e por que ele é um ciclo
+
+O modelo de referência é o do NIST SP 800-61, em quatro fases: **preparação**; **detecção e análise**; **contenção, erradicação e recuperação**; e **atividade pós-incidente** [@nistsp80061]. A tradição SANS desdobra as mesmas ideias em seis fases — preparação, identificação, contenção, erradicação, recuperação e lições aprendidas —, arranjo conhecido pelo acrônimo PICERL [@kral2011]. A norma ISO/IEC 27035 organiza o mesmo território em termos de processo de gestão [@iso27035].
+
+As três dizem substancialmente a mesma coisa. A escolha entre elas importa muito menos do que entender duas propriedades do desenho.
+
+A primeira: **preparação é a única fase que acontece antes**, e é a que determina o resultado de todas as outras. Nenhuma decisão tomada durante o incidente compensa a ausência de um contato, de um backup testado ou de uma autorização prévia para isolar um servidor. É por isso que a preparação ocupa um capítulo inteiro adiante (@sec-cap083).
+
+A segunda: **as fases centrais não são uma fila**. A representação linear induz ao erro de imaginar que se investiga até o fim, depois se contém, depois se erradica. Na prática, contenção e análise correm em paralelo e se realimentam: cada máquina contida produz evidência que revela outra máquina comprometida, que precisa ser contida. Um incidente de porte médio atravessa esse laço muitas vezes antes de convergir.
+
+::: {#fig-ciclo-ri}
+```{.tikz}
+%%| filename: ciclo-ri
+%%| alt: O ciclo de resposta a incidentes do NIST SP 800-61 em quatro fases, com o laco de realimentacao entre analise e contencao
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fase/.style={draw, thick, rounded corners=4pt, align=center, font=\tiny,
+                 inner sep=5pt, text width=2.7cm, minimum height=1.6cm},
+    seta/.style={-{Stealth[length=2.6mm]}, very thick, manualgray}}
+
+  \node[fase, draw=manualgreen, fill=manualgreen!14] (prep) at (-5.4,0)
+    {\textbf{1. Preparação}\\[2pt] plano, papéis, playbooks,
+     contatos, backup testado};
+  \node[fase, draw=manualblue, fill=manualblue!14] (det) at (-1.8,0)
+    {\textbf{2. Detecção e análise}\\[2pt] confirmar, escopo,
+     linha do tempo, severidade};
+  \node[fase, draw=manualyellow, fill=manualyellow!18] (cont) at (1.8,0)
+    {\textbf{3. Contenção,\\erradicação e\\recuperação}};
+  \node[fase, draw=manualred, fill=manualred!12] (pos) at (5.4,0)
+    {\textbf{4. Pós-incidente}\\[2pt] causa raiz, lições,
+     correção estrutural};
+
+  \draw[seta] (prep) -- (det);
+  \draw[seta] (det) -- (cont);
+  \draw[seta] (cont) -- (pos);
+
+  \draw[seta, manualblue]
+    ([yshift=2mm]cont.north) to[out=110, in=70]
+    node[above, font=\tiny, manualblue, align=center]
+    {cada host contido revela outro host comprometido:\\o laço roda muitas vezes antes de convergir}
+    ([yshift=2mm]det.north);
+
+  \draw[seta, manualgreen]
+    ([yshift=-2mm]pos.south) to[out=250, in=290]
+    node[below, font=\tiny, manualgreen, align=center]
+    {a única saída legítima do ciclo: o que se aprendeu vira preparação}
+    ([yshift=-2mm]prep.south);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=6.6cm]
+    at (0,-3.5)
+    {\textbf{O erro de ler o ciclo como fila:} tratar a fase 4 como
+     relatório de encerramento. Sem realimentar a preparação, a
+     organização repete o mesmo incidente com um adversário diferente
+     --- e chama isso de azar.};
+\end{tikzpicture}
+```
+O ciclo do NIST SP 800-61. O laço superior é o que acontece de fato durante o incidente; o laço inferior é o que separa uma organização que aprende de uma que apenas sobrevive.
+:::
+
+## Detecção e análise: as perguntas na ordem certa
+
+Confirmado que algo aconteceu, a tentação é começar pela pergunta mais interessante — *quem fez isso?* — que é justamente a menos útil nas primeiras horas. A ordem que funciona é outra.
+
+**O que aconteceu, em termos verificáveis?** Não "fomos invadidos", mas "o processo `X` foi criado pelo usuário `Y` na máquina `Z` às `HH:MM`, e estabeleceu conexão com `IP:porta`". A descrição precisa ser reproduzível a partir de evidência, não de memória.
+
+**Qual é o escopo?** Esta é a pergunta que decide tudo o que vem depois, e a que mais é subestimada. Escopo tem três dimensões: quantos e quais sistemas, quais identidades e quais dados. A resposta inicial está quase sempre errada para menos — o primeiro host encontrado raramente é o primeiro host comprometido.
+
+**Desde quando?** O tempo de permanência do adversário determina o que precisa ser considerado suspeito. Se a intrusão começou há três semanas, backups de duas semanas atrás podem estar contaminados e todo o rastro de acesso nesse período precisa ser reavaliado.
+
+**Como entrou?** Sem essa resposta, a erradicação é chute. Restaurar o sistema sem fechar o vetor apenas agenda a repetição.
+
+**O que o adversário conseguiu?** Acesso, dados, credenciais, persistência. Esta pergunta alimenta as obrigações legais e a comunicação.
+
+Só então, e apenas quando for útil: **quem**. A atribuição raramente muda o que precisa ser feito, e consome tempo desproporcional.
+
+Duas disciplinas sustentam essa sequência.
+
+**A linha do tempo é o produto central da análise.** Não uma narrativa em prosa: uma tabela ordenada de fatos com origem, cada linha ancorada em uma fonte de evidência específica. É o que permite responder "desde quando" com honestidade e o que sustenta qualquer conclusão perante auditoria, regulador ou juízo. Como toda linha do tempo cruza fontes de sistemas diferentes, **fuso horário e sincronismo de relógio deixam de ser detalhe de infraestrutura e viram requisito probatório**: registrar tudo em UTC e manter NTP funcionando é o que impede que a mesma ação apareça duas vezes com uma hora de diferença [@rfc5905].
+
+**Separar fato de hipótese, por escrito.** Investigação sob pressão gera conclusões precoces que se cristalizam. O registro deve distinguir o que foi observado do que se supõe, e marcar explicitamente o que ainda não foi verificado. Uma hipótese não marcada como tal vira fato em três repasses.
+
+## Classificar antes de decidir
+
+Severidade não é adjetivo; é a variável que determina quem é acordado, quanto se pode gastar e que prazos legais começam a correr. Uma escala útil combina três eixos:
+
+**Criticidade do ativo** — o que aquele sistema sustenta na operação. **Impacto observado ou plausível** — confidencialidade, integridade, disponibilidade, e em que volume. **Alcance** — um endpoint isolado, um segmento, o domínio inteiro, o cliente final.
+
+O erro clássico é uma escala com cinco níveis e nenhum critério objetivo, o que produz negociação de severidade em vez de resposta. A correção é ancorar cada nível em **gatilhos concretos**: comprometimento de conta com privilégio de domínio é sempre severidade máxima; indício de acesso a base com dado pessoal em volume aciona automaticamente o jurídico e o encarregado; indisponibilidade de serviço ao assinante por mais de N minutos escala para a diretoria. Gatilho escrito remove a hesitação — que é o custo mais caro da primeira hora.
+
+::: {#fig-relogios-incidente}
+```{.tikz}
+%%| filename: relogios-incidente
+%%| alt: Linha do tempo de um incidente mostrando os relogios tecnicos e legais que comecam a correr a partir do conhecimento do fato
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{marco/.style={circle, draw, thick, fill=white, inner sep=1.6pt}}
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray]
+    (-7.6,0) -- (7.4,0);
+
+  \foreach \px/\rot in {%
+    -6.8/{intrusão\\inicial},
+    -4.6/{atividade\\não notada},
+    -2.3/{primeiro\\alerta},
+    0/{\textbf{conhecimento}\\\textbf{do fato}},
+    2.3/{contenção},
+    4.6/{recuperação},
+    6.6/{pós-\\incidente}}
+    {
+      \node[marco, draw=manualgray] at (\px,0) {};
+      \node[align=center, font=\tiny, anchor=north] at (\px,-0.25) {\rot};
+    }
+
+  \draw[very thick, manualred] (-6.8,0.55) -- (0,0.55);
+  \node[font=\tiny, manualred, anchor=south, align=center] at (-3.4,0.6)
+    {\textbf{tempo de permanência} --- semanas ou meses;\\
+     define o que precisa ser considerado suspeito};
+
+  \draw[dashed, thick, manualblue] (0,-1.6) -- (0,2.9);
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=5.7cm,
+        anchor=north west] at (0.4,2.9)
+    {\textbf{A partir do conhecimento do fato}\\[3pt]
+     $\bullet$ comunicação à ANPD e ao titular, em prazo fixado em
+     regulamento\\
+     $\bullet$ comunicação ao regulador setorial (BCB, Anatel)\\
+     $\bullet$ dever de preservar evidência e registros\\
+     $\bullet$ obrigações contratuais com clientes};
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=5.7cm,
+        anchor=north east] at (-0.4,2.9)
+    {\textbf{Antes do conhecimento}\\[3pt]
+     nenhum prazo corre --- e é exatamente por isso que
+     ``deixar o alerta na fila'' não protege ninguém:
+     protela o relógio à custa de ampliar o dano.};
+\end{tikzpicture}
+```
+Os relógios de um incidente. O prazo regulatório conta do conhecimento do fato, não da conclusão da investigação — o que obriga a comunicar com informação incompleta e complementar depois.
+:::
+
+## As decisões que definem o desfecho nas primeiras horas
+
+Cinco erros concentram a maior parte do dano evitável. Todos aparecem na abertura deste capítulo.
+
+**Desligar a máquina pelo botão.** Destrói a memória volátil, onde vivem chaves, conexões ativas, processos sem arquivo em disco e a linha de comando do que está rodando (@sec-cap087). A regra prática é **isolar da rede sem desligar**: desconectar o cabo, mover para VLAN de quarentena, aplicar isolamento pelo EDR. Se o processo destrutivo está em curso e não há como interrompê-lo de outra forma, desligar pode ser a decisão certa — mas é uma escolha consciente entre dois danos, não um reflexo.
+
+**Restaurar por cima do original.** Elimina a cena. Antes de qualquer restauração, imagem ou instantâneo do disco comprometido, preservado à parte (@sec-cap085).
+
+**Avisar o adversário.** Trocar senhas parcialmente, bloquear um único indicador ou apagar um artefato antes de mapear a persistência informa que ele foi visto — e a reação típica é acelerar o objetivo ou destruir evidência. Contenção precipitada e parcial é pior que contenção nenhuma.
+
+**Comunicar-se pelo canal comprometido.** Se o adversário tem acesso ao e-mail corporativo, ao chat interno ou ao dispositivo de alguém da equipe, ele acompanha a resposta em tempo real. Canal de crise fora de banda é item de preparação, não de improviso.
+
+**Fechar sem causa raiz.** "Formatamos e voltou a funcionar" não é erradicação. O vetor continua aberto e a persistência secundária continua instalada.
+
+Há ainda um erro de processo, mais silencioso: **não documentar desde o minuto zero**. Toda ação — quem, quando, o quê, por quê, resultado — precisa ser registrada enquanto acontece. Depois do incidente ninguém reconstrói isso com fidelidade, e é exatamente esse registro que sustenta a comunicação ao regulador, o acionamento do seguro e a eventual discussão judicial.
+
+::: {#fig-erros-primeira-hora}
+```{.tikz}
+%%| filename: erros-primeira-hora
+%%| alt: Comparacao entre o reflexo intuitivo e a acao correta nas primeiras horas de um incidente, com o que se perde em cada caso
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=3.9cm, minimum height=1.0cm}}
+
+  \node[font=\tiny\bfseries, manualred] at (-4.4,2.9) {O REFLEXO INTUITIVO};
+  \node[font=\tiny\bfseries, manualgreen] at (0.9,2.9) {A AÇÃO CORRETA};
+  \node[font=\tiny\bfseries, manualgray] at (5.7,2.9) {O QUE SE PERDE};
+
+  \foreach \idx/\py/\err/\cer/\per in {%
+    1/2.1/{Desligar pelo botão}/{Isolar da rede, manter ligado}/{memória: chaves, C2, processos sem arquivo},
+    2/0.7/{Restaurar sobre o disco}/{Imagem ou instantâneo antes}/{a cena inteira; nada é reconstruível},
+    3/-0.7/{Bloquear um indicador}/{Mapear tudo, conter de uma vez}/{surpresa: o adversário acelera},
+    4/-2.1/{Falar no chat interno}/{Canal de crise fora de banda}/{sigilo: ele lê a resposta em tempo real}}
+    {
+      \node[cx, draw=manualred, fill=manualred!9] at (-4.4,\py) {\err};
+      \node[cx, draw=manualgreen, fill=manualgreen!11] at (0.9,\py) {\cer};
+      \node[cx, draw=manualgray, fill=manualgray!7] at (5.7,\py) {\per};
+      \draw[-{Stealth[length=1.8mm]}, thick, manualgray]
+        (-2.4,\py) -- (-1.1,\py);
+    }
+\end{tikzpicture}
+```
+Os quatro reflexos que mais custam caro. Cada um resolve o problema imediato e destrói a resposta ao problema seguinte.
+:::
+
+## Atividade pós-incidente: a fase que quase todo mundo pula
+
+A reunião de lições aprendidas é a primeira coisa cortada quando o incidente termina, porque todo mundo está exausto e a operação acumulou atraso. É também a única fase que produz melhoria permanente.
+
+O que a torna útil, em vez de cerimonial:
+
+**Acontecer rápido** — dentro de duas semanas, enquanto a memória é boa e o registro está fresco. **Ser sobre sistema, não sobre pessoas** — se a reunião procura culpado, a próxima gera relatos incompletos e a organização perde a fonte de informação. **Produzir itens com dono e prazo**, não recomendações genéricas. **Distinguir causa raiz de causa imediata**: o phishing foi a causa imediata; a causa raiz pode ser a ausência de MFA, a autorização excessiva daquela conta, ou o fato de o alerta ter ficado na fila.
+
+Três perguntas organizam a discussão melhor que qualquer roteiro longo: o que nos permitiu detectar — ou o que nos impediu de detectar antes? O que atrasou a resposta? O que teria reduzido o impacto pela metade se já existisse?
+
+O produto final é uma lista curta de mudanças estruturais realimentando a preparação. Se, seis meses depois, nenhum item foi implementado, o ciclo está quebrado no ponto mais barato de consertar.
+
+## ⚖️ Brasil em Foco
+
+**O prazo da ANPD conta do conhecimento, e a comunicação não espera a investigação terminar.** A Resolução CD/ANPD nº 15/2024 disciplinou a comunicação de incidente de segurança com dado pessoal: quando houver risco ou dano relevante ao titular, o controlador deve comunicar a autoridade e o titular em **prazo contado a partir do conhecimento do fato**, com conteúdo mínimo definido — natureza dos dados afetados, titulares envolvidos, medidas adotadas e riscos. A consequência operacional é direta: comunicar com informação parcial e complementar depois é o comportamento previsto, não uma falha. Esperar a certeza para comunicar é o que gera autuação [@lgpd2018; @anpd2024res15].
+
+**Encarregado, e não apenas time técnico.** A LGPD atribui ao encarregado o papel de canal com a ANPD e com os titulares. Um plano de resposta que não coloca o encarregado na célula de crise desde o primeiro momento vai descobrir na segunda-feira que o prazo regulatório correu enquanto a discussão era técnica [@lgpd2018; @lei13709art46].
+
+**Setor financeiro tem prazo e destinatário próprios.** A Resolução BCB nº 4.893/2021 exige que instituições financeiras e de pagamento mantenham plano de resposta a incidentes e comuniquem ao Banco Central os incidentes relevantes, com registro dos efeitos e das medidas adotadas. Para quem opera no arranjo Pix somam-se obrigações de comunicação previstas na regulamentação específica, com prazos apertados [@bcb4893; @bcbpix].
+
+**Prestadoras de telecomunicações respondem à Anatel.** A regulamentação de segurança cibernética aplicada às redes de telecomunicações estabelece dever de tratamento e de comunicação de incidentes relevantes, com reflexo direto em provedores regionais que acumulam as funções de NOC e SOC [@anatel717].
+
+**Preservar registro é obrigação, não escolha do investigador.** O Marco Civil da Internet impõe a provedores de conexão a guarda de registros de conexão por um ano e a provedores de aplicação a guarda de registros de acesso por seis meses, e prevê que autoridade policial, administrativa ou o Ministério Público requeiram **preservação cautelar** por prazo maior. Durante um incidente, a rotação normal de logs pode apagar exatamente o que a autoridade pedirá depois — congelar a retenção é uma das primeiras ações da resposta [@marcocivil2014].
+
+**Cadeia de custódia deixou de ser recomendação técnica.** A Lei 13.964/2019 inseriu no Código de Processo Penal os arts. 158-A a 158-F, que definem cadeia de custódia e suas etapas. Se há chance de o caso virar processo criminal — e em ransomware, fraude ou acesso não autorizado essa chance é real —, o modo como a evidência foi coletada na primeira hora determina se ela vale alguma coisa depois (@sec-cap085) [@lei13964].
+
+**A tipificação penal existe e o registro da ocorrência ajuda.** A Lei 12.737/2012 tipificou a invasão de dispositivo informático, com pena agravada quando há obtenção de conteúdo de comunicações ou controle remoto; a Lei 14.155/2021 endureceu penas e criou qualificadoras para fraude eletrônica. Registrar boletim de ocorrência não resolve o incidente, mas é pressuposto para investigação, para acionamento de seguro e para a defesa da organização na discussão sobre diligência [@lei12737; @lei14155].
+
+**Cooperação internacional ficou viável — e é lenta.** O Brasil aderiu à Convenção de Budapeste sobre o Crime Cibernético, o que abriu canais formais de cooperação para obtenção de evidência no exterior. Na prática, o prazo dessa via não é compatível com a janela de um incidente ativo: serve à responsabilização posterior, não à contenção [@budapeste2023].
+
+**CERT.br e CTIR Gov são canais úteis e subutilizados.** A notificação ao CERT.br não é obrigatória para a iniciativa privada, mas alimenta a visão nacional de ameaças e frequentemente devolve contexto sobre a campanha em curso. Órgãos da Administração Pública Federal seguem o fluxo do CTIR Gov, com obrigações próprias de comunicação [@cert2024incidentes; @gtcsg2024].
+
+## 🛠️ No Campo
+
+**1. Escreva os critérios de transição.** Quem declara que um alerta virou incidente e quem declara que um incidente virou crise — por papel, não por nome. Sem isso, a primeira hora vira debate de nomenclatura.
+
+**2. Trate "razoavelmente suspeito" como suficiente para declarar.** Esperar certeza é a forma mais cara de perder tempo. Declarar e desescalar depois custa quase nada.
+
+**3. Isole sem desligar.** Cabo de rede, VLAN de quarentena ou isolamento pelo EDR. Desligar pelo botão só quando o dano em curso for maior que a evidência perdida — e registre a decisão.
+
+**4. Imagem antes de restaurar.** Nenhuma restauração sobre o disco original antes de instantâneo ou cópia preservada.
+
+**5. Não contenha pela metade.** Bloquear um indicador ou trocar uma senha antes de mapear a persistência avisa o adversário. Planeje a contenção inteira e execute de uma vez.
+
+**6. Tenha um canal de crise fora de banda.** Grupo, telefone e lista de contatos que não dependam do e-mail corporativo, do chat interno nem da rede comprometida.
+
+**7. Congele a retenção de logs no minuto um.** A rotação normal apaga o que a investigação e a autoridade vão pedir. É uma das ações mais baratas e mais esquecidas.
+
+**8. Registre tudo em UTC e verifique o NTP.** Linha do tempo com relógios dessincronizados produz conclusões erradas e não sustenta perícia.
+
+**9. Documente enquanto acontece.** Quem, quando, o quê, por quê, resultado. Reconstruir depois nunca funciona e é justamente o que o regulador, o seguro e o juízo vão examinar.
+
+**10. Separe fato de hipótese no registro.** Marque explicitamente o que ainda não foi verificado. Hipótese não marcada vira fato em três repasses.
+
+**11. Acione o encarregado junto com o time técnico.** O relógio da ANPD começa no conhecimento do fato, não no fim da análise.
+
+**12. Ancore a severidade em gatilhos objetivos.** Conta com privilégio de domínio, indício de acesso a dado pessoal em volume, indisponibilidade ao assinante acima de N minutos. Escala sem gatilho vira negociação.
+
+**13. Faça a reunião pós-incidente em até duas semanas, sobre sistema e não sobre pessoas.** Itens com dono e prazo. Se nada foi implementado em seis meses, o ciclo está quebrado.
+
+## Resumo
+
+- Resposta a incidentes impõe **ordem** a decisões que, isoladas, parecem todas corretas — e é a ausência dessa ordem, não a falta de competência técnica, que produz a maior parte do dano evitável nas primeiras horas.
+- Evento, alerta, incidente e crise são categorias distintas com critérios de transição próprios. Sem critério escrito, a organização gasta a primeira hora discutindo o nome do problema.
+- O ciclo do NIST SP 800-61 tem quatro fases, mas **não é uma fila**: análise e contenção se realimentam a cada host descoberto, e a fase pós-incidente só tem valor se realimentar a preparação.
+- Na análise, a ordem correta é *o que aconteceu*, *qual o escopo*, *desde quando*, *como entrou*, *o que conseguiu* — e só depois, se útil, *quem*. A linha do tempo com fonte por linha é o produto central, e depende de UTC e NTP funcionando.
+- Cinco erros concentram o dano: desligar pelo botão, restaurar por cima do original, conter pela metade, comunicar-se pelo canal comprometido e fechar sem causa raiz. Todos são reflexos razoáveis tomados fora de sequência.
+- Severidade precisa de **gatilhos objetivos**, porque é ela que determina quem é acordado, quanto se pode gastar e que prazos legais começam a correr.
+- No Brasil, o relógio regulatório conta do **conhecimento do fato**: a Resolução CD/ANPD nº 15/2024 exige comunicação com conteúdo mínimo mesmo sem investigação concluída, o Marco Civil obriga a preservar registros, a Lei 13.964/2019 formalizou a cadeia de custódia e os setores financeiro e de telecomunicações têm deveres próprios de comunicação.
