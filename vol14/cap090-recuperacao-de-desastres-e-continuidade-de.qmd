@@ -1,3 +1,254 @@
 # Recuperação de desastres e continuidade de negócio {#sec-cap090}
 
-*(em elaboracao)*
+Às 4h20 de uma quarta-feira, a bomba de recalque do prédio vizinho rompeu e alagou o subsolo onde ficava a sala de equipamentos de uma operadora regional. Os servidores morreram em minutos. O plano de recuperação de desastres existia — quarenta e duas páginas, revisado no ano anterior, aprovado pela diretoria.
+
+Três coisas aconteceram naquela manhã, e nenhuma delas estava nas quarenta e duas páginas. A primeira: ninguém sabia quem tinha autoridade para **declarar** o desastre, e a decisão de acionar o sítio secundário só saiu às 9h40, quando o diretor de operações conseguiu ser localizado. A segunda: o sítio secundário subiu, mas não autenticava ninguém, porque o controlador de domínio de lá replicava do que estava debaixo d'água. A terceira: o plano estava no compartilhamento de arquivos da rede.
+
+O serviço voltou em trinta e uma horas. O RTO contratado com os clientes corporativos era de quatro.
+
+Este capítulo trata da diferença entre ter um plano e ter uma capacidade. O @sec-cap089 garantiu que existe algo bom para restaurar; aqui a pergunta é **o que restaurar primeiro, para onde, quem decide e como a organização continua funcionando enquanto isso**.
+
+## Continuidade de negócio e recuperação de desastres não são a mesma coisa
+
+A confusão entre os dois termos custa caro porque leva a organização a acreditar que resolveu um problema quando resolveu metade do outro.
+
+**Continuidade de negócio** é sobre a organização continuar entregando seus produtos e serviços em nível aceitável durante uma disrupção. Seu escopo inclui pessoas, instalações, fornecedores, processos manuais alternativos, caixa e comunicação — a maior parte do que importa não é tecnologia [@iso22301].
+
+**Recuperação de desastres** é o subconjunto que trata de restabelecer a tecnologia: sistemas, dados, rede, infraestrutura. É condição necessária e quase nunca suficiente [@iso27031].
+
+A pergunta que separa os dois: *se o sistema de emissão de nota fiscal fica indisponível por dois dias, existe um jeito de a empresa continuar faturando?* A resposta da recuperação de desastres é "vamos restaurar o sistema". A resposta da continuidade é "existe um procedimento de contingência documentado, com formulário, autorização e reconciliação posterior". Organizações maduras têm as duas respostas; a maioria tem apenas a primeira, e mal.
+
+A distinção também importa porque o desastre nem sempre é técnico. Greve de caminhoneiros que impede o abastecimento de gerador, interdição do prédio pela defesa civil, perda simultânea de quatro pessoas-chave, falência do fornecedor de link — nenhum desses casos se resolve restaurando servidor.
+
+## A análise de impacto ao negócio
+
+Todo o resto deriva daqui. A análise de impacto ao negócio — BIA, na sigla consagrada — é o levantamento que transforma opinião em prioridade [@iso22317].
+
+Ela responde, processo a processo:
+
+**Qual é o impacto da interrupção ao longo do tempo?** Financeiro, regulatório, contratual, reputacional, de segurança de pessoas. O ponto essencial é que o impacto **não é linear**: quatro horas parado costuma ser incômodo, quatro dias costuma ser existencial.
+
+**Qual é o período máximo tolerável de disrupção?** O ponto além do qual o dano se torna irreversível — perda do cliente, sanção regulatória, inviabilidade da empresa. É o teto absoluto, e o RTO precisa ser confortavelmente menor que ele.
+
+**De que esse processo depende?** Sistemas, dados, pessoas com conhecimento específico, fornecedores, instalações, insumos. É aqui que aparecem as dependências invisíveis: o processo crítico que depende de uma planilha na máquina de uma pessoa, do link de um único fornecedor, ou de um sistema que a TI classificava como secundário.
+
+**Qual é a sazonalidade?** Fechamento de mês, campanha de vendas, período de declaração fiscal. O mesmo processo tem tolerâncias completamente diferentes conforme a data.
+
+::: {#fig-curva-bia}
+```{.tikz}
+%%| filename: curva-bia
+%%| alt: Curva de impacto ao longo do tempo cruzando o custo da capacidade de recuperacao para definir o RTO economico
+\begin{tikzpicture}[font=\footnotesize]
+  \begin{axis}[
+      width=12.0cm, height=7.0cm,
+      xlabel={\tiny tempo de indisponibilidade},
+      ylabel={\tiny custo},
+      xmin=0, xmax=10, ymin=0, ymax=10,
+      xtick={0,2,4,6,8,10},
+      xticklabels={\tiny 0,\tiny 4h,\tiny 12h,\tiny 1 dia,\tiny 3 dias,\tiny 1 semana},
+      ytick=\empty,
+      tick label style={font=\tiny},
+      label style={font=\tiny},
+      legend style={font=\tiny, at={(0.5,1.17)}, anchor=north,
+                    legend columns=2, draw=manualgray},
+      grid=major, grid style={manualgray!22},
+      axis lines=left]
+
+    \addplot[destaque, domain=0:10, samples=60]
+      {0.22*x^2};
+    \addlegendentry{impacto da interrupção (cresce mais que linearmente)}
+
+    \addplot[curva, domain=0:10, samples=60]
+      {1.1 + 46/(x+5)};
+    \addlegendentry{custo da capacidade de recuperação}
+
+    \draw[dashed, thick, manualgray] (axis cs:5.15,0) -- (axis cs:5.15,5.9);
+    \node[font=\tiny, manualgray, anchor=west, align=left]
+      at (axis cs:5.35,6.6) {ponto de equilíbrio:\\o RTO que se justifica};
+
+    \draw[very thick, manualred] (axis cs:8.4,0) -- (axis cs:8.4,9.6);
+    \node[font=\tiny, manualred, anchor=east, align=right, rotate=90]
+      at (axis cs:8.2,4.8) {período máximo tolerável};
+  \end{axis}
+\end{tikzpicture}
+```
+A análise de impacto em uma imagem. O RTO defensável fica onde as duas curvas se cruzam — e sempre à esquerda do período máximo tolerável, nunca em cima dele.
+:::
+
+Dois erros de método arruínam a BIA. O primeiro é **perguntar à TI**. A TI sabe o que cada sistema faz, não quanto custa a hora parada de um processo de negócio. O levantamento é feito com os donos dos processos, e a TI traduz depois. O segundo é **aceitar "tudo é crítico"**. Quando todo processo é prioridade máxima, não há prioridade — e a sequência de restauração vira improviso na madrugada. A técnica que funciona é forçar ordenação relativa: *se só der para levantar três sistemas hoje, quais três?*
+
+O produto da BIA é uma lista ordenada de processos com RTO e RPO atribuídos, dependências mapeadas e o custo de cada nível de capacidade. É esse documento que autoriza o investimento — e que documenta, para o futuro, que a diretoria escolheu conscientemente um RTO de 24 horas em vez de pagar por quatro.
+
+## Estratégias de recuperação e o que cada uma custa
+
+As opções formam um espectro contínuo entre custo e tempo de retorno.
+
+**Sítio frio.** Espaço com energia, refrigeração e conectividade, sem equipamento provisionado. Barato de manter, RTO de dias a semanas. Faz sentido para o que pode esperar.
+
+**Sítio morno.** Equipamento instalado, dados replicados periodicamente, ambiente parcialmente configurado. Exige trabalho de ativação. RTO de horas a um dia.
+
+**Sítio quente.** Ambiente espelhado, dados replicados de forma contínua, pronto para assumir. RTO de minutos a poucas horas, custo próximo ao de duplicar a infraestrutura.
+
+**Ativo-ativo.** Dois ou mais sítios atendendo simultaneamente, com o tráfego redistribuído automaticamente quando um cai. Não há "recuperação" no sentido clássico: há degradação de capacidade. É o desenho mais caro e o mais robusto, tratado em detalhe no @sec-cap092.
+
+**Recuperação em nuvem.** Provisionar sob demanda, no momento do desastre, a partir de imagens e dados replicados. Mudou a economia do problema: paga-se armazenamento continuamente e computação apenas na hora, o que trouxe RTOs de sítio morno para orçamentos que antes só comportavam sítio frio.
+
+::: {#fig-espectro-dr}
+```{.tikz}
+%%| filename: espectro-dr
+%%| alt: Espectro de estrategias de recuperacao relacionando tempo de retorno e custo de manutencao
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    op/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.5cm, minimum height=1.5cm}}
+
+  \node[op, draw=manualgreen, fill=manualgreen!13] at (-5.1,1.4)
+    {\textbf{sítio frio}\\RTO: dias\\custo: baixo};
+  \node[op, draw=manualgreen, fill=manualgreen!10] at (-2.35,1.4)
+    {\textbf{sítio morno}\\RTO: horas\\custo: médio};
+  \node[op, draw=manualyellow, fill=manualyellow!18] at (0.4,1.4)
+    {\textbf{nuvem sob demanda}\\RTO: horas\\custo: médio-baixo};
+  \node[op, draw=manualred, fill=manualred!11] at (3.15,1.4)
+    {\textbf{sítio quente}\\RTO: minutos\\custo: alto};
+  \node[op, draw=manualred, fill=manualred!14] at (5.9,1.4)
+    {\textbf{ativo-ativo}\\sem interrupção\\custo: muito alto};
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray]
+    (-6.5,-0.05) -- (7.2,-0.05);
+  \node[font=\tiny, manualgray, anchor=north west] at (-6.5,-0.2)
+    {mais barato de manter, mais caro de sofrer};
+  \node[font=\tiny, manualgray, anchor=north east] at (7.2,-0.2)
+    {mais caro de manter, mais barato de sofrer};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.6cm]
+    at (0.35,-1.7)
+    {\textbf{A escolha é por serviço, não pela empresa.} O padrão maduro é
+     misturar: ativo-ativo para o que gera receita em tempo real, nuvem sob
+     demanda para o corporativo, sítio frio para o que pode esperar uma
+     semana. Nível único para tudo é sinal de que a análise de impacto não
+     foi feita.};
+\end{tikzpicture}
+```
+O espectro das estratégias de recuperação. O eixo é sempre o mesmo compromisso: pagar antes ou pagar depois.
+:::
+
+Duas armadilhas específicas do contexto brasileiro. A primeira é o **acordo de reciprocidade** entre empresas parceiras — barato no papel e quase sempre inútil na prática, porque no dia do desastre o parceiro tem seus próprios problemas e não tem capacidade ociosa. A segunda é o **sítio secundário na mesma região de risco**: dois data centers a doze quilômetros um do outro compartilham subestação de energia, rota de fibra, bacia hidrográfica e a mesma greve. Separação geográfica é um requisito, não um detalhe.
+
+## Quem declara o desastre
+
+O componente mais frequentemente ausente dos planos é também o mais barato de incluir. Alguém precisa ter **autoridade explícita, nominal e substituível** para declarar o desastre e acionar a recuperação.
+
+O plano precisa registrar:
+
+**Critérios objetivos de acionamento.** "Perda de acesso ao sítio primário por mais de N minutos sem previsão de restabelecimento", "indisponibilidade do serviço X acima do RTO contratado", "determinação de autoridade para desocupar o prédio". Critérios existem para que a decisão não dependa de julgamento heroico às quatro da manhã.
+
+**Quem decide, e a linha de sucessão.** Nome, cargo, e ao menos dois substitutos, com o entendimento de que a autoridade **desce** automaticamente se o titular não for localizado em um prazo definido. O caso de abertura deste capítulo perdeu cinco horas exatamente aí.
+
+**Como se comunica a declaração.** Por um canal que não depende do que caiu. Grupo em aplicativo de mensagens no telefone pessoal, lista telefônica impressa, ponte de conferência externa — a comunicação em crise não pode viver na infraestrutura em crise (@sec-cap083).
+
+Vale a pena documentar também o **custo de não declarar**. A hesitação típica vem do medo de acionar à toa; o plano deve deixar explícito que uma declaração revertida em uma hora custa muito menos que uma declaração adiada por cinco.
+
+## A ordem de restauração é uma questão de dependências
+
+Restaurar sistemas na ordem de importância percebida é o erro operacional mais comum da recuperação. A ordem correta é a das **dependências**, e ela quase sempre começa por serviços que ninguém classifica como críticos.
+
+A sequência típica, de baixo para cima:
+
+**Energia, refrigeração, conectividade física.** Sem isso, nada.
+
+**Rede e roteamento.** Endereçamento, rotas, firewall, VPN de administração. Sem caminho, o resto é inalcançável.
+
+**Serviços de nome e de tempo.** DNS interno e sincronização de horário. Autenticação e certificados falham silenciosamente com relógio fora de sincronia, e o diagnóstico disso durante uma crise consome horas.
+
+**Identidade.** Diretório, controladores de domínio, provedor de identidade, cofre de segredos. É o gargalo clássico: sem autenticar, ninguém administra nada. E é o componente que mais frequentemente foi desenhado com dependência circular — o sítio secundário que só autentica quando o primário responde.
+
+**Armazenamento e bancos de dados.** Depois deles, e só depois, as aplicações.
+
+**Aplicações, na ordem da BIA.** Com atenção às dependências entre elas: o sistema de faturamento que precisa do cadastro, que precisa do serviço de autenticação do cliente.
+
+**Serviços de apoio.** Correio, telefonia, atendimento — que costumam ser subestimados e são o que permite conversar com o cliente enquanto o resto sobe.
+
+A ferramenta que evita improviso aqui é o **mapa de dependências**, construído durante a BIA e mantido junto com o plano. Ele é também o que revela as circularidades antes do desastre: o cofre de segredos que precisa do diretório que precisa do cofre.
+
+## O plano, e por que ele apodrece
+
+Um plano de continuidade útil é curto, operacional e atual. Os que falham costumam ser longos, descritivos e desatualizados.
+
+O conteúdo mínimo: escopo e premissas; critérios e autoridade de acionamento; papéis com nomes e substitutos; contatos internos, de fornecedores e de autoridades; procedimentos de recuperação por serviço, na ordem de dependência; procedimentos de contingência manual para os processos de negócio críticos; plano de comunicação, com quem fala com quem e o que pode ser dito; critérios de retorno à normalidade; e a localização das cópias fora de banda.
+
+Sobre o **retorno à normalidade** — a fase que quase todo plano trata em um parágrafo e que na prática é onde se perde dado. Voltar do sítio secundário para o primário significa sincronizar de volta as transações que aconteceram durante a contingência, em janela planejada, com validação de integridade e com a possibilidade de reverter. É um segundo evento de risco, e merece procedimento próprio.
+
+Sobre o apodrecimento: o plano envelhece à velocidade das mudanças de infraestrutura e de pessoas. Os mecanismos que o mantêm vivo são três — revisão obrigatória a cada mudança relevante de arquitetura, verificação periódica dos contatos (o número que não existe mais é a falha mais banal e mais comum) e, sobretudo, o exercício, que é o assunto do @sec-cap091. Plano que nunca foi exercitado é uma hipótese documentada.
+
+## Terceiros, concentração e a nuvem
+
+O plano de continuidade da organização é tão bom quanto o dos seus fornecedores críticos, e essa dependência raramente é examinada.
+
+Três perguntas que precisam de resposta contratual e verificada: **qual é o compromisso de disponibilidade e de recuperação do fornecedor**, com penalidade que signifique alguma coisa; **o que acontece com os dados** se o fornecedor for comprometido, falir ou encerrar o contrato — incluindo formato e prazo de devolução; e **qual é a concentração**, isto é, quantos processos críticos dependem simultaneamente do mesmo fornecedor, da mesma região de nuvem ou do mesmo link.
+
+Em nuvem, há três equívocos recorrentes. O primeiro é tratar a redundância do provedor como plano de continuidade próprio: a resiliência da infraestrutura não protege contra exclusão acidental, comprometimento da conta ou erro de configuração. O segundo é concentrar tudo em uma única zona ou região por conveniência de latência, o que reintroduz o ponto único de falha que a nuvem deveria eliminar. O terceiro é esquecer que **a conta é o novo perímetro**: perder o acesso administrativo à conta de nuvem — por comprometimento, por disputa contratual ou por suspensão — é um desastre de categoria própria, e a resposta a ele exige credenciais de emergência sob custódia e cópia dos dados fora daquele provedor (@sec-cap050, @sec-cap051).
+
+## ⚖️ Brasil em Foco
+
+**Setor financeiro: continuidade é obrigação supervisionada.** A Resolução CMN 4.893/2021 exige das instituições financeiras política de segurança cibernética com procedimentos de continuidade, plano de resposta a incidentes, testes e requisitos rigorosos para a contratação de serviços relevantes de processamento e armazenamento em nuvem — incluindo previsão de continuidade em caso de falência ou descontinuidade do prestador, e o dever de comunicar contratações relevantes ao Banco Central. A Resolução Conjunta nº 1/2020 estende exigências equivalentes às instituições de pagamento [@bcb4893; @bcbresconj1].
+
+**Telecomunicações: qualidade e continuidade são reguladas.** Prestadoras de serviços de telecomunicações estão sujeitas ao Regulamento de Qualidade da Anatel, com indicadores de disponibilidade e de tempo de reparo apurados e fiscalizados, e ao Regulamento de Segurança Cibernética, que trata de requisitos aplicáveis a produtos e à gestão de riscos do setor. Para o provedor regional, isso significa que a indisponibilidade não é apenas prejuízo comercial: é exposição regulatória, com obrigação de registro e de reporte [@anatel717; @anatel740].
+
+**Indisponibilidade também é incidente sob a LGPD.** A definição legal de segurança da informação inclui a **disponibilidade**. Um ransomware que torna dados pessoais inacessíveis é incidente de segurança ainda que não haja vazamento, e pode disparar o dever de comunicação à ANPD e aos titulares conforme os critérios de risco da Resolução CD/ANPD nº 15/2024. O plano de continuidade precisa ter um ramo que aciona o encarregado, e não apenas a equipe técnica [@lgpd2018; @anpd2024res15].
+
+**Relação de consumo e serviço essencial.** O Código de Defesa do Consumidor incide sobre a prestação de serviços a consumidores finais, e a interrupção prolongada gera dever de reparação e de restituição proporcional. Para provedores, a jurisprudência sobre falha na prestação do serviço é abundante — o que faz da continuidade uma questão de exposição judicial em massa, não apenas de SLA corporativo [@cdc1990].
+
+**Contratações públicas.** A Lei 14.133/2021 estruturou a gestão de riscos na contratação administrativa, o que na prática empurra órgãos e seus fornecedores a formalizar requisitos de continuidade, planos de contingência e cláusulas de reversão contratual — incluindo a devolução de dados ao fim do contrato. Fornecedor de TI que atende ao setor público brasileiro precisa saber demonstrar isso [@lei14133].
+
+**Riscos de infraestrutura tipicamente brasileiros.** O planejamento realista no país precisa considerar interrupção prolongada de energia elétrica com autonomia de gerador dependente de abastecimento de combustível por via rodoviária; eventos climáticos severos e alagamentos urbanos que interditam prédios inteiros; rompimento de fibra em rota única, muito comum fora dos grandes centros; e a concentração de infraestrutura de interconexão em poucos pontos de troca de tráfego. A separação geográfica real, e não apenas administrativa, entre sítios é a contramedida com melhor retorno [@nicbr2024ix].
+
+**Certificação e prova de diligência.** A ISO 22301 é a norma certificável de sistemas de gestão de continuidade, e a ISO/IEC 27031 trata especificamente da prontidão de TIC para continuidade. Em contratos com grandes clientes, licitações e negociações de seguro cibernético no Brasil, a existência de um programa aderente a essas normas tem deixado de ser diferencial para virar requisito de entrada [@iso22301; @iso27031; @iso27002].
+
+## 🛠️ No Campo
+
+**1. Faça a BIA com os donos dos processos, não com a TI.** A TI sabe o que o sistema faz; só a área sabe quanto custa a hora parada.
+
+**2. Force ordenação relativa.** "Se só der para levantar três sistemas hoje, quais três?" Isso quebra o "tudo é crítico" melhor que qualquer planilha.
+
+**3. Registre o período máximo tolerável e mantenha o RTO abaixo dele com folga.** Trabalhar no limite é planejar para o cenário perfeito.
+
+**4. Escreva quem declara o desastre, com dois substitutos e prazo de sucessão automática.** É o item mais barato do plano e o que mais custa quando falta.
+
+**5. Defina critérios objetivos de acionamento.** Para que a decisão não dependa de julgamento heroico às quatro da manhã.
+
+**6. Construa o mapa de dependências e restaure por ele, não por importância.** Rede, tempo, DNS e identidade vêm antes de qualquer aplicação.
+
+**7. Cace dependências circulares hoje.** O cofre que precisa do diretório que precisa do cofre; o sítio secundário que replica autenticação do primário morto.
+
+**8. Exija separação geográfica real.** Doze quilômetros compartilham subestação, rota de fibra e enchente. Verifique a rota física, não o endereço.
+
+**9. Desconfie de acordo de reciprocidade.** No dia do desastre, o parceiro tem os próprios problemas e nenhuma capacidade ociosa.
+
+**10. Escolha nível por serviço, misturando estratégias.** Ativo-ativo no que gera receita, nuvem sob demanda no corporativo, sítio frio no que espera.
+
+**11. Documente contingência manual para os processos críticos.** Faturar, atender e pagar precisam ter um caminho que não passa pelo sistema.
+
+**12. Mantenha comunicação de crise fora da infraestrutura em crise.** Lista telefônica impressa, grupo em telefone pessoal, ponte de conferência externa.
+
+**13. Trate o retorno à normalidade como um segundo evento de risco.** Janela planejada, reconciliação das transações da contingência, validação e caminho de reversão.
+
+**14. Verifique contatos e fornecedores trimestralmente.** O número que não existe mais é a falha mais banal do plano.
+
+**15. Meça a concentração em terceiros.** Quantos processos críticos dependem do mesmo fornecedor, da mesma região de nuvem, do mesmo link?
+
+**16. Tenha credenciais de emergência da conta de nuvem sob custódia externa.** Perder o acesso administrativo à conta é uma categoria própria de desastre.
+
+**17. Guarde o plano fora de banda e revise a cada mudança de arquitetura.** Impresso ou em mídia separada — o plano no compartilhamento de rede não existe no dia em que a rede cai.
+
+## Resumo
+
+- **Continuidade de negócio** é a organização continuar entregando; **recuperação de desastres** é restabelecer a tecnologia. A segunda é subconjunto da primeira e quase nunca suficiente sozinha.
+- A **análise de impacto ao negócio** é a fundação: impacto ao longo do tempo, período máximo tolerável, dependências e sazonalidade, levantados com os donos dos processos e não com a TI.
+- O impacto cresce mais que linearmente com o tempo. O RTO defensável fica onde a curva de impacto cruza a de custo da capacidade — sempre à esquerda do período máximo tolerável.
+- As estratégias formam um espectro de sítio frio a ativo-ativo, e a escolha madura é **misturar níveis por serviço**. Acordo de reciprocidade quase nunca funciona; sítio secundário perto demais compartilha o risco que deveria diluir.
+- O item mais frequentemente ausente e mais barato de incluir é **quem declara o desastre**, com critérios objetivos, linha de sucessão e um canal de comunicação que não depende do que caiu.
+- A ordem de restauração é ditada por **dependências**, não por importância percebida: energia, rede, tempo, DNS, identidade, dados e só então aplicações. Dependências circulares precisam ser caçadas antes do desastre.
+- O retorno à normalidade é um segundo evento de risco — reconciliação, validação e caminho de reversão — e merece procedimento próprio.
+- A continuidade da organização é limitada pela dos seus fornecedores. Em nuvem, a redundância do provedor não é plano próprio, e **perder o acesso administrativo à conta** é uma categoria de desastre por si só.
+- No Brasil, continuidade é exigência supervisionada no setor financeiro (BCB), regulada em telecomunicações (Anatel), relevante sob a LGPD porque **indisponibilidade também é incidente**, e crescentemente cobrada em contratos públicos e privados via ISO 22301.
