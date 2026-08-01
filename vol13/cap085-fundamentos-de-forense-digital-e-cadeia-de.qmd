@@ -1,3 +1,298 @@
 # Fundamentos de forense digital e cadeia de custódia {#sec-cap085}
 
-*(em elaboracao)*
+Um distribuidor de equipamentos descobriu que um funcionário de vendas havia copiado a base completa de clientes antes de pedir demissão e ir trabalhar no concorrente. A prova era boa: o histórico do sistema mostrava a exportação, os registros de rede mostravam o envio para um endereço pessoal, e o dispositivo removível apreendido continha os arquivos.
+
+O caso não foi adiante. O notebook havia sido ligado três vezes depois da apreensão — uma pelo gerente de TI "só para confirmar", outra por um analista que montou o dispositivo removível em uma máquina Windows para "dar uma olhada", e uma terceira já com a empresa de perícia, que gerou o hash **depois** desses acessos. Não havia registro de quem ficou com o equipamento entre a sexta e a segunda-feira. Não havia lacre. A defesa não precisou provar que a evidência foi adulterada; bastou demonstrar que **ninguém podia provar que não foi**.
+
+Forense digital não é a arte de encontrar coisas em discos. É a disciplina de encontrar coisas de um modo que sobreviva a alguém tentando derrubar o achado. Este capítulo trata dos princípios que tornam um achado defensável, do procedimento de aquisição que os operacionaliza e da cadeia de custódia — que no Brasil deixou de ser boa prática técnica e virou texto de lei.
+
+## O que muda quando a evidência é digital
+
+Evidência digital tem três propriedades que a distinguem de qualquer outra e que explicam todo o rigor procedimental:
+
+**É trivialmente alterável, e a alteração pode ser invisível.** Abrir um arquivo muda seu horário de acesso. Ligar um computador escreve dezenas de milhares de blocos no disco. Montar um sistema de arquivos pode atualizar metadados. Não existe "só dar uma olhada".
+
+**É perfeitamente copiável.** Ao contrário de uma impressão digital, uma cópia bit a bit é indistinguível do original — o que é uma vantagem enorme, desde que se possa **provar** que a cópia corresponde ao original. Essa prova é o hash.
+
+**É volátil em graus muito diferentes.** Parte da evidência dura anos em disco; parte dura microssegundos em registradores de processador. A ordem de coleta importa mais do que em qualquer outro tipo de perícia.
+
+Dessas propriedades derivam quatro princípios operacionais [@nistsp80086; @iso27037; @casey2011]:
+
+**Mínima intervenção.** Trabalha-se sobre cópias, nunca sobre o original. Quando é inevitável atuar sobre o sistema vivo — e em resposta a incidente frequentemente é —, a interferência é minimizada e **documentada**, incluindo o que a própria coleta alterou.
+
+**Integridade verificável.** Todo item coletado recebe hash criptográfico no momento da coleta, e o hash é conferido em cada transferência. É o que transforma "confie em mim" em "verifique".
+
+**Repetibilidade.** Outro examinador, com o mesmo material e o mesmo procedimento, deveria chegar ao mesmo resultado. Isso exige ferramentas conhecidas e procedimentos escritos, não improviso.
+
+**Documentação contemporânea.** Registro feito no momento, não reconstruído depois. Quem, quando, o quê, com qual ferramenta, com qual resultado.
+
+Há ainda um princípio herdado da criminalística clássica que se aplica bem aqui: o **princípio de troca de Locard** — toda interação deixa rastro. Vale para o adversário, que sempre deixa algo; e vale para o examinador, que também deixa. Reconhecer o segundo é o que separa perícia de bagunça.
+
+## Ordem de volatilidade
+
+Se tudo não pode ser coletado ao mesmo tempo, coleta-se primeiro o que desaparece primeiro. A ordem de volatilidade é o princípio mais antigo e mais violado da resposta a incidentes [@rfc3227].
+
+::: {#fig-volatilidade}
+```{.tikz}
+%%| filename: volatilidade
+%%| alt: Ordem de volatilidade das fontes de evidencia digital, do mais efemero ao mais duravel
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fo/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=5.0cm, minimum height=0.82cm}}
+
+  \draw[-{Stealth[length=3mm]}, very thick, manualgray] (-6.6,0.9) -- (-6.6,-5.3);
+  \node[font=\tiny, manualgray, rotate=90, anchor=south] at (-6.9,-2.2)
+    {coletar nesta ordem};
+
+  \foreach \idx/\py/\cor/\fon/\dur in {%
+    1/0.5/manualred/{registradores e cache de CPU}/{nanossegundos},
+    2/-0.5/manualred/{memória RAM: processos, conexões, chaves, comandos}/{até o desligamento},
+    3/-1.5/manualyellow/{estado de rede, tabela ARP, sessões, portas}/{segundos a minutos},
+    4/-2.5/manualyellow/{processos em execução e módulos carregados}/{até o desligamento},
+    5/-3.5/manualgreen/{disco: arquivos, metadados, espaço não alocado}/{meses a anos},
+    6/-4.5/manualblue/{mídia removível, backup, log remoto, nuvem}/{conforme a retenção}}
+    {
+      \node[fo, draw=\cor, fill=\cor!12, anchor=west] at (-6.2,\py) {\fon};
+      \node[font=\tiny, manualgray, anchor=west] at (-0.9,\py) {\dur};
+    }
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.1cm]
+    at (3.9,-0.6)
+    {\textbf{O que o desligamento apaga}\\[3pt]
+     chaves de cifragem em claro, conexões ativas para o comando e
+     controle, código injetado sem arquivo em disco, linha de comando
+     completa dos processos e credenciais em memória.\\[3pt]
+     Nada disso volta.};
+
+  \node[draw=manualgreen, fill=manualgreen!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.1cm]
+    at (3.9,-3.8)
+    {\textbf{A exceção que inverte a regra}\\[3pt]
+     Se há dano ativo e destrutivo em curso, interrompê-lo pode valer
+     mais que a memória. É uma \textbf{decisão registrada}, com quem
+     decidiu e por quê --- não um reflexo.};
+\end{tikzpicture}
+```
+Ordem de volatilidade. A coleta segue do mais efêmero ao mais durável, e a única inversão legítima é a interrupção de dano em curso.
+:::
+
+Na prática de resposta a incidentes, isso se traduz em uma sequência simples: instantâneo com memória em máquina virtual; coleta de memória em máquina física; captura do estado volátil de rede e processos; triagem de artefatos; e por fim imagem de disco.
+
+## Aquisição: cópia bit a bit, hash e bloqueio de escrita
+
+Aquisição é a operação que transforma um dispositivo em evidência utilizável. Três elementos a definem.
+
+**Cópia bit a bit** — não cópia de arquivos. A cópia bit a bit inclui o espaço não alocado, o *slack* entre o fim do arquivo e o fim do bloco, os metadados do sistema de arquivos e as áreas fora das partições. É justamente aí que mora boa parte do que interessa: arquivos apagados, fragmentos, estruturas de controle (@sec-cap086).
+
+**Hash criptográfico** calculado sobre a origem e sobre a cópia, e comparado. Se conferem, a cópia é fiel e qualquer alteração posterior é detectável. A prática corrente usa SHA-256; MD5 e SHA-1 ainda aparecem em ferramentas antigas e em laudos, mas ambos têm colisões práticas demonstradas e não devem ser a única âncora de integridade (@sec-cap017) [@stevens2017].
+
+**Bloqueio de escrita.** Um bloqueador de escrita — em hardware ou software — impede que o sistema do examinador escreva no dispositivo original. Sem ele, montar o disco em uma estação Windows já basta para alterá-lo: o sistema cria arquivos de indexação, atualiza metadados e, em alguns casos, escreve no diário do sistema de arquivos. Foi exatamente o que aconteceu no caso de abertura.
+
+Sobre formatos: a imagem crua (`raw`/`dd`) é universal e não guarda metadados. Os formatos periciais — E01 e AFF4 — embutem hash, informação do caso, compressão e verificação por segmento, o que é preferível quando há perspectiva processual. A escolha importa menos do que a consistência: escolher um formato, documentá-lo e usá-lo sempre.
+
+Há um caso que a formação clássica de perícia trata mal e que domina a resposta a incidentes moderna: **o sistema que não pode ser desligado**. Servidor de produção, ambiente em nuvem, sistema que atende cliente final. Aqui a aquisição é feita com o sistema vivo, o que viola a mínima intervenção — e a resposta correta não é abrir mão da perícia, mas **documentar a interferência**: qual ferramenta rodou, o que ela alterou, quando, sob autorização de quem. Uma coleta viva bem documentada vale muito mais que uma coleta perfeita que nunca aconteceu.
+
+::: {#fig-fluxo-aquisicao}
+```{.tikz}
+%%| filename: fluxo-aquisicao
+%%| alt: Fluxo de aquisicao forense com bloqueio de escrita, calculo de hash e verificacao da copia
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.35cm, minimum height=1.05cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[et, draw=manualgray, fill=manualgray!10] (orig) at (-6.1,1.5)
+    {\textbf{Original}\\lacrado e registrado};
+  \node[et, draw=manualred, fill=manualred!12] (bloq) at (-3.4,1.5)
+    {\textbf{Bloqueador de escrita}\\hardware ou software};
+  \node[et, draw=manualblue, fill=manualblue!12] (aq) at (-0.7,1.5)
+    {\textbf{Aquisição}\\bit a bit, incluindo não alocado};
+  \node[et, draw=manualblue, fill=manualblue!12] (hash) at (2.0,1.5)
+    {\textbf{Hash da origem\\e da cópia}\\SHA-256};
+  \node[et, draw=manualgreen, fill=manualgreen!12] (ver) at (4.7,1.5)
+    {\textbf{Comparação}\\conferem?};
+
+  \foreach \na/\nb in {orig/bloq, bloq/aq, aq/hash, hash/ver}
+    { \draw[fx] (\na) -- (\nb); }
+
+  \node[et, draw=manualgreen, fill=manualgreen!12, text width=2.9cm]
+    (cop) at (2.9,-0.4)
+    {\textbf{Cópia de trabalho}\\é nela que se analisa};
+  \node[et, draw=manualgray, fill=manualgray!10, text width=2.9cm]
+    (arq) at (6.2,-0.4)
+    {\textbf{Cópia mestre}\\arquivada, nunca aberta};
+
+  \draw[fx] (ver.south) -- (cop.north);
+  \draw[fx] (ver.south) -| (arq.north);
+
+  \draw[fx, manualgray] (orig.south) |- (-6.1,-1.7)
+    node[right, font=\tiny, align=left, xshift=3mm]
+    {\textbf{O original volta ao armazenamento controlado e não é
+     analisado.}\\
+     Cada movimentação --- quem retirou, quando, por quê, quando
+     devolveu --- entra no formulário de rastreamento.};
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=6.2cm]
+    at (-3.2,-0.5)
+    {\textbf{Onde o caso de abertura morreu}\\[3pt]
+     O hash foi calculado \emph{depois} de três acessos sem bloqueador.
+     Ele passou a atestar a integridade de um estado
+     \textbf{já alterado} --- e nenhuma prova posterior podia
+     desfazer isso.};
+\end{tikzpicture}
+```
+Fluxo de aquisição. O hash só tem valor probatório se for calculado antes de qualquer acesso — e o original nunca é o objeto da análise.
+:::
+
+## Cadeia de custódia — e o que a lei brasileira passou a exigir
+
+Cadeia de custódia é o registro documentado e ininterrupto de tudo o que aconteceu com a evidência desde o reconhecimento até o descarte: onde esteve, quem teve acesso, o que foi feito, quando e por quê. Seu propósito não é provar que a evidência é verdadeira, e sim **eliminar a possibilidade de contestação sobre adulteração**.
+
+No Brasil, isso deixou de ser matéria de boa prática. A Lei 13.964/2019 — o Pacote Anticrime — inseriu no Código de Processo Penal os arts. 158-A a 158-F, que definem a cadeia de custódia e enumeram suas etapas, aplicáveis a todo vestígio, inclusive o digital [@lei13964].
+
+::: {#fig-cadeia-custodia}
+```{.tikz}
+%%| filename: cadeia-custodia
+%%| alt: As dez etapas da cadeia de custodia previstas nos arts. 158-A a 158-F do Codigo de Processo Penal aplicadas a evidencia digital
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ep/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=5.2cm, minimum height=0.9cm}}
+
+  \foreach \idx/\py/\nom/\dig in {%
+    1/2.3/{Reconhecimento}/{identificar o que é vestígio: qual host, qual mídia, qual conta},
+    2/1.25/{Isolamento}/{impedir alteração: desconectar da rede, bloquear acesso},
+    3/0.2/{Fixação}/{registrar o estado: fotos, hash, horário, testemunha},
+    4/-0.85/{Coleta}/{aquisição bit a bit com bloqueio de escrita},
+    5/-1.9/{Acondicionamento}/{lacre numerado, embalagem antiestática, identificação}}
+    {
+      \node[ep, draw=manualblue, fill=manualblue!11, anchor=west] at (-7.0,\py)
+        {\textbf{\idx. \nom} --- \dig};
+    }
+
+  \foreach \idx/\py/\nom/\dig in {%
+    6/2.3/{Transporte}/{registro de quem levou, quando e como},
+    7/1.25/{Recebimento}/{conferência de lacre e hash na entrada},
+    8/0.2/{Processamento}/{análise sobre a cópia, com ferramenta documentada},
+    9/-0.85/{Armazenamento}/{local com acesso controlado e registrado},
+    10/-1.9/{Descarte}/{somente com autorização, com registro}}
+    {
+      \node[ep, draw=manualgreen, fill=manualgreen!11, anchor=west] at (0.9,\py)
+        {\textbf{\idx. \nom} --- \dig};
+    }
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=11.5cm]
+    at (0.0,-3.4)
+    {\textbf{A pergunta que derruba o laudo:} ``entre a sexta-feira e a
+     segunda, com quem estava o equipamento?''\\[3pt]
+     Não é preciso provar adulteração. Basta demonstrar que o registro
+     tem um buraco --- e o vestígio perde valor. No caso de abertura,
+     faltavam as etapas 2, 3, 5 e 9 simultaneamente.};
+\end{tikzpicture}
+```
+As etapas de cadeia de custódia do CPP aplicadas a vestígio digital. A quebra em qualquer elo compromete tudo o que vem depois.
+:::
+
+Três consequências práticas para quem trabalha em empresa, não em instituto de criminalística:
+
+**Formulário de rastreamento é obrigatório, não opcional.** Cada transferência de posse — de pessoa para pessoa, de local para local — precisa ser registrada com data, hora, nome, motivo e assinatura. Uma planilha assinada resolve; a ausência dela não tem conserto posterior.
+
+**Lacre e identificação física importam mesmo em ativo digital.** Lacre numerado, registro do número no formulário e fotografia do item lacrado. Parece exagero em ambiente corporativo até o dia em que a contraparte pergunta quem teve acesso ao armário.
+
+**A empresa não é perito oficial.** Em processo criminal, a perícia oficial é feita por perito oficial; a organização pode produzir prova, contratar assistente técnico e sustentar sua análise, mas quanto mais próximo do procedimento legal for o seu material, mais ele resiste. Fazer certo desde o começo custa quase nada; fazer errado não tem correção.
+
+## Investigação corporativa: limites que valem antes da técnica
+
+Nem toda análise forense termina em processo criminal. A maior parte das investigações corporativas trata de desvio interno, uso indevido, vazamento por empregado ou apuração de responsabilidade. Nesses casos, o limite não é técnico — é jurídico.
+
+**Equipamento corporativo.** A empresa pode inspecionar dispositivo de sua propriedade fornecido para o trabalho, desde que exista política prévia, clara e comunicada, informando que o equipamento é de uso profissional e sujeito a monitoramento. Sem política prévia, a inspeção é frágil e pode ser considerada violação de privacidade e de intimidade.
+
+**Comunicação pessoal.** Conta de e-mail pessoal, mensageria privada e conteúdo de comunicação de terceiros estão fora do alcance da empresa, mesmo que acessados no equipamento corporativo. A interceptação de comunicação alheia é matéria de reserva de jurisdição (@sec-cap088) [@lei9296].
+
+**Proporcionalidade e minimização.** Uma imagem completa de disco de um empregado contém dado pessoal dele e de terceiros que nada têm a ver com o objeto da apuração. Sob a LGPD, a coleta precisa ter finalidade definida, escopo proporcional, acesso restrito a quem precisa e prazo de descarte. Guardar a imagem "por precaução" por tempo indefinido é criar passivo.
+
+**Registro da autorização.** Quem determinou a investigação, com que fundamento, com que escopo. Isso protege a organização e protege quem executa.
+
+## Anti-forense e os limites do que se pode afirmar
+
+Adversários competentes atacam a evidência. As técnicas comuns: apagar ou limpar registros de eventos, alterar horários de arquivos (*timestomping*), operar apenas em memória sem tocar o disco, cifrar as ferramentas, usar binários legítimos do próprio sistema, e desativar a auditoria antes de agir.
+
+A resposta não é uma ferramenta melhor; é **diversidade de fontes**. Uma alteração local é fácil; alterar de forma consistente o registro local, o log encaminhado a um coletor externo, a telemetria do EDR, o registro do firewall e o do provedor de nuvem é muito difícil. É por isso que log centralizado e imutável tem valor pericial desproporcional ao seu custo (@sec-cap076).
+
+Há também um limite epistemológico que todo relatório honesto respeita: **ausência de evidência não é evidência de ausência**. Não encontrar sinal de exfiltração pode significar que ela não ocorreu, ou que a fonte que a registraria não existe. Um laudo que declara "não houve vazamento" quando o correto é "não foram encontrados indícios de exfiltração nas fontes disponíveis, que são estas e cobrem este período" cria exposição jurídica desnecessária — e, sob a LGPD, uma afirmação dessas embasa a decisão de não comunicar titulares. Se estiver errada, a omissão vira o problema maior.
+
+## O laboratório e a validação das ferramentas
+
+Um ambiente mínimo de análise: estação isolada do domínio corporativo, sem acesso à rede de produção; armazenamento dimensionado para imagens; ferramentas conhecidas e versionadas; e um repositório de evidência com acesso controlado e registrado.
+
+Duas fontes públicas dão sustentação técnica ao trabalho. O programa de teste de ferramentas forenses do NIST publica avaliações de conformidade de ferramentas de aquisição e análise, além de conjuntos de dados de referência para validação — útil quando alguém questiona se a ferramenta faz o que se afirma [@nistcfreds]. E a biblioteca nacional de referência de software mantém hashes de arquivos conhecidos de sistemas e aplicativos legítimos, o que permite eliminar do exame milhões de arquivos irrelevantes e concentrar atenção no que resta [@nsrl2024].
+
+Uma última recomendação que separa trabalho profissional de improviso: **registre a versão de cada ferramenta usada e o comando exato executado**. Reproduzir um resultado dois anos depois, em uma audiência, depende disso.
+
+## ⚖️ Brasil em Foco
+
+**Cadeia de custódia é texto de lei desde 2019.** Os arts. 158-A a 158-F do CPP, inseridos pela Lei 13.964/2019, definem cadeia de custódia como o conjunto de procedimentos para manter e documentar a história cronológica do vestígio, e enumeram as etapas de reconhecimento a descarte. Aplicam-se ao vestígio digital, e a jurisprudência tem examinado com atenção crescente a integridade desse rastro. Para a empresa, isso significa que a decisão sobre como coletar precisa ser tomada **antes** de tocar o equipamento [@lei13964].
+
+**Prova digital no processo civil tem caminho próprio.** O Código de Processo Civil admite todos os meios legais de prova e trata do documento eletrônico; a **ata notarial** lavrada por tabelião é instrumento amplamente usado no Brasil para constatar conteúdo de página, mensagem ou sistema em determinado momento, com fé pública. Para conteúdo público e volátil — uma publicação, um anúncio, um perfil —, é o caminho mais barato e mais robusto que existe [@cpc2015].
+
+**Interceptar comunicação exige ordem judicial; ler registro armazenado é outra coisa.** A Lei 9.296/1996 disciplina a interceptação de comunicações e a submete à reserva de jurisdição. Capturar tráfego em tempo real com conteúdo de comunicação de terceiros é território dela. Já examinar registros armazenados em sistema próprio, com política prévia e finalidade legítima, é atividade distinta — a fronteira exige cuidado e opinião jurídica antes, não depois (@sec-cap088) [@lei9296].
+
+**Marco Civil: guarda, requisição e preservação.** Registros de conexão e de acesso a aplicações têm prazos legais de guarda e só podem ser disponibilizados mediante ordem judicial, ressalvadas as hipóteses legais. Durante um incidente, atenção dupla: preservar o que a lei manda guardar e **não entregar registro a terceiro sem base legal** — inclusive a outra empresa que pede "para ajudar na investigação" [@marcocivil2014].
+
+**LGPD dentro da própria evidência.** Uma imagem de disco é um banco de dados pessoais. Coletar exige base legal e finalidade definida; guardar exige prazo, controle de acesso e registro; compartilhar com terceiro — perito externo, seguradora, cliente — exige contrato e minimização. O relatório pericial que anexa listagens completas de arquivos pessoais irrelevantes ao caso cria um segundo incidente dentro do primeiro [@lgpd2018].
+
+**Monitoramento de empregado exige política prévia.** A jurisprudência trabalhista brasileira admite o monitoramento de recursos corporativos quando há política clara, prévia e comunicada, e o equipamento é de propriedade da empresa. Sem essa política, a prova obtida é contestável e a empresa se expõe a reparação. Escrever a política é tarefa de preparação, não de investigação (@sec-cap083).
+
+**Tipificação penal e o registro da ocorrência.** A Lei 12.737/2012 tipificou a invasão de dispositivo informático e a Lei 14.155/2021 endureceu penas em fraude eletrônica. Para o encaminhamento criminal, a evidência precisa ter sido coletada de forma preservável — e o boletim de ocorrência acompanhado de material bem custodiado é infinitamente mais útil que o mesmo boletim acompanhado de "temos uns arquivos aqui" [@lei12737; @lei14155].
+
+**Evidência no exterior depende de cooperação e demora.** Dados hospedados fora do país envolvem cooperação internacional, com a Convenção de Budapeste como instrumento disponível. O prazo é incompatível com a urgência do incidente: planeje a investigação com o que está sob seu controle e trate a via internacional como trilha paralela e lenta [@budapeste2023].
+
+**Perito e assistente técnico.** Em processo judicial, a perícia oficial é atribuição do perito nomeado. A organização pode indicar **assistente técnico** para acompanhar e apresentar parecer. Contratar bem esse profissional cedo — e não depois de a perícia oficial concluir — costuma ser a diferença entre influenciar o resultado e apenas reagir a ele.
+
+## 🛠️ No Campo
+
+**1. Nada de "só dar uma olhada".** Ligar a máquina, montar a mídia ou abrir o arquivo já altera a evidência. A primeira decisão é não tocar.
+
+**2. Colete na ordem de volatilidade.** Memória antes de disco, estado de rede antes de arquivos. A única inversão legítima é interromper dano em curso — e ela vai registrada.
+
+**3. Use bloqueador de escrita sempre que houver original físico.** Montar em estação Windows sem bloqueio é o erro clássico e irreversível.
+
+**4. Gere o hash na coleta, não depois.** SHA-256. Hash calculado após acessos atesta um estado já alterado — foi o que matou o caso de abertura.
+
+**5. Analise sempre a cópia de trabalho.** O original vai lacrado para armazenamento controlado; a cópia mestre fica arquivada e fechada.
+
+**6. Preencha o formulário de rastreamento a cada transferência.** Data, hora, quem, por quê, assinatura. O buraco no registro é o que a contraparte procura.
+
+**7. Lacre e fotografe.** Lacre numerado, número registrado, foto do item lacrado. Custa minutos.
+
+**8. Documente a interferência da coleta viva.** Em servidor que não pode parar, registre ferramenta, versão, horário, autorização e o que a execução alterou. Coleta viva documentada vale mais que coleta perfeita inexistente.
+
+**9. Registre versão da ferramenta e comando exato.** Reproduzir o resultado dois anos depois depende disso.
+
+**10. Reduza o ruído com base de hashes conhecidos.** Eliminar arquivos legítimos de sistema concentra o exame no que resta.
+
+**11. Escreva o que não pode ser afirmado.** "Não foram encontrados indícios nas fontes disponíveis, que são estas e cobrem este período" — nunca "não houve vazamento".
+
+**12. Trate a imagem de disco como base de dados pessoais.** Finalidade, escopo proporcional, acesso restrito, prazo de descarte. Guardar por precaução é criar passivo.
+
+**13. Confirme que existe política prévia de monitoramento antes de examinar equipamento de empregado.** Sem ela, a prova é contestável.
+
+**14. Para conteúdo público e volátil, considere ata notarial.** É o instrumento mais barato e robusto disponível no Brasil.
+
+**15. Centralize e torne imutáveis os logs.** É a defesa mais eficaz contra anti-forense: alterar cinco fontes independentes de forma consistente é muito difícil.
+
+## Resumo
+
+- Forense digital não é encontrar coisas: é encontrá-las de modo que o achado **sobreviva à contestação**. Basta demonstrar um buraco no registro para que a evidência perca valor, sem que ninguém precise provar adulteração.
+- Evidência digital é trivialmente alterável, perfeitamente copiável e volátil em graus muito diferentes — daí os princípios de mínima intervenção, integridade verificável, repetibilidade e documentação contemporânea.
+- A **ordem de volatilidade** determina a sequência da coleta: memória antes de estado de rede, estado de rede antes de disco. A única inversão legítima é interromper dano ativo, e ela precisa ser registrada.
+- Aquisição defensável exige cópia bit a bit (com espaço não alocado e *slack*), hash calculado **no momento da coleta** e bloqueio de escrita. A análise ocorre sobre a cópia de trabalho; o original nunca é aberto.
+- No sistema que não pode ser desligado, a coleta viva é legítima desde que a interferência seja documentada: ferramenta, versão, horário, autorização e efeito.
+- No Brasil, a cadeia de custódia é **texto de lei** — arts. 158-A a 158-F do CPP, incluídos pela Lei 13.964/2019 —, com etapas de reconhecimento a descarte que exigem formulário de rastreamento, lacre e armazenamento controlado.
+- Investigação corporativa tem limite jurídico antes do técnico: política prévia de monitoramento, proporcionalidade e minimização sob a LGPD, e comunicação pessoal fora do alcance da empresa.
+- Contra anti-forense, a defesa é **diversidade de fontes** e log centralizado imutável. E todo relatório honesto distingue "não encontramos indícios nestas fontes" de "não aconteceu" — a segunda afirmação é a que cria exposição jurídica.

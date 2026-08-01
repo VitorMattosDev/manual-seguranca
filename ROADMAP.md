@@ -139,7 +139,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 082** - O ciclo de resposta a incidentes - `vol13/cap082-o-ciclo-de-resposta-a-incidentes.qmd`
 - [x] **cap 083** - Preparação: plano, papéis e playbooks - `vol13/cap083-preparacao-plano-papeis-e-playbooks.qmd`
 - [x] **cap 084** - Contenção, erradicação e recuperação - `vol13/cap084-contencao-erradicacao-e-recuperacao.qmd`
-- [ ] **cap 085** - Fundamentos de forense digital e cadeia de custódia - `vol13/cap085-fundamentos-de-forense-digital-e-cadeia-de.qmd`
+- [x] **cap 085** - Fundamentos de forense digital e cadeia de custódia - `vol13/cap085-fundamentos-de-forense-digital-e-cadeia-de.qmd`
 - [ ] **cap 086** - Forense de disco e sistemas de arquivos - `vol13/cap086-forense-de-disco-e-sistemas-de-arquivos.qmd`
 - [ ] **cap 087** - Forense de memória - `vol13/cap087-forense-de-memoria.qmd`
 - [ ] **cap 088** - Forense de rede e análise de tráfego - `vol13/cap088-forense-de-rede-e-analise-de-trafego.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (84 concluidos).
+**Total:** 107 capitulos em 16 volumes (85 concluidos).
 
