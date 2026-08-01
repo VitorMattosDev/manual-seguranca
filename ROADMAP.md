@@ -146,7 +146,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 14 — Continuidade e Resiliência
 
-- [ ] **cap 089** - Backup: estratégias e a regra 3-2-1-1-0 - `vol14/cap089-backup-estrategias-e-a-regra-3-2-1-1-0.qmd`
+- [x] **cap 089** - Backup: estratégias e a regra 3-2-1-1-0 - `vol14/cap089-backup-estrategias-e-a-regra-3-2-1-1-0.qmd`
 - [ ] **cap 090** - Recuperação de desastres e continuidade de negócio - `vol14/cap090-recuperacao-de-desastres-e-continuidade-de.qmd`
 - [ ] **cap 091** - Testes de continuidade e exercícios de mesa - `vol14/cap091-testes-de-continuidade-e-exercicios-de-mesa.qmd`
 - [ ] **cap 092** - Alta disponibilidade e resiliência de infraestrutura - `vol14/cap092-alta-disponibilidade-e-resiliencia-de.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (88 concluidos).
+**Total:** 107 capitulos em 16 volumes (89 concluidos).
 

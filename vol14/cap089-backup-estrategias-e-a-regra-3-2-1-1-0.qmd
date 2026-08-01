@@ -1,3 +1,276 @@
 # Backup: estratégias e a regra 3-2-1-1-0 {#sec-cap089}
 
-*(em elaboracao)*
+O provedor tinha backup. Tinha, inclusive, um bom backup: rotina diária, retenção de trinta dias, relatório de sucesso chegando por e-mail todas as manhãs havia três anos. Quando o ransomware entrou pela VPN de um técnico, cifrou os servidores de faturamento, o banco de dados de assinantes e o sistema de provisionamento — e, em seguida, cifrou o NAS de backup, que estava montado como unidade de rede na própria máquina do servidor de backup, com uma conta de serviço do domínio que era administradora local em todo lugar.
+
+Trinta dias de retenção. Zero dias de restauração possível.
+
+Esse é o formato mais comum do desastre no Brasil, e ele não é um desastre de backup: é um desastre de **arquitetura** de backup. A cópia existia. O que não existia era a propriedade que torna a cópia útil depois de um adversário com credenciais administrativas — a de que ele **não conseguisse alcançá-la**.
+
+Este capítulo trata de como construir backup que sobrevive a quem tem as chaves do ambiente. Ele abre o Volume 14 porque tudo o que vem depois — recuperação de desastres, exercícios, alta disponibilidade, recuperação de ransomware — pressupõe que exista alguma coisa boa para restaurar.
+
+## A única métrica que importa é restauração
+
+Backup não é uma atividade de cópia. É uma atividade de **restauração**, cujo trabalho preparatório envolve copiar dados. A distinção não é retórica: ela muda o que se mede, o que se testa e o que se compra.
+
+Um programa que mede "taxa de sucesso do job" está medindo a metade fácil. O job pode ter sucesso todos os dias por três anos gravando um banco de dados em estado inconsistente, ou gravando um diretório que deixou de conter o dado relevante depois de uma migração, ou gravando com uma chave de cifragem que ninguém sabe onde está guardada. Nada disso aparece no relatório verde da manhã. Tudo isso aparece na madrugada da restauração.
+
+As duas métricas que definem o programa são anteriores a qualquer decisão técnica:
+
+**RPO — objetivo de ponto de recuperação.** Quanto de dado a organização aceita perder, medido em tempo. Um RPO de 24 horas significa: se o incidente ocorre às 17h, aceita-se voltar ao estado da última cópia, à meia-noite, e perder 17 horas de transações. O RPO determina a **frequência** da cópia.
+
+**RTO — objetivo de tempo de recuperação.** Quanto tempo a organização aceita ficar sem o serviço. O RTO determina a **arquitetura** da recuperação: fita em cofre externo e RTO de quatro horas são incompatíveis, por mais barata que a fita seja.
+
+::: {#fig-rpo-rto}
+```{.tikz}
+%%| filename: rpo-rto
+%%| alt: Linha do tempo mostrando RPO como perda de dados antes do incidente e RTO como indisponibilidade depois dele
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    marco/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                  inner sep=3pt},
+    fx/.style={-{Stealth[length=2.0mm]}, thick}}
+
+  \draw[thick, manualgray] (-6.2,0) -- (6.2,0);
+  \foreach \px in {-5.6,-4.2,-2.8} {
+    \draw[thick, manualgreen] (\px,-0.16) -- (\px,0.16);
+    \node[font=\tiny, manualgreen, anchor=north] at (\px,-0.22) {cópia};
+  }
+
+  \draw[very thick, manualred] (-1.0,-0.32) -- (-1.0,0.9);
+  \node[marco, draw=manualred, fill=manualred!14, anchor=south] at (-1.0,0.95)
+    {\textbf{incidente}};
+
+  \draw[very thick, manualblue] (3.4,-0.32) -- (3.4,0.9);
+  \node[marco, draw=manualblue, fill=manualblue!14, anchor=south] at (3.4,0.95)
+    {\textbf{serviço restabelecido}};
+
+  \draw[fx, manualyellow!70!black] (-1.0,-1.15) -- (-2.8,-1.15);
+  \draw[fx, manualyellow!70!black] (-2.8,-1.15) -- (-1.0,-1.15);
+  \node[font=\tiny, anchor=north, align=center, manualyellow!60!black]
+    at (-1.9,-1.25) {\textbf{RPO}\\dado perdido};
+
+  \draw[fx, manualblue] (-1.0,-1.15) -- (3.4,-1.15);
+  \draw[fx, manualblue] (3.4,-1.15) -- (-1.0,-1.15);
+  \node[font=\tiny, anchor=north, align=center, manualblue]
+    at (1.2,-1.25) {\textbf{RTO}\\serviço indisponível};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.4cm]
+    at (0,-2.9)
+    {\textbf{O RPO é resolvido com dinheiro em frequência de cópia; o RTO,
+     com dinheiro em arquitetura de recuperação.} São orçamentos
+     diferentes, e confundi-los produz o erro clássico: cópia de hora em
+     hora gravada em mídia cuja restauração completa leva três dias.};
+\end{tikzpicture}
+```
+RPO e RTO em torno do incidente. O RPO olha para trás — quanto se perde; o RTO olha para frente — quanto se espera.
+:::
+
+Duas advertências práticas sobre esses números. A primeira: **RPO e RTO são definidos por serviço, não pela organização**. O sistema de faturamento e o compartilhamento de arquivos do RH raramente merecem o mesmo investimento. A segunda: eles são **decisão de negócio**, não de TI. Quem define quanto custa uma hora parada é quem sofre o custo. O papel da equipe técnica é apresentar o preço de cada nível e recusar-se a assumir sozinha um compromisso que não foi orçado — tema retomado na análise de impacto do @sec-cap090.
+
+## Da regra 3-2-1 para a 3-2-1-1-0
+
+A regra 3-2-1 nasceu no mundo da fotografia digital, popularizada por Peter Krogh como orientação para preservar acervos: **três cópias dos dados, em dois tipos de mídia, com uma fora do local** [@krogh2009]. Ela sobreviveu duas décadas porque endereça as três formas independentes de perder tudo: falha do arquivo original, falha do tipo de mídia e destruição do local.
+
+O que a regra clássica não previa era um adversário com credenciais de administrador. A extensão que a indústria consolidou acrescenta dois dígitos:
+
+**3 — três cópias.** O dado em produção mais duas cópias independentes. "Independentes" quer dizer que a falha de uma não implica a falha da outra.
+
+**2 — dois tipos de mídia.** Disco e fita, disco e objeto em nuvem, disco local e disco em outro provedor. O objetivo é não depender de um único modo de falha — nem de um único fornecedor.
+
+**1 — uma cópia fora do local.** Incêndio, alagamento, furto e a interdição do prédio são eventos que não distinguem servidor de backup de servidor de produção quando os dois estão na mesma sala.
+
+**1 — uma cópia imutável ou desconectada.** O acréscimo que responde ao ransomware. Uma cópia que, **por construção**, não pode ser apagada nem alterada dentro de um prazo, nem por quem administra o sistema de backup.
+
+**0 — zero erros na verificação.** A restauração é testada e a integridade é verificada. Sem esse dígito, os quatro anteriores são hipóteses.
+
+::: {#fig-camadas-321110}
+```{.tikz}
+%%| filename: camadas-321110
+%%| alt: Arquitetura de backup em camadas mostrando producao, copia local, copia externa e copia imutavel separadas por uma fronteira de credenciais
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=3.2cm, minimum height=1.25cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[cx, draw=manualblue, fill=manualblue!13] (prod) at (-4.9,1.7)
+    {\textbf{produção}\\dado vivo\\credenciais do domínio};
+  \node[cx, draw=manualgreen, fill=manualgreen!13] (loc) at (-0.9,1.7)
+    {\textbf{cópia local}\\disco rápido\\RTO curto};
+  \node[cx, draw=manualgreen, fill=manualgreen!11] (ext) at (3.3,1.7)
+    {\textbf{cópia externa}\\outro local ou nuvem\\outro tipo de mídia};
+  \node[cx, draw=manualred, fill=manualred!13] (imu) at (3.3,-1.1)
+    {\textbf{cópia imutável}\\trava de objeto ou\\mídia desconectada};
+  \node[cx, draw=manualyellow, fill=manualyellow!18] (ver) at (-0.9,-1.1)
+    {\textbf{verificação}\\restauração testada\\integridade conferida};
+
+  \draw[fx] (prod) -- (loc);
+  \draw[fx] (loc) -- (ext);
+  \draw[fx] (ext) -- (imu);
+  \draw[fx] (imu) -- (ver);
+  \draw[fx, manualyellow!60!black] (ver) -- (loc);
+
+  \draw[dashed, very thick, manualred] (1.15,3.2) -- (1.15,-2.5);
+  \node[font=\tiny, manualred, anchor=south, rotate=90]
+    at (1.35,-0.2) {fronteira de credenciais};
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=5.2cm]
+    at (-4.6,-1.2)
+    {\textbf{A linha vermelha é o capítulo inteiro.} Quem administra
+     produção não pode ter poder de apagar o que está à direita dela.
+     Se a mesma credencial alcança os dois lados, existe uma cópia,
+     não três.};
+\end{tikzpicture}
+```
+As camadas do 3-2-1-1-0. A fronteira de credenciais é o que separa um backup de uma pasta compartilhada com nome de backup.
+:::
+
+## O que backup não é
+
+Quatro coisas são rotineiramente confundidas com backup e não protegem contra o que backup protege.
+
+**RAID não é backup.** Ele protege contra falha de dispositivo, e apenas isso. Exclusão acidental, corrupção lógica, cifragem por ransomware — tudo isso é replicado com perfeição em todos os discos do arranjo, em tempo real.
+
+**Replicação não é backup.** Espelhamento síncrono ou assíncrono entre sítios propaga o dado ruim com a mesma diligência com que propaga o bom. Réplica é instrumento de disponibilidade (@sec-cap092), não de recuperação de erro.
+
+**Sincronização de nuvem não é backup.** Ferramentas de sincronização de arquivos refletem a exclusão e a cifragem. A maioria oferece versionamento com janela curta — dias, não meses — e a janela é justamente o que um ransomware que age devagar consome antes de se revelar.
+
+**Snapshot no mesmo armazenamento não é backup.** Snapshots são excelentes para RTO baixo e reversão rápida, mas vivem no mesmo equipamento e sob a mesma administração. Famílias de ransomware modernas procuram e removem snapshots como parte da rotina de preparação, exatamente porque isso é rápido e é administrativamente permitido (@sec-cap070).
+
+O critério unificador: **backup é a cópia cuja destruição exige uma autoridade que o comprometimento da produção não confere**.
+
+## Tipos de cópia e cadeias de dependência
+
+**Backup completo** copia tudo, toda vez. Restauração simples e rápida; custo alto de janela e de espaço.
+
+**Backup incremental** copia o que mudou desde a última cópia de qualquer tipo. Barato de gravar, e a restauração depende de uma **cadeia**: o completo mais todos os incrementais até o ponto desejado. Um elo corrompido invalida tudo o que vem depois.
+
+**Backup diferencial** copia o que mudou desde o último completo. Mais caro que o incremental, restauração com dois elos apenas — o completo mais o último diferencial.
+
+**Completo sintético** monta um novo "completo" a partir do último completo somado aos incrementais, dentro do próprio repositório, sem tocar na produção. É o desenho que hoje resolve melhor a tensão entre janela de cópia e comprimento da cadeia.
+
+A escolha importa por causa de um ponto pouco discutido: **a cadeia é a superfície de fragilidade do backup**. Cadeias longas de incrementais são baratas até o dia da restauração, quando um bloco ilegível no meio da sequência transforma noventa cópias verdes em nenhuma cópia restaurável. Daí duas práticas: encurtar a cadeia periodicamente com completo ou sintético, e **verificar a cadeia inteira**, não apenas o último job [@iso27040].
+
+Sobre retenção, o esquema tradicional — avô, pai e filho — organiza diárias, semanais e mensais em pirâmide. Sua função de segurança é ser **profunda o suficiente para atravessar o tempo de permanência do adversário**. Se a intrusão média leva semanas para ser descoberta, retenção de trinta dias significa restaurar de um ponto que já estava comprometido [@mandiant2024mtrends]. Retenção não é só custo de armazenamento: é o alcance da máquina do tempo.
+
+## Imutabilidade e o afastamento do adversário
+
+A camada que responde diretamente ao ransomware pode ser construída de várias formas, com propriedades diferentes [@nistsp800209].
+
+**Trava de objeto em armazenamento de objetos** — o mecanismo mais usado hoje. O objeto é gravado com um prazo durante o qual não pode ser apagado nem sobrescrito, e a regra é imposta pelo próprio serviço de armazenamento, não pelo software de backup. No modo mais rígido, nem a conta administrativa consegue remover antes do prazo.
+
+**Repositório fortalecido em disco** — servidor de repositório fora do domínio, sem serviços administrativos de rede expostos, com o software impondo prazo mínimo de retenção e sem acesso interativo por credencial de produção.
+
+**Fita fora do equipamento.** A desconexão física continua sendo a forma mais barata e mais absoluta de afastamento: um cartucho na prateleira não é alcançável por nenhum comando remoto. O preço é o RTO.
+
+**Cópia em conta ou locatário separado**, com credenciais próprias, autenticação multifator obrigatória e nenhuma relação de confiança com o diretório de produção.
+
+Três armadilhas anulam a imutabilidade sem produzir nenhum alerta:
+
+A primeira é a **imutabilidade com escotilha administrativa**. Configurações que permitem "excluir com privilégio elevado" transformam a garantia em política — e política é exatamente o que cai junto com a conta de administrador.
+
+A segunda é o **prazo menor que o tempo de detecção**. Imutabilidade de sete dias contra um adversário que permanece trinta dias no ambiente antes de disparar a cifragem é ornamento.
+
+A terceira, e a mais frequente no Brasil, é a **identidade compartilhada**: o repositório imutável acessado por uma conta de serviço do mesmo Active Directory que o adversário controla. A separação de identidade — conta local, cofre próprio, multifator, sem relação de confiança com o domínio (@sec-cap026) — é tão importante quanto a trava.
+
+## Cifragem, chaves e o modo silencioso de perder tudo
+
+Backup fora do local contém, por definição, a base inteira de dados pessoais e de segredos da organização circulando por lugares menos controlados que o data center. Cifrar é obrigatório — e é onde mora uma armadilha específica.
+
+Se a chave de cifragem dos backups está guardada **apenas** dentro do ambiente que o desastre destrói — no cofre que roda no mesmo cluster, na configuração do servidor de backup cifrado pelo ransomware, na cabeça de uma pessoa que saiu da empresa —, os backups são matematicamente indistinguíveis de ruído. Isso já produziu no país mais perda definitiva de dados do que falha de mídia.
+
+A regra prática: **as chaves de recuperação seguem um caminho de custódia diferente do caminho dos dados** (@sec-cap055). Cofre externo, custódia dividida entre pessoas distintas, cópia impressa em envelope lacrado no cofre físico — o formato importa menos que a independência. E o teste de restauração precisa começar pela obtenção da chave, do jeito que ela seria obtida às três da manhã de um domingo, não pelo atalho de quem já tem tudo aberto na tela.
+
+## O dígito zero: verificação
+
+O último dígito é o que converte esperança em capacidade, e tem três níveis.
+
+**Verificação de integridade.** Conferência automática de somas de verificação do que foi gravado, detectando corrupção silenciosa de mídia. É barato e deve ser contínuo.
+
+**Restauração de amostra.** Recuperar periodicamente um conjunto de arquivos, uma máquina virtual, uma tabela — e **abrir o resultado**. Um arquivo que restaura mas não abre não foi restaurado. Ferramentas modernas automatizam isso ligando a máquina restaurada em rede isolada e verificando que o serviço responde.
+
+**Ensaio de recuperação completo.** Levantar o serviço inteiro a partir do backup, cronometrado, com as pessoas que fariam isso de verdade e sem acesso ao ambiente original. É o único teste que valida o RTO, e é o assunto do @sec-cap091.
+
+Três pontos que o ensaio quase sempre revela e que nenhum relatório de job revela: a restauração de um banco de dados grande leva muito mais tempo do que a estimativa; falta um componente que ninguém incluía no escopo — regra de firewall, certificado, entrada de DNS interno, licença; e a documentação do procedimento estava armazenada no sistema que caiu [@nistsp80034].
+
+## Coisas que costumam ficar de fora
+
+O inventário do que é copiado envelhece pior do que qualquer outra parte do programa. Os esquecimentos recorrentes:
+
+**Dados em SaaS.** Correio corporativo, suítes de escritório em nuvem, ferramentas de atendimento e de CRM. O provedor garante a disponibilidade da plataforma, não a recuperação do dado que o cliente apagou ou que um invasor com a credencial do cliente destruiu. Esse é o ponto do modelo de responsabilidade compartilhada (@sec-cap050) que mais gera surpresa.
+
+**Configuração de infraestrutura.** Regras de firewall, configuração de switches e roteadores, políticas de diretório, zonas de DNS, certificados e suas chaves privadas. Costumam ser o caminho crítico da recuperação e raramente estão no escopo do backup.
+
+**Repositórios de código e pipelines.** O código está no serviço de hospedagem; a organização, os segredos, as configurações de pipeline e o histórico de artefatos, muitas vezes, em lugar nenhum (@sec-cap054).
+
+**Máquinas de trabalho.** Onde continua morando material que nunca foi para o servidor.
+
+**O próprio sistema de backup.** Catálogo, índice e configuração. Sem o catálogo, restaurar de mídia bruta é possível e lento — às vezes lento demais para o RTO.
+
+**A documentação da recuperação.** Se o plano só existe na intranet e a intranet é a vítima, não existe plano. Cópia fora de banda, atualizada, com contatos e credenciais de emergência sob custódia (@sec-cap083).
+
+## ⚖️ Brasil em Foco
+
+**Backup é tratamento de dados pessoais.** Sob a LGPD, a cópia de segurança é uma operação de tratamento como qualquer outra: exige base legal, finalidade determinada, prazo de conservação e medidas de segurança compatíveis. A consequência prática mais ignorada é a do **prazo**: reter backups indefinidamente "porque armazenamento é barato" é conservação sem finalidade, e a legislação não trata isso com indiferença [@lgpd2018].
+
+**Eliminação de dados e a cópia de segurança.** O titular tem direito à eliminação. A prática consolidada é que a exclusão se dá nos sistemas ativos, enquanto as cópias de segurança seguem seu ciclo natural de expiração — desde que estejam **bloqueadas para uso** que não seja restauração, tenham prazo de retenção definido e a eliminação seja reaplicada em qualquer restauração. O que não se sustenta é retenção eterna com o argumento de que "mexer no backup é inviável" [@lgpd2018; @anpd2023guia].
+
+**Vazamento a partir do backup é incidente com dever de comunicação.** Fita extraviada, repositório de objetos exposto sem autenticação, imagem de máquina virtual copiada por terceiro — todos são incidentes de segurança com dados pessoais, sujeitos à comunicação à ANPD e aos titulares nos prazos e no formato da regulamentação. Backup cifrado com chave sob custódia separada muda substancialmente a avaliação de risco desse incidente [@anpd2024res15].
+
+**Guarda de registros de conexão e de acesso.** Provedores de conexão guardam registros de conexão por um ano; provedores de aplicação, registros de acesso por seis meses — sob sigilo, e disponibilizados apenas por ordem judicial. Isso cria uma obrigação de **preservação**, e não apenas de retenção: perder esses registros por falha de backup é descumprimento com consequência processual e regulatória, além de destruir a evidência do próprio incidente (@sec-cap088) [@marcocivil2014].
+
+**Setor financeiro: continuidade é exigência regulatória.** A Resolução BCB/CMN 4.893/2021 exige política de segurança cibernética com procedimentos de cópia de segurança e de continuidade, além de requisitos específicos para a contratação de serviços de processamento e armazenamento de dados em nuvem — incluindo previsão contratual de acesso e recuperação dos dados ao fim do contrato. Para instituições de pagamento, a Resolução Conjunta nº 1/2020 traz exigências equivalentes [@bcb4893; @bcbresconj1].
+
+**Retenção fiscal, trabalhista e societária.** Documentos fiscais eletrônicos, folha, registros contábeis e societários têm prazos legais próprios, frequentemente mais longos que qualquer política de TI. A política de retenção de backup precisa ser construída com o jurídico e o contábil, não deduzida do custo do armazenamento.
+
+**Localização dos dados e contratos de nuvem.** Não há regra geral que obrigue backup em território nacional, mas há requisitos setoriais e contratuais, além do dever de garantir que a transferência internacional atenda à LGPD. O ponto operacional para o provedor brasileiro: verificar onde a cópia externa efetivamente reside e o que o contrato garante quanto a acesso, portabilidade e exclusão comprovada [@lgpd2018].
+
+**Descarte de mídia é parte do programa.** Fita, disco e mídia de rodízio aposentados carregam a base inteira. O descarte exige sanitização comprovada e documentada, com atenção ao fato de que discos de estado sólido não são apagados de forma confiável por sobrescrita convencional (@sec-cap041) [@nistsp80088; @lei12305].
+
+## 🛠️ No Campo
+
+**1. Comece pelo RPO e pelo RTO de cada serviço, com quem paga a conta.** Números definidos pela área de negócio, escritos, com o custo de cada nível apresentado antes do compromisso.
+
+**2. Trace a fronteira de credenciais.** Nenhuma conta que administra produção pode apagar a cópia externa e a imutável. Se puder, você tem uma cópia, não três.
+
+**3. Tire o servidor de backup do domínio.** Contas locais, multifator, sem relação de confiança. É a medida isolada com melhor retorno contra ransomware.
+
+**4. Ative trava de objeto ou repositório fortalecido, sem escotilha administrativa.** Imutabilidade que o administrador consegue contornar é política, não garantia.
+
+**5. Dimensione o prazo de imutabilidade pelo tempo de detecção, não pelo custo.** Se a permanência típica é de semanas, sete dias não protegem nada.
+
+**6. Nunca monte o repositório de backup como unidade de rede na produção.** Foi assim que o NAS da abertura deste capítulo foi cifrado.
+
+**7. Mantenha uma cópia efetivamente desconectada.** Fita na prateleira, conta separada em outro provedor, mídia rotacionada. O adversário não alcança o que não está ligado.
+
+**8. Guarde as chaves de cifragem fora do ambiente que elas recuperam.** Custódia dividida, cofre externo, procedimento de obtenção testado — começando o teste pela chave.
+
+**9. Encurte as cadeias de incrementais.** Completo ou sintético periódico. Cadeia longa é barata até a restauração.
+
+**10. Verifique integridade continuamente e restaure amostra toda semana.** Automatize a subida da máquina restaurada em rede isolada e a checagem de que o serviço responde.
+
+**11. Cronometre um ensaio completo por ano, no mínimo.** Sem acesso ao ambiente original, com as pessoas que fariam de verdade. É o único teste que valida o RTO.
+
+**12. Faça backup do que está em SaaS.** Correio, suíte de escritório, CRM, atendimento. O provedor garante a plataforma, não o dado que alguém apagou.
+
+**13. Inclua configuração e o próprio sistema de backup no escopo.** Firewall, switches, DNS, certificados, catálogo e índice — o caminho crítico da recuperação mora aí.
+
+**14. Mantenha o procedimento de recuperação fora de banda.** Impresso ou em mídia separada, com contatos e credenciais de emergência sob custódia.
+
+**15. Monitore o que falta, não o que teve sucesso.** Alerta para job que não executou, para máquina nova sem política e para cópia externa atrasada — o silêncio é o modo de falha mais comum.
+
+**16. Ajuste retenção com jurídico e contábil, e documente o descarte.** Prazos legais de um lado, minimização da LGPD do outro, sanitização comprovada no fim da vida da mídia.
+
+## Resumo
+
+- Backup é uma atividade de **restauração**. Taxa de sucesso de job mede a metade fácil; o que importa é conseguir voltar, no prazo, com dado íntegro.
+- **RPO** define a frequência da cópia e **RTO** define a arquitetura da recuperação. São decisões de negócio, por serviço, com custo apresentado antes do compromisso.
+- A regra **3-2-1-1-0** acrescenta à clássica os dois dígitos que respondem ao ransomware: uma cópia **imutável ou desconectada** e **zero erros na verificação**.
+- RAID, replicação, sincronização de nuvem e snapshot no mesmo armazenamento **não são backup** — todos propagam o dado ruim ou caem junto com a administração da produção.
+- A propriedade que define backup é a **fronteira de credenciais**: destruir a cópia precisa exigir uma autoridade que o comprometimento da produção não confere. Servidor fora do domínio, conta separada, multifator.
+- Imutabilidade falha de três formas silenciosas: escotilha administrativa, prazo menor que o tempo de detecção e identidade compartilhada com o ambiente comprometido.
+- Chave de cifragem guardada apenas dentro do ambiente que o desastre destrói transforma o backup em ruído. Custódia independente e testada.
+- O escopo envelhece: SaaS, configuração de infraestrutura, repositórios, catálogo do próprio backup e a documentação da recuperação são os esquecimentos recorrentes.
+- No Brasil, backup é tratamento sob a LGPD — com prazo, base legal e dever de comunicação em caso de vazamento —, convive com a guarda obrigatória do Marco Civil, com exigências do Banco Central no setor financeiro e com prazos fiscais e trabalhistas que não são negociáveis pela TI sozinha.
