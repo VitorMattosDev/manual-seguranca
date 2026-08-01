@@ -1,3 +1,284 @@
 # Métricas e maturidade da detecção {#sec-cap081}
 
-*(em elaboracao)*
+O painel apresentado ao comitê no primeiro trimestre era impecável. **2,4 bilhões de eventos processados. 14.212 alertas tratados. 99,2% deles fechados dentro do prazo acordado. 247 regras de detecção ativas. Disponibilidade da plataforma: 99,97%.**
+
+Todos os números eram verdadeiros. Nenhum foi inventado, arredondado ou maquiado.
+
+No trimestre seguinte, a organização descobriu — por um telefonema do provedor de nuvem — que havia um adversário no ambiente havia sessenta e um dias. Ele tinha entrado por uma credencial válida, criado uma conta, movido-se para três servidores e começado a copiar uma base de dados.
+
+Voltando ao painel do trimestre anterior com essa informação, nada mudava. Os 99,2% continuavam corretos. A disponibilidade continuava excelente. **As métricas mediam a atividade da operação e nenhuma delas media o resultado dela.**
+
+Este capítulo trata dessa distinção — e de como escolher os poucos números que efetivamente respondem se a capacidade de detecção está melhorando ou apenas se ocupando.
+
+## Toda métrica vira meta, e toda meta distorce
+
+O enunciado é conhecido: quando uma medida se torna meta, ela deixa de ser uma boa medida [@goodhart1975]. Em operações de segurança, isso não é sutileza acadêmica — é o mecanismo pelo qual painéis bonitos acompanham operações ruins.
+
+Vale ver o efeito concreto de cada distorção comum:
+
+**"Percentual de alertas fechados no prazo"** premia fechar rápido. O caminho mais curto para um número excelente é fechar em lote sem ler, exatamente o comportamento que produziu o incidente de @sec-cap075.
+
+**"Número de regras ativas"** premia acumular. Regras nunca são aposentadas, o acervo incha, o ruído cresce e a métrica melhora enquanto a operação piora.
+
+**"Número de incidentes registrados"** premia não registrar. Se menos incidentes é considerado bom, a classificação começa a ficar criativa e a organização perde a única série histórica que importava.
+
+**"Falsos positivos por analista"** premia não questionar. Quem classifica tudo como verdadeiro positivo tem a melhor pontuação.
+
+**"Eventos processados por dia"** mede o tamanho da conta, não a capacidade. É a métrica que mais aparece em painel de diretoria e a que menos diz.
+
+A defesa contra a distorção não é abandonar métricas — é escolher métricas de **resultado**, que só melhoram quando a capacidade real melhora, e que não podem ser melhoradas por atalho comportamental.
+
+## As perguntas que uma métrica de resultado responde
+
+Quatro perguntas separam medida útil de contagem de atividade:
+
+**Quanto tempo o adversário fica dentro antes de ser notado?**
+
+**Quem descobriu — nós ou alguém de fora?**
+
+**O que sabemos detectar, verificado por teste e não por declaração?**
+
+**Quanto tempo leva para uma ideia de detecção virar regra em produção?**
+
+A segunda pergunta merece destaque, porque é a mais honesta e a mais barata de medir. **A proporção de incidentes descobertos internamente versus por terceiros — cliente, provedor, parceiro, autoridade, pesquisador — não admite maquiagem.** Se a maior parte das descobertas vem de fora, nenhum outro número importa; a operação não está detectando, e essa é a única conclusão a tirar do trimestre.
+
+## Os marcos de tempo, e onde cada relógio começa
+
+Métricas de tempo são as mais usadas e as mais mal definidas. Sem acordo explícito sobre onde cada relógio começa e para, os números de dois trimestres não são comparáveis nem entre si.
+
+::: {#fig-marcos-tempo}
+```{.tikz}
+%%| filename: marcos-tempo
+%%| alt: Linha do tempo de um incidente com os marcos de comprometimento, evidência, detecção, contenção e recuperação e as métricas derivadas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    mc/.style={circle, draw, thick, fill=white, inner sep=1.6pt},
+    rt/.style={align=center, font=\tiny, text width=2.35cm},
+    md/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+               inner sep=3pt, text width=2.5cm}}
+
+  \draw[-{Stealth[length=3mm]}, very thick, manualgray] (-7.6,0) -- (7.4,0);
+
+  \foreach \idx/\px/\cor/\rot in {%
+    1/-6.8/manualred/{comprometimento inicial},
+    2/-3.6/manualyellow/{primeira evidência existe no log},
+    3/-0.4/manualblue/{detecção: alguém sabe},
+    4/2.8/manualgreen/{contenção efetiva},
+    5/6.0/manualgreen/{recuperação concluída}}
+    {
+      \node[mc, draw=\cor] (p\idx) at (\px,0) {};
+      \draw[\cor, thick] (\px,0) -- (\px,0.45);
+      \node[rt, anchor=south, \cor] at (\px,0.5) {\textbf{\rot}};
+    }
+
+  \node[md, draw=manualred, fill=manualred!11] at (-3.6,-1.3)
+    {\textbf{Tempo de permanência}\\ comprometimento $\rightarrow$ detecção};
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, thick, manualred]
+    (-6.8,-0.55) -- (-0.4,-0.55);
+
+  \node[md, draw=manualyellow, fill=manualyellow!13] at (-2.0,-2.6)
+    {\textbf{Tempo de detecção}\\ evidência disponível $\rightarrow$ detecção};
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, thick, manualyellow]
+    (-3.6,-2.0) -- (-0.4,-2.0);
+
+  \node[md, draw=manualgreen, fill=manualgreen!12] at (1.2,-1.3)
+    {\textbf{Tempo de contenção}\\ detecção $\rightarrow$ contenção};
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, thick, manualgreen]
+    (-0.4,-0.55) -- (2.8,-0.55);
+
+  \node[md, draw=manualgreen, fill=manualgreen!12] at (4.4,-2.6)
+    {\textbf{Tempo de recuperação}\\ contenção $\rightarrow$ normalidade};
+  \draw[{Stealth[length=2mm]}-{Stealth[length=2mm]}, thick, manualgreen]
+    (2.8,-2.0) -- (6.0,-2.0);
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=12.6cm]
+    at (-0.2,-4.1)
+    {\textbf{O trecho entre o 2º e o 3º marco é o único que a detecção controla} --- e por
+     isso é a métrica de engenharia. O trecho do 1º ao 3º é a métrica de negócio, e
+     depende também de prevenção e de coleta. Medir só o segundo esconde que a evidência
+     estava lá o tempo todo; medir só o primeiro culpa a detecção por lacunas de coleta.
+     \textbf{Ambos são apurados retroativamente, ao encerrar o incidente.}};
+\end{tikzpicture}
+```
+Os cinco marcos de um incidente e as quatro métricas de tempo derivadas. Sem definir onde cada relógio começa, números de trimestres diferentes não são comparáveis.
+:::
+
+Três cuidados tornam esses números confiáveis.
+
+**Apure retroativamente.** O momento do comprometimento inicial e o momento em que a primeira evidência passou a existir só são conhecidos depois da investigação. Métrica de tempo é preenchida ao encerrar o incidente, não durante.
+
+**Use a mediana, não a média.** Um único incidente de dezoito meses destrói qualquer média e esconde a tendência de todos os outros.
+
+**Relate o par, sempre.** Tempo de permanência sem tempo de detecção esconde lacuna de coleta; tempo de detecção sem tempo de permanência esconde que o adversário passou meses num lugar onde nada era coletado.
+
+## Um conjunto pequeno que basta
+
+Mais de oito ou dez indicadores é sinal de que ninguém usa nenhum. Este conjunto cobre as quatro camadas com folga.
+
+**Do resultado — o que a diretoria precisa ver.** Mediana do tempo de permanência e do tempo de detecção, com tendência de doze meses. **Proporção de descobertas internas versus externas.** Número de incidentes cuja causa raiz já havia aparecido antes — a métrica que revela se a organização aprende ou apenas apaga incêndios.
+
+**Da detecção — o que a engenharia usa.** Cobertura **validada por emulação** de um conjunto nomeado e priorizado de técnicas, com data da última validação (@sec-cap073). Tempo de ciclo de uma regra, da ideia à produção. Proporção do acervo validado nos últimos doze meses. Número de regras aposentadas no período — indicador incomum e revelador, porque uma operação saudável aposenta regras.
+
+**Da operação — o que o SOC usa.** Proporção de alertas acionáveis, por regra. Tempo mediano de triagem. Fila pendente ao fim de cada dia e a variação dela. Retrabalho: alertas reabertos ou reclassificados.
+
+**Do dado — o que sustenta tudo.** Cobertura das fontes essenciais sobre os ativos críticos, em percentual de ativos com telemetria completa. Atraso mediano entre a ocorrência e a disponibilidade do evento. Tempo em que cada fonte esteve silenciosa (@sec-cap076).
+
+Uma observação sobre a cobertura de técnicas: ela só significa algo quando é **validada e ponderada**. "Cobrimos 214 de 600 técnicas" não é métrica, porque as técnicas têm pesos radicalmente diferentes e porque "cobrir" sem emulação é declaração de intenção. Cobertura de um conjunto pequeno, priorizado pelo adversário provável, e verificada por execução controlada, é [@atomicredteam2024].
+
+## De onde cada número sai
+
+A objeção seguinte à escolha dos indicadores é operacional: como coletá-los sem montar um projeto. A resposta é que quase todos já existem em algum lugar, e o trabalho é apenas registrá-los de forma disciplinada.
+
+**Os marcos de tempo saem do registro do incidente.** Cinco campos no formulário de encerramento, preenchidos pela pessoa que conduziu a investigação. Não há fonte automática para o momento do comprometimento inicial — ele é uma conclusão da análise, e por isso precisa ser anotado por quem chegou a ela.
+
+**A fonte da descoberta sai do mesmo formulário.** Um campo com duas opções e, quando for externa, quem avisou. É o campo mais barato do sistema de chamados e o mais informativo do relatório trimestral.
+
+**O tempo de ciclo da regra sai do repositório.** A data do primeiro registro da hipótese e a data em que a regra foi implantada estão no histórico do Git e no registro de implantação (@sec-cap078). Nenhuma anotação manual é necessária: o dado já está sendo produzido.
+
+**A cobertura validada sai do registro de emulação.** Uma planilha simples com técnica, data do teste, resultado e evidência do alerta basta. O que a torna útil é a **data**: cobertura sem data é afirmação sobre um ambiente que já mudou.
+
+**Alertas acionáveis por regra saem do próprio sistema de chamados**, desde que o fechamento exija classificação — verdadeiro positivo, falso positivo, atividade autorizada. Essa classificação é o único trabalho adicional imposto à triagem, e é o que sustenta metade das decisões de ajuste do acervo.
+
+**Cobertura de fontes e silêncio saem do monitoramento do pipeline** (@sec-cap077). Se o alerta de fonte silenciosa já existe, o histórico dele é a métrica.
+
+O padrão é claro: **o custo de medir concentra-se em disciplina de registro, não em ferramenta**. Uma operação que preenche seis campos ao encerrar cada incidente tem, em doze meses, a série histórica que nenhum painel comprado produz.
+
+## Maturidade: diagnóstico, não troféu
+
+Modelos de maturidade existem para responder "o que vem a seguir?", e são deturpados quando viram nota a exibir. Três são úteis na prática: um modelo de capacidade específico para centros de operações, um modelo próprio para caçada, e a ideia de graduar a detecção pelo nível de abstração em que ela opera — de indicador atômico até objetivo do adversário [@socmm2024; @sqrrl2015; @stillions2014].
+
+A escada abaixo sintetiza o que caracteriza cada degrau na prática brasileira.
+
+::: {#fig-escada-maturidade}
+```{.tikz}
+%%| filename: escada-maturidade
+%%| alt: Cinco degraus de maturidade da detecção, do estado inicial reativo à operação que mede e melhora continuamente
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    dg/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=5.9cm, minimum height=1.5cm},
+    ob/.style={align=left, font=\tiny, text width=5.5cm, anchor=west,
+               manualgray}}
+
+  \foreach \idx/\py/\cor/\tit/\des in {%
+    1/-3.2/manualred/{0 --- Cego}/{sem coleta central; o incidente aparece quando
+       o sistema para ou o cliente liga},
+    2/-1.5/manualred/{1 --- Reativo}/{ferramentas instaladas, conteúdo de fábrica,
+       ninguém escreve regra},
+    3/0.2/manualyellow/{2 --- Organizado}/{coleta definida por fonte, procedimentos
+       escritos, fila sob controle},
+    4/1.9/manualgreen/{3 --- Ativo}/{engenharia de detecção própria, caçada
+       agendada, validação por emulação},
+    5/3.6/manualgreen/{4 --- Mensurado}/{métricas de resultado com tendência,
+       ciclo de melhoria fechado}}
+    {
+      \node[dg, draw=\cor, fill=\cor!12] at (-4.4,\py)
+        {\textbf{\tit}\\[2pt] \des};
+    }
+
+  \node[ob] at (-1.2,-3.2)
+    {\textbf{Próximo passo:} centralizar autenticação e criação de processo.};
+  \node[ob] at (-1.2,-1.5)
+    {\textbf{Próximo passo:} dono para a plataforma e alerta de silêncio de fonte.};
+  \node[ob] at (-1.2,0.2)
+    {\textbf{Próximo passo:} acervo de regras em Git, com revisão e teste.};
+  \node[ob] at (-1.2,1.9)
+    {\textbf{Próximo passo:} medir permanência, detecção e fonte da descoberta.};
+  \node[ob] at (-1.2,3.6)
+    {\textbf{Próximo passo:} nenhum degrau novo --- manter o ciclo girando.};
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray] (-7.7,-3.8) -- (-7.7,4.2);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=12.0cm]
+    at (-1.7,-5.0)
+    {\textbf{Não se pula degrau.} Comprar plataforma de caçada no degrau 1 produz
+     ferramenta cara sobre dado ausente. \textbf{Cada degrau é pré-requisito do
+     seguinte} --- e o único uso legítimo do modelo é responder ``o que vem a
+     seguir?'', nunca ``que nota nós tiramos?''.};
+\end{tikzpicture}
+```
+Cinco degraus de maturidade da detecção. O valor do modelo está inteiramente na coluna da direita.
+:::
+
+## Relatar para três públicos diferentes
+
+O mesmo conjunto de números não serve a todos, e insistir nisso é o que faz painel de diretoria virar contagem de eventos.
+
+**Operação, semanal.** Fila, retrabalho, regras mais barulhentas, fontes silenciosas, alertas acionáveis por regra. Serve para decidir o trabalho da semana.
+
+**Gestão, mensal.** Tempo de ciclo da regra, cobertura validada, tendência dos tempos, causas raiz recorrentes, lacunas de coleta em aberto. Serve para alocar esforço e orçamento.
+
+**Conselho ou comitê, trimestral.** Três a cinco números, com tendência e comparação: mediana de permanência e de detecção, **fonte da descoberta**, incidentes com impacto material, e o que mudou desde o trimestre anterior. Serve para decidir risco.
+
+Para o terceiro público, uma regra prática vale mais que qualquer modelo de painel: **se o número não mudaria uma decisão, ele não pertence ao relatório**. Bilhões de eventos processados não mudam decisão alguma; "descobrimos internamente 3 dos 4 incidentes deste trimestre, contra 1 de 5 no anterior" muda.
+
+## Começar a medir sem ter nada
+
+A objeção prática é sempre a mesma: não há dado histórico. A saída é começar pequeno, com o que já existe.
+
+**Registre os cinco marcos em todo incidente, a partir do próximo.** Custa quinze minutos no encerramento e constrói a série histórica que faltará daqui a um ano.
+
+**Anote a fonte da descoberta.** Um campo, duas opções. É a métrica mais barata e mais honesta que existe.
+
+**Meça a cobertura de um conjunto de dez técnicas priorizadas**, por emulação, uma vez por trimestre. Dez validadas valem mais que seiscentas declaradas.
+
+**Conte as regras aposentadas.** Se o número for zero por dois trimestres seguidos, o acervo está apodrecendo.
+
+Quatro números, coletados manualmente, dizem mais sobre a operação do que qualquer painel automático de contagem — e nenhum deles exige ferramenta nova.
+
+## ⚖️ Brasil em Foco
+
+**A ANPD pergunta por prazos, não por volume.** A comunicação de incidente exige data do conhecimento, natureza dos dados, número aproximado de titulares e medidas adotadas. Uma operação que já mede permanência, detecção e contenção responde com números apurados; uma que mede eventos processados responde com estimativa. **A diferença aparece exatamente no pior momento**, e é ela que sustenta — ou não — a alegação de diligência [@lgpd2018; @anpd2024res15].
+
+**Prestação de contas é um princípio legal, e métrica é como ela se demonstra.** O art. 6º, X da LGPD exige demonstrar a adoção de medidas eficazes. "Eficazes" é palavra que pede evidência: cobertura validada com data, tendência de tempo de detecção, registro de caçadas, histórico de regras em repositório versionado. Declaração de que "há monitoramento" não demonstra nada [@lgpd2018; @anpd2023guia].
+
+**O setor financeiro precisa reportar ao conselho.** A Resolução BCB nº 4.893/2021 exige relatório anual sobre a efetividade das ações de segurança cibernética, submetido à alta administração. Esse relatório pede exatamente métricas de resultado — e é a oportunidade natural para instituir o conjunto pequeno descrito aqui, em vez de improvisar contagem de alertas na véspera [@bcb4893].
+
+**Contratos de MSSP e MDR medem a coisa errada por padrão.** Acordos de nível de serviço típicos comprometem-se com tempo de notificação e disponibilidade da plataforma — métricas de esforço do fornecedor. Nenhuma delas responde se a detecção funciona. Contratos maduros incluem **validação periódica por emulação de um conjunto acordado de técnicas**, com evidência de alerta, e relato de fonte da descoberta. É negociável, é verificável, e muda o incentivo do fornecedor (@sec-cap075).
+
+**Comparação setorial ajuda, contanto que seja setorial.** Números globais de tempo de permanência refletem ambientes com investimento e maturidade muito acima da média nacional. Comparar-se com eles produz desânimo ou complacência, ambos inúteis. A comparação que informa é com pares do mesmo porte e setor — e a tendência da própria organização vale mais que qualquer comparação [@mandiant2024mtrends].
+
+**Para provedores, a métrica que a Anatel e o cliente enxergam é tempo de recuperação.** Do ponto de vista regulatório e contratual, o que pesa é a indisponibilidade. Isso cria uma tentação real de otimizar recuperação e ignorar detecção — o que produz o padrão de restaurar rapidamente sem nunca descobrir a causa, e sofrer o mesmo incidente três meses depois. **Medir a recorrência de causa raiz é o antídoto** [@anatel717].
+
+## 🛠️ No Campo
+
+**1. Registre os cinco marcos em todo incidente, começando pelo próximo.** Quinze minutos no encerramento constroem a série histórica que faltará daqui a um ano.
+
+**2. Anote a fonte da descoberta: interna ou externa.** Um campo, duas opções, e a métrica mais honesta que existe. Se a maioria vem de fora, nenhum outro número importa.
+
+**3. Relate mediana, nunca média.** Um incidente de dezoito meses destrói a média e esconde toda a tendência.
+
+**4. Relate permanência e detecção sempre juntos.** Um sem o outro esconde ora lacuna de coleta, ora falha de detecção.
+
+**5. Meça cobertura validada por emulação, não declarada.** Dez técnicas priorizadas e testadas valem mais que seiscentas pintadas de verde.
+
+**6. Acompanhe o tempo de ciclo da regra.** Da ideia à produção. É a métrica que mede a capacidade de aprender com o próprio incidente.
+
+**7. Conte as regras aposentadas por trimestre.** Zero por dois trimestres seguidos significa acervo apodrecendo.
+
+**8. Meça alertas acionáveis por regra, não no agregado.** O agregado esconde as cinco regras que produzem todo o ruído.
+
+**9. Nunca use "percentual fechado no prazo" como métrica principal.** Ela premia fechar em lote sem ler.
+
+**10. Não meça número de incidentes como se menos fosse melhor.** Isso premia não registrar e destrói a série histórica.
+
+**11. Meça recorrência de causa raiz.** É o que distingue aprender de apagar incêndio — e o antídoto para otimizar só a recuperação.
+
+**12. Use maturidade como diagnóstico.** A pergunta é "o que vem a seguir?", nunca "que nota tiramos?". E não se pula degrau.
+
+**13. Corte do relatório do conselho tudo que não mudaria uma decisão.** Bilhões de eventos não mudam. Fonte da descoberta muda.
+
+**14. Negocie validação por emulação no contrato do fornecedor.** Tempo de notificação mede o esforço dele; emulação mede se a detecção existe.
+
+## Resumo
+
+- Métrica que vira meta distorce comportamento: percentual fechado no prazo premia fechar sem ler, contagem de regras premia acumular, contagem de incidentes premia não registrar. A defesa é escolher **métricas de resultado**, que não melhoram por atalho comportamental.
+- Quatro perguntas separam medida útil de contagem: quanto tempo o adversário fica dentro, **quem descobriu**, o que se sabe detectar verificado por teste, e quanto leva para uma ideia virar regra em produção.
+- **A proporção entre descobertas internas e externas é a métrica mais honesta e mais barata que existe.** Se a maior parte vem de fora, nenhum outro número do painel importa.
+- Os cinco marcos de um incidente produzem quatro métricas de tempo. O trecho entre a existência da evidência e a detecção é o único que a engenharia de detecção controla; o trecho desde o comprometimento é a métrica de negócio. **Relatar um sem o outro esconde ora lacuna de coleta, ora falha de detecção** — e ambos se apuram retroativamente, com mediana e não média.
+- Um conjunto de oito a dez indicadores basta, distribuído em quatro camadas: resultado, detecção, operação e dado. Cobertura de técnicas só conta quando é **validada por emulação e ponderada** pelo adversário provável.
+- Modelos de maturidade valem como diagnóstico — "o que vem a seguir?" — e não como nota. Não se pula degrau: ferramenta de caçada sobre dado ausente é dinheiro gasto sem efeito.
+- Três públicos, três relatórios: operação semanal para decidir o trabalho, gestão mensal para alocar esforço, conselho trimestral com três a cinco números e tendência. **Número que não mudaria uma decisão não pertence ao relatório.**
+- Começar não exige ferramenta: registrar os cinco marcos, anotar a fonte da descoberta, validar dez técnicas por trimestre e contar regras aposentadas. No Brasil, esses números são o que sustenta a resposta à ANPD, o relatório anual exigido do setor financeiro e — em contrato de terceirização — a troca de "tempo de notificação" por **evidência de que a detecção funciona**.

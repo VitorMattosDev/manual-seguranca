@@ -1,3 +1,190 @@
 # Deception: honeypots, honeytokens e canários {#sec-cap080}
 
-*(em elaboracao)*
+A conta se chamava `svc_backup_legacy`. Existia no diretório havia oito meses, tinha senha de sessenta e quatro caracteres guardada em lugar nenhum, nome de serviço registrado apontando para um servidor que não existia, e uma descrição plausível: "conta de serviço — rotina de backup do sistema antigo, não remover".
+
+Ela nunca autenticou. Não podia: ninguém sabia a senha, e ela não estava configurada em serviço algum. A única coisa que existia era um alerta configurado para disparar se qualquer coisa acontecesse com ela.
+
+Numa quinta-feira às 14h22, o alerta disparou — solicitação de tíquete de serviço para aquela conta, partindo de uma estação de trabalho do setor comercial.
+
+O analista de plantão não precisou investigar se era falso positivo. **Não havia interpretação alternativa.** Nenhum processo legítimo, nenhum administrador, nenhuma automação tinha razão para tocar naquela conta, porque ela não fazia nada. Do alerta ao isolamento da máquina se passaram onze minutos.
+
+Esse é o valor do engano defensivo: uma classe de detecção cuja taxa de falso positivo é estruturalmente próxima de zero. Não porque a regra seja inteligente, mas porque **o alvo não tem razão de existir para ninguém que seja legítimo**.
+
+## O princípio, e por que ele é diferente de tudo o mais
+
+Toda detecção baseada em comportamento enfrenta o mesmo problema: atividade legítima e atividade adversária se parecem. Uma autenticação bem-sucedida, uma execução de PowerShell, uma cópia de arquivos — cada uma tem milhares de ocorrências legítimas por dia, e a regra precisa separar o joio do trigo com base em contexto imperfeito.
+
+O engano defensivo inverte o problema. Em vez de tentar distinguir o malicioso do legítimo dentro de uma população ruidosa, ele cria um objeto **cuja única interação possível é ilegítima**. A pergunta deixa de ser "isso é suspeito?" e passa a ser "isso foi tocado?" — e essa segunda pergunta tem resposta binária.
+
+Daí decorre a regra de ouro que governa todo o desenho:
+
+> **Uma isca vale exatamente na medida em que ninguém tem razão legítima para tocá-la, e alguma razão ilegítima para querer tocá-la.**
+
+As duas metades importam. Uma isca que ninguém encontra nunca dispara e é decoração. Uma isca que a rotina toca vira mais uma regra ruidosa — e uma regra ruidosa com nome bonito é pior que uma regra ruidosa comum, porque foi vendida como infalível.
+
+## A taxonomia, do barato ao caro
+
+**Honeytokens** são dados falsos plantados onde só quem está procurando encontraria: uma credencial, uma chave de acesso, um arquivo, um registro em banco. Não têm superfície de ataque — não são serviços, são iscas. **É a categoria de melhor relação entre custo e valor, e é onde toda organização deveria começar** [@canarytokens2024].
+
+**Honeypots de baixa interação** simulam um serviço com profundidade suficiente para registrar a tentativa e nada além. Um serviço SSH falso que aceita a conexão, registra as credenciais tentadas e recusa tudo. Risco baixo, informação limitada, manutenção pequena.
+
+**Honeypots de média interação** emulam o serviço com profundidade suficiente para observar o que o adversário tenta fazer, sem executar nada de verdade.
+
+**Honeypots de alta interação** são sistemas reais, com sistema operacional real, deixados vulneráveis para observar comportamento completo. Produzem a melhor informação e **carregam o maior risco**: um sistema real comprometido é um sistema real comprometido, e o assunto merece a seção de riscos adiante [@spitzner2003; @provos2007].
+
+**Honeynets** são redes inteiras de sistemas-isca, com tráfego simulado. Território de quem pesquisa adversários, raramente justificável para uma organização que apenas quer se defender.
+
+## As iscas que valem a pena, por camada
+
+O erro mais comum de posicionamento é colocar iscas no perímetro. A internet inteira varre o perímetro o tempo todo; um honeypot exposto registra milhares de eventos por dia de varredura automatizada indiscriminada, e nada disso significa que alguém está atrás de *você*.
+
+**O valor está na profundidade.** Uma isca tocada dentro da rede interna significa que alguém já está dentro — e essa é uma informação que vale por si só.
+
+::: {#fig-camadas-deception}
+```{.tikz}
+%%| filename: camadas-deception
+%%| alt: Posicionamento de iscas por camada do ambiente, do perímetro ruidoso à profundidade onde o sinal é inequívoco
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cd/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=5.0cm, minimum height=1.5cm},
+    ob/.style={align=left, font=\tiny, text width=6.0cm, anchor=west,
+               manualgray}}
+
+  \node[cd, draw=manualred, fill=manualred!11] at (-4.6,3.0)
+    {\textbf{PERÍMETRO}\\[3pt]
+     honeypot exposto à internet\\
+     \textbf{sinal fraco:} a internet varre todo mundo};
+  \node[cd, draw=manualyellow, fill=manualyellow!13] at (-4.6,1.1)
+    {\textbf{REDE INTERNA}\\[3pt]
+     serviço falso em faixa não usada,\\
+     registro DNS para host inexistente};
+  \node[cd, draw=manualgreen, fill=manualgreen!12] at (-4.6,-0.8)
+    {\textbf{IDENTIDADE}\\[3pt]
+     conta de serviço isca com nome de serviço
+     registrado, grupo privilegiado vazio};
+  \node[cd, draw=manualgreen, fill=manualgreen!12] at (-4.6,-2.7)
+    {\textbf{DADO E APLICAÇÃO}\\[3pt]
+     arquivo canário em compartilhamento,
+     chave de nuvem falsa, registro-armadilha
+     na base de clientes};
+
+  \node[ob] at (-1.5,3.0)
+    {Milhares de eventos por dia, nenhum sobre você.
+     Útil para pesquisa, ruim para operação.};
+  \node[ob] at (-1.5,1.1)
+    {\textbf{Quem varre a rede interna já está dentro.}
+     Detecta a fase de reconhecimento lateral.};
+  \node[ob] at (-1.5,-0.8)
+    {\textbf{O melhor sinal por real investido.}
+     Só quem enumera o diretório encontra ---
+     e enumerar o diretório não é rotina de usuário.};
+  \node[ob] at (-1.5,-2.7)
+    {Detecta acesso indevido \emph{e} vazamento:
+     o registro-armadilha avisa quando o dado
+     roubado é usado meses depois.};
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray] (-7.5,3.6) -- (-7.5,-3.3);
+  \node[font=\tiny\bfseries, manualgray, rotate=90, anchor=south]
+    at (-7.8,0.1) {qualidade do sinal aumenta com a profundidade};
+\end{tikzpicture}
+```
+Posicionamento de iscas por camada. Quanto mais fundo no ambiente, menos ambíguo é o significado de alguém tê-la tocado.
+:::
+
+Quatro implantações concretas cobrem a maior parte do valor disponível, e todas são baratas.
+
+**Conta de serviço isca no diretório.** Uma conta com nome plausível, sem privilégio real, sem uso algum, com nome de serviço registrado para parecer alvo interessante de extração de credencial, e senha longa e aleatória guardada em lugar nenhum. Qualquer autenticação, qualquer solicitação de tíquete de serviço e qualquer alteração nela geram alerta de severidade máxima. É a isca do caso que abre o capítulo, e a de melhor retorno de todas.
+
+**Arquivo canário em compartilhamento de rede.** Um documento com nome atraente — `senhas_infra.xlsx`, `acessos_bancarios.docx`, `backup_config_roteadores.zip` — em compartilhamentos que usuários legítimos percorrem, mas nunca abririam aquele arquivo específico. Exige auditoria de acesso a arquivo habilitada, e alerta na **leitura**, não só na modificação. Detecta tanto reconhecimento humano quanto ransomware percorrendo compartilhamentos.
+
+**Credencial de nuvem falsa.** Uma chave de acesso inválida deixada em repositório interno, em arquivo de configuração, em variável de ambiente de máquina de desenvolvimento ou em imagem de contêiner. A tentativa de uso é registrada pelo provedor e gera alerta imediato — cobrindo o cenário, bastante comum, de vazamento de credencial em código (@sec-cap055).
+
+**Registro-armadilha na base de dados.** Um cliente que não existe, com CPF válido em formato mas inexistente, endereço de e-mail e número de telefone monitorados. Se aquele endereço receber mensagem, ou aquele registro aparecer em qualquer lugar, **a base vazou** — e isso é detectável meses depois do vazamento, quando nenhum log ainda existe. É a única técnica desta lista que detecta o incidente depois que todos os rastros técnicos expiraram.
+
+## O que dá errado
+
+O engano defensivo tem fama de ser barato e sem risco. É barato; sem risco, não.
+
+**Honeypot de alta interação vira plataforma de ataque.** Um sistema real, deixado vulnerável e comprometido, é um sistema comprometido dentro da sua rede e sob o seu bloco de endereços. Se dele partir varredura, ataque ou distribuição de conteúdo ilícito, a origem é sua. Mitigação obrigatória: rede isolada sem rota para produção, **saída fortemente restringida** — sem isso, nada mais importa —, monitoramento a partir de fora da máquina (o que roda dentro não é confiável depois do comprometimento) e limite de tempo definido para a exposição. Para a maioria das organizações, a decisão certa é simplesmente **não usar alta interação** e ficar em honeytokens.
+
+**A isca envelhece e se denuncia.** Um sistema-isca que nunca recebe atualização, uma conta criada em 2019 que nunca autenticou, um arquivo cuja data de modificação é a mesma de todos os outros arquivos-isca: tudo isso é reconhecível. Iscas precisam de manutenção periódica — ou, no mínimo, de conferência anual de plausibilidade.
+
+**A equipe esquece que a isca existe.** É a falha mais cara. Sem documentação, o analista de plantão às 3h vê uma "conta de serviço comprometida", aciona resposta a incidente, mobiliza gente e queima horas de um plantão perseguindo o próprio dispositivo. Toda isca precisa de registro em inventário, com dono, propósito, resposta esperada e — sobretudo — o alerta correspondente **rotulado explicitamente como isca**.
+
+**Terceiros e auditores tropeçam nela.** Um teste de invasão contratado encontrará as iscas; um auditor pode registrar uma "conta de serviço sem uso e sem rotação de senha" como não conformidade. Quem precisa saber deve saber: resposta a incidente, o auditor no momento certo, e o fornecedor de monitoramento, que precisa tratar aquele alerta com prioridade máxima.
+
+**A isca sozinha vira falso senso de segurança.** Ela detecta quem a tocou. Um adversário que vai direto ao objetivo, sem enumerar nada, não a toca. Engano é uma camada de altíssima qualidade e cobertura estreita — nunca um substituto para detecção comportamental, correção de vulnerabilidades e menor privilégio.
+
+**Adversário maduro reconhece iscas.** E isso é aceitável. Quando ele precisa avaliar se cada credencial é real, cada passo custa mais tempo — e tempo do adversário é exatamente o recurso que a defesa quer consumir. O objetivo do engano nunca foi ser indetectável; é impor custo e produzir sinal [@mitreengage2024].
+
+## Desenhar uma implantação que se sustenta
+
+Cinco decisões precisam estar escritas antes da primeira isca entrar no ar.
+
+**O que a isca finge ser**, e por que alguém que já está dentro se interessaria por ela. Isca sem atratividade é decoração; isca atraente demais para a rotina é ruído.
+
+**Onde ela fica**, seguindo a profundidade da @fig-camadas-deception.
+
+**Como o toque é detectado.** Auditoria de acesso a arquivo habilitada, alerta de autenticação da conta, notificação do provedor de nuvem, monitoramento do endereço de e-mail do registro-armadilha. A isca não vale nada sem o mecanismo de aviso, e testar esse mecanismo é parte da implantação.
+
+**Qual é a resposta.** Severidade máxima, contenção imediata, sem etapa de "verificar se é falso positivo" — porque a premissa do desenho é que não pode haver.
+
+**Quem sabe.** O inventário de iscas, com dono e data de revisão, e a lista de quem precisa ser informado.
+
+Uma nota sobre implementação: plataformas comerciais fazem isso com pouca configuração, e existem projetos abertos maduros — geradores de canários de vários tipos e plataformas de honeypot empacotadas — que cobrem o essencial sem custo de licença [@canarytokens2024; @tpot2024].
+
+## ⚖️ Brasil em Foco
+
+**Engano defensivo é lícito; provocação e retaliação não são.** Manter em sua própria infraestrutura recursos falsos que registram quem os acessa é exercício regular do direito de proteger sistemas próprios. O que a lei não admite é induzir alguém a cometer crime que não cometeria, e muito menos revidar: acessar sistema de terceiro para "responder" configura o crime do art. 154-A do Código Penal, sem qualquer excludente por ter sido atacado antes. A fronteira é nítida — **isca é passiva e fica dentro de casa; qualquer coisa que alcance a máquina do outro está fora da lei** [@lei12737; @marcocivil2014].
+
+**Registro-armadilha em base de dados exige cuidado com a LGPD.** O dado do registro precisa ser genuinamente fictício: CPF que não corresponda a pessoa real, e-mail e telefone sob controle da própria organização. Usar dado de pessoa real como armadilha é tratamento sem base legal e sem finalidade legítima. Feito corretamente, o registro-armadilha é um dos poucos mecanismos que **detectam vazamento depois que todo rastro técnico expirou** — e é justamente o que permite responder à ANPD com data e escopo em vez de especulação [@lgpd2018; @anpd2024res15].
+
+**Log de isca também é registro sujeito à lei.** O que a isca coleta sobre quem a tocou pode incluir dado pessoal, inclusive de empregado. Vale a mesma disciplina de finalidade, minimização e prazo aplicada aos demais registros (@sec-cap076). Coletar apenas o necessário para identificar origem e ação — e não conteúdo além disso — mantém a medida proporcional [@lgpd2018].
+
+**Honeypot que ataca terceiros gera responsabilidade sua.** Sistema comprometido dentro do seu bloco de endereços que passa a varrer a internet ou hospedar conteúdo ilícito produz notificação de abuso, listagem em bloqueios e responsabilidade civil. Para provedores, com blocos próprios e reputação de rede a preservar, o dano é direto e demorado de reverter. Saída restringida não é recomendação: é condição para operar alta interação [@cert2024praticas].
+
+**Monitoramento de empregado precisa de política publicada.** Iscas plantadas para detectar acesso indevido interno — arquivo canário em compartilhamento de RH, por exemplo — funcionam, e devem estar amparadas por política de segurança conhecida pelos empregados, com finalidade declarada e proporcionalidade. A alternativa é uma medida eficaz tecnicamente e frágil juridicamente.
+
+**Para provedores regionais, iscas internas são a camada de melhor custo-benefício.** Sem orçamento para EDR em todo servidor e com SIEM enxuto, plantar uma conta isca no diretório, um arquivo canário no compartilhamento administrativo e uma credencial falsa no repositório de automação custa horas de trabalho e cobre justamente a fase de movimentação lateral — que é onde o ransomware que atinge provedores costuma passar despercebido (@sec-cap070) [@cert2024ransomware].
+
+## 🛠️ No Campo
+
+**1. Comece por honeytokens, não por honeypots.** Custo de horas, risco quase nulo, sinal excelente. Alta interação é decisão que a maioria não precisa tomar.
+
+**2. Plante uma conta isca no diretório hoje.** Nome plausível, sem privilégio real, nome de serviço registrado, senha longa guardada em lugar nenhum, alerta em qualquer interação. É a melhor relação custo-benefício da disciplina.
+
+**3. Ponha iscas fundo, não no perímetro.** Perímetro registra a internet inteira. Isca interna tocada significa que alguém já está dentro.
+
+**4. Use arquivo canário em compartilhamentos, com alerta na leitura.** Detecta reconhecimento humano e ransomware percorrendo pastas — mas exige auditoria de acesso a arquivo habilitada.
+
+**5. Espalhe credenciais de nuvem falsas.** Repositório interno, arquivo de configuração, variável de ambiente, imagem de contêiner. A tentativa de uso avisa você antes da real.
+
+**6. Crie registros-armadilha na base de clientes.** Com dado fictício e contato monitorado. É o único mecanismo que detecta vazamento meses depois, quando os logs já expiraram.
+
+**7. Documente cada isca em inventário.** Dono, propósito, resposta esperada e rótulo explícito no alerta. Sem isso, a resposta a incidente persegue o próprio dispositivo às 3h.
+
+**8. Avise quem precisa saber.** Resposta a incidente, fornecedor de monitoramento e o auditor no momento certo — ou a conta isca vira não conformidade no relatório.
+
+**9. Teste o mecanismo de aviso, não só a isca.** Toque-a você mesmo e confirme que o alerta chega, com a severidade certa e a quem deve chegar.
+
+**10. Trate alerta de isca como severidade máxima, sem etapa de verificação.** O desenho existe justamente para eliminar a ambiguidade.
+
+**11. Se usar alta interação, restrinja a saída.** Rede isolada, sem rota para produção, monitoramento externo à máquina e prazo definido. Sem isso, você hospeda o ataque de outra pessoa.
+
+**12. Revise a plausibilidade anualmente.** Isca que nunca é tocada nem atualizada se denuncia sozinha.
+
+**13. Nunca use dado de pessoa real como armadilha.** CPF fictício, contato próprio. Caso contrário, a medida de segurança vira o incidente.
+
+**14. Não confunda engano com cobertura.** É camada de altíssima qualidade e alcance estreito. Não substitui detecção comportamental, correção nem menor privilégio.
+
+## Resumo
+
+- O engano defensivo cria objetos **cuja única interação possível é ilegítima**, invertendo o problema da detecção: em vez de separar o malicioso do legítimo numa população ruidosa, pergunta apenas "isso foi tocado?". A taxa de falso positivo é estruturalmente próxima de zero.
+- A regra de ouro: **a isca vale na medida em que ninguém tem razão legítima para tocá-la e alguém ilegítimo tem razão para querer**. Falhar na primeira metade produz ruído com nome bonito; falhar na segunda produz decoração.
+- Honeytokens — credencial, arquivo, chave de nuvem, registro-armadilha — são a categoria de melhor custo-benefício e onde toda organização deveria começar. Honeypots de alta interação produzem a melhor informação e carregam risco real.
+- **Profundidade vale mais que perímetro.** Isca exposta à internet registra varredura indiscriminada; isca interna tocada significa que alguém já está dentro, o que é informação por si só.
+- As quatro implantações que cobrem a maior parte do valor: **conta de serviço isca no diretório**, arquivo canário em compartilhamento com alerta na leitura, credencial de nuvem falsa em repositório e código, e **registro-armadilha na base de dados** — este último o único mecanismo que detecta vazamento depois que os rastros técnicos expiraram.
+- Os modos de falhar: honeypot de alta interação comprometido virando plataforma de ataque sob o seu bloco de endereços, isca que envelhece e se denuncia, equipe que esquece que a isca existe e queima um plantão perseguindo o próprio dispositivo, e terceiros que tropeçam nela.
+- Cinco decisões precedem a implantação: o que a isca finge ser, onde fica, como o toque é detectado, qual é a resposta e quem sabe. **Testar o mecanismo de aviso é parte da implantação**, não etapa opcional.
+- No Brasil, engano defensivo passivo dentro da própria infraestrutura é lícito, mas **retaliar é crime sem excludente**; registro-armadilha exige dado genuinamente fictício sob a LGPD; e honeypot que ataca terceiros gera responsabilidade e dano de reputação de rede — razão pela qual restringir a saída é condição, não recomendação.

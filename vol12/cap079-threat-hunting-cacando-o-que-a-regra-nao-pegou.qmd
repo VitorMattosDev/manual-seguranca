@@ -1,3 +1,263 @@
 # Threat hunting: caçando o que a regra não pegou {#sec-cap079}
 
-*(em elaboracao)*
+A pergunta que iniciou a caçada era desconfortável e simples: *quais contas de serviço estão autenticando a partir de estações de trabalho?*
+
+Contas de serviço, por definição, existem para que aplicações conversem entre servidores. Uma delas autenticando a partir da sub-rede dos notebooks do escritório não é erro de configuração — é alguém usando a credencial em um lugar onde ela não deveria existir.
+
+A consulta levou quarenta minutos para escrever, porque exigiu cruzar autenticação com o inventário de sub-redes. Retornou 3.412 linhas. Depois de descartar dois servidores de monitoramento com endereço na faixa errada e um sistema legado documentado, sobraram onze — todas da mesma conta, todas a partir da mesma estação, todas nos últimos nove dias.
+
+Nenhuma regra havia disparado, porque nenhuma regra existia para aquilo. Cada evento isolado era um sucesso de autenticação com credencial válida — o evento mais comum e mais inofensivo do ambiente. **O que era anômalo não era o evento: era o padrão.**
+
+Caçada de ameaças é a disciplina de encontrar o que os controles automatizados não pegaram, partindo da premissa de que algo passou.
+
+## O que é, e o que decididamente não é
+
+Caçar é **buscar ativamente, dentro dos dados já coletados, evidência de atividade adversária que não gerou alerta**. A premissa que a define é a de comprometimento: em vez de perguntar "houve algum alerta?", pergunta-se "se estivessem dentro, o que eu veria?".
+
+Quatro atividades são confundidas com caçada e não são:
+
+**Triar alertas não é caçar.** É trabalhar a saída de detecções que já existem. Caçada começa onde a detecção termina.
+
+**Buscar indicadores em lote não é caçar.** Receber uma lista de hashes e domínios e procurá-la no ambiente é uma varredura retroativa — útil, barata, necessária, e completamente diferente. Ela responde "isto que outra pessoa já viu está aqui?", enquanto a caçada responde "o que está aqui que ninguém ainda viu?".
+
+**Testar invasão não é caçar.** O teste de invasão exercita a exposição a partir de fora (@sec-cap056); a caçada procura o adversário a partir de dentro.
+
+**Olhar painéis não é caçar.** Painel mostra o que alguém previu que seria interessante. Caçada é justamente ir onde ninguém preparou visualização.
+
+## Os pré-requisitos honestos
+
+Existe um estágio abaixo do qual caçar é encenação, e vale ser franco sobre ele.
+
+**Dados com cobertura e retenção.** Sem criação de processo com linha de comando, sem autenticação com sucesso e sem retenção de pelo menos noventa dias, a maior parte das caçadas úteis é impossível. A resposta a "não temos esse dado" não é frustração: é uma lacuna de coleta registrada, que já é um resultado (@sec-cap076).
+
+**Tempo protegido.** Caçada exige blocos contínuos de concentração. Analista que caça "entre um alerta e outro" não caça — ele para na primeira interrupção e nunca retoma a linha de raciocínio. Quatro horas por semana, protegidas, produzem mais que quarenta horas fragmentadas.
+
+**Conhecimento do ambiente.** É o pré-requisito menos mencionado e o mais determinante. Distinguir o estranho do incomum exige saber que aquele servidor roda o sistema de faturamento, que aquele fornecedor acessa às terças e que aquela automação foi escrita em 2015 por alguém que saiu. É por isso que caçada é a atividade que **menos se terceiriza bem**.
+
+**Capacidade de agir.** Se o achado não puder virar regra, correção ou incidente, a caçada produz relatório e nada mais.
+
+## Os três disparadores
+
+Toda caçada começa por um destes três caminhos [@sqrrl2015]:
+
+**Por hipótese.** Alguém formula uma afirmação verificável a partir de conhecimento de técnicas adversárias: "se houvesse persistência por tarefa agendada aqui, eu veria tarefas apontando para diretórios graváveis por usuário". É o modo mais estruturado, e o que mais se beneficia de um vocabulário como o de @sec-cap073.
+
+**Por inteligência.** Um boletim descreve o comportamento de um grupo que ataca o seu setor, e a caçada verifica se aquele comportamento — não os indicadores, o comportamento — aparece no ambiente (@sec-cap074).
+
+**Por anomalia.** Parte-se do dado: o que é raro, o que é novo, o que é único. Não exige hipótese prévia, exige volume de dado e paciência, e é onde as técnicas da próxima seção brilham.
+
+Um quarto disparador, situacional, merece menção porque é o mais frequente na prática: uma falha grave recém-divulgada em software que a organização usa, uma aquisição que trouxe um ambiente desconhecido, um desligamento conturbado. São ocasiões em que a pergunta se formula sozinha.
+
+## O loop
+
+::: {#fig-loop-cacada}
+```{.tikz}
+%%| filename: loop-cacada
+%%| alt: Ciclo de uma caçada de ameaças, da hipótese ao resultado, com as quatro saídas possíveis
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ps/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.3cm, minimum height=1.3cm},
+    sd/.style={draw, thick, rounded corners=2pt, align=left, font=\tiny,
+               inner sep=4pt, text width=2.9cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[ps, draw=manualblue, fill=manualblue!12] (h) at (-6.0,2.0)
+    {\textbf{1. Hipótese}\\[2pt] afirmação verificável, não curiosidade};
+  \node[ps, draw=manualblue, fill=manualblue!12] (d) at (-3.1,2.0)
+    {\textbf{2. Dado e escopo}\\[2pt] que fonte, que período, que universo};
+  \node[ps, draw=manualyellow, fill=manualyellow!14] (an) at (-0.2,2.0)
+    {\textbf{3. Análise}\\[2pt] frequência, agrupamento, ausência, novidade};
+  \node[ps, draw=manualyellow, fill=manualyellow!14] (tr) at (2.7,2.0)
+    {\textbf{4. Triagem do resultado}\\[2pt] o incomum é malicioso?};
+
+  \draw[fx] (h) -- (d);
+  \draw[fx] (d) -- (an);
+  \draw[fx] (an) -- (tr);
+
+  \foreach \idx/\px/\cor/\tit/\des in {%
+    1/-6.0/manualred/{Incidente}/{achou algo ativo: abre resposta},
+    2/-3.0/manualgreen/{Regra nova}/{o padrão vira detecção automática},
+    3/0.0/manualgreen/{Lacuna de coleta}/{o dado não existia: vira prioridade},
+    4/3.0/manualgreen/{Correção de higiene}/{conta órfã, exposição, exceção larga}}
+    {
+      \node[sd, draw=\cor, fill=\cor!11] (s\idx) at (\px,-0.6)
+        {\textbf{\tit}\\[2pt] \des};
+    }
+
+  \draw[fx] (tr.south) to[out=-90,in=0] (s4.east);
+  \draw[fx] (s2.north) to[out=90,in=-90] (an.south);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=12.2cm]
+    at (-1.4,-2.2)
+    {\textbf{Caçada que não produz nenhuma das quatro saídas não terminou --- foi
+     passeio.} ``Não encontrei nada'' é resultado legítimo \textbf{apenas quando
+     documentado}: o que foi olhado, com que dado, em que período, e o que teria
+     ficado invisível. Sem isso, a mesma caçada será refeita do zero em seis meses.};
+\end{tikzpicture}
+```
+O ciclo de uma caçada e suas quatro saídas legítimas. A segunda saída é a que faz a caçada escalar: o que foi encontrado à mão passa a ser encontrado automaticamente.
+:::
+
+A saída mais valiosa é a segunda. **Caçada que encontra um padrão e não o converte em regra condena a equipe a encontrá-lo de novo, manualmente, para sempre.** É por essa conversão que a capacidade de detecção cresce — e é ela que justifica o tempo protegido perante quem paga a conta.
+
+## As técnicas que produzem resultado
+
+Cinco padrões analíticos respondem pela maior parte dos achados reais.
+
+### Análise de frequência
+
+O princípio: em um ambiente saudável, atividade legítima é repetitiva e atividade adversária é rara. Agrupar por um atributo, contar e olhar a cauda.
+
+```sql
+-- processos pai de powershell.exe, ordenados do mais raro ao mais comum
+SELECT parent_image, COUNT(*) AS n
+FROM process_creation
+WHERE image LIKE '%\powershell.exe'
+  AND @timestamp > now() - 30d
+GROUP BY parent_image
+ORDER BY n ASC
+LIMIT 50;
+```
+
+O topo dessa lista — o que aconteceu uma, duas, três vezes em trinta dias — é onde mora o achado. `winword.exe` como pai de `powershell.exe`, três ocorrências no mês, é exatamente o tipo de item que nenhum painel destaca e que nenhuma regra genérica pega.
+
+::: {#fig-cauda-frequencia}
+```{.tikz}
+%%| filename: cauda-frequencia
+%%| alt: Distribuição de frequência de processos pai, mostrando a cauda rara onde os achados de caçada se concentram
+\begin{tikzpicture}[font=\footnotesize]
+  \begin{axis}[
+      width=12.0cm, height=6.4cm,
+      xlabel={\tiny processos pai distintos, ordenados por frequência},
+      ylabel={\tiny ocorrências em 30 dias (escala log)},
+      ymode=log, xmin=0, xmax=52, ymin=0.7, ymax=200000,
+      xtick={1,10,20,30,40,50},
+      tick label style={font=\tiny}, label style={font=\tiny},
+      grid=major, grid style={manualgray!22},
+      axis lines=left, clip=false]
+
+    \addplot[ybar, bar width=2.2pt, draw=manualblue, fill=manualblue!45,
+             domain=1:38, samples=38] {120000*exp(-0.35*x)+40};
+    \addplot[ybar, bar width=2.2pt, draw=manualred, fill=manualred!55,
+             domain=39:50, samples=12] {4-0.25*(x-39)};
+
+    \draw[manualgray, dashed, thick] (axis cs:38.5,0.7) -- (axis cs:38.5,200000);
+
+    \node[font=\tiny, manualblue, anchor=west] at (axis cs:6,30000)
+      {\textbf{rotina}: automação, agentes, tarefas};
+    \node[font=\tiny, manualblue, anchor=west] at (axis cs:6,6000)
+      {milhares de eventos --- nada a ver aqui};
+    \node[font=\tiny, manualred, anchor=east, align=right] at (axis cs:37,60)
+      {\textbf{a cauda} --- 1 a 4 ocorrências\\
+       é aqui que a caçada olha};
+    \draw[-{Stealth[length=2mm]}, thick, manualred]
+      (axis cs:37.5,40) -- (axis cs:44,6);
+  \end{axis}
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=11.5cm]
+    at (5.9,-1.5)
+    {\textbf{Ordenar crescente, não decrescente.} O reflexo é olhar o que mais
+     aparece --- e o que mais aparece é a operação normal da empresa. O achado está
+     no que aconteceu \textbf{três vezes em trinta dias} e nunca antes.};
+\end{tikzpicture}
+```
+Distribuição típica de um atributo em ambiente real. A rotina domina o volume; o adversário vive na cauda.
+:::
+
+### Primeira ocorrência
+
+Nova é uma propriedade forte. Um binário assinado por um certificado nunca visto, um destino de rede contatado pela primeira vez por uma máquina, uma conta que autentica num servidor onde nunca esteve, um agendamento criado numa máquina que não recebia agendamentos há dois anos.
+
+Manter uma tabela de "visto pela primeira vez" por combinação relevante — usuário × host, host × destino, host × binário — transforma cada dia em uma lista curta e legível de novidades. É barato de construir e é uma das melhores relações entre esforço e achado de toda a disciplina.
+
+### Agrupamento por atributo estrutural
+
+Reunir itens que compartilham uma característica que não deveriam compartilhar: mesma máquina que fala com muitos destinos incomuns; muitos hosts falando com o mesmo destino incomum; conexões com intervalo regular demais para serem humanas; requisições de tamanho constante.
+
+### Busca por ausência
+
+A caçada que quase ninguém faz, e uma das mais reveladoras: procurar o que **deveria** estar presente e não está.
+
+Máquina ativa no inventário que não reporta ao EDR há dez dias. Servidor que parou de enviar log de autenticação enquanto continua respondendo. Conta que aparece no diretório e nunca em nenhum log. Ausência não gera evento — logo, ausência nunca gera alerta —, e desligar a telemetria é uma das primeiras coisas que um adversário competente faz.
+
+### Cadeia de execução
+
+Reconstruir a árvore de processos e procurar relações pai-filho que não fazem sentido no ambiente: aplicativo de escritório gerando interpretador de comandos, serviço web gerando shell, utilitário de compressão gerando processo de rede. É a técnica com melhor taxa de acerto por consulta escrita, e depende inteiramente de o campo de processo pai estar sendo coletado.
+
+## Documentar, inclusive o que não achou
+
+O registro de uma caçada cabe em uma página e contém: **hipótese**, **fontes e período consultados**, **consultas exatas**, **volume examinado**, **achados**, **saída produzida** e — o campo mais negligenciado — **o que teria ficado invisível**.
+
+Esse último campo é o que impede o autoengano. "Consultei criação de processo nos servidores Windows, mas o Linux não envia telemetria equivalente" transforma uma caçada parcial em uma lacuna de coleta documentada, com valor duradouro.
+
+O acervo de caçadas também é o que permite responder, meses depois, "isso a gente já procurou?" — e a resposta baseada em registro vale mais que a baseada em lembrança.
+
+## Fazer caçada com equipe pequena
+
+O modelo que funciona em organizações que não têm equipe dedicada:
+
+**Um tema por mês, quatro horas por semana, com data no calendário.** Tempo não agendado é tempo que não existe.
+
+**Comece pelas caçadas de maior retorno**, que são também as mais simples: contas de serviço autenticando de onde não deveriam; execução a partir de diretórios graváveis por usuário; contas privilegiadas usadas fora do horário e fora das máquinas administrativas; máquinas que pararam de reportar telemetria; agendamentos e serviços criados nos últimos trinta dias; primeira conexão de cada host a destinos externos novos.
+
+**Reaproveite.** Cada caçada bem-sucedida deixa uma consulta. Um repositório de consultas comentadas — o mesmo repositório das regras (@sec-cap078) — faz a segunda execução custar dez minutos em vez de quarenta.
+
+**Converta sempre.** A meta não é encontrar o adversário toda vez; é que o acervo de detecção seja maior no fim do mês do que era no começo. Por esse critério, a caçada que não achou nada mas gerou duas regras e uma lacuna de coleta registrada foi um sucesso.
+
+## ⚖️ Brasil em Foco
+
+**Caçada é o que compensa a detecção genérica.** Boa parte das organizações brasileiras opera com conteúdo de fábrica calibrado para outro contexto. A caçada é o mecanismo mais barato de descobrir o que esse conteúdo não cobre — e, diferentemente de comprar mais ferramenta, converte diretamente em regra própria e permanente.
+
+**As caçadas de maior valor local envolvem sistema de negócio, não malware.** Alteração de chave Pix seguida de transação; mudança de dado bancário de fornecedor às vésperas do pagamento; consulta atípica a base cadastral por usuário de atendimento; exportação em massa fora do expediente; acesso a folha por conta que mudou de área. Esses padrões causam prejuízo real no país, não aparecem em acervo estrangeiro e só são encontráveis por quem conhece o negócio (@sec-cap066).
+
+**Terceiro caça mal por limitação estrutural, não por incompetência.** Distinguir o estranho do incomum exige saber que aquele fornecedor acessa às terças e que aquela automação é de 2015. Um MSSP não tem esse contexto. O arranjo que funciona é terceirizar o monitoramento contínuo e **manter a caçada dentro de casa**, ainda que seja uma pessoa por quatro horas semanais (@sec-cap075).
+
+**Caçada é evidência de diligência sob a LGPD.** O registro de caçadas — com data, escopo e resultado — demonstra postura ativa de verificação, o que sustenta a prestação de contas do art. 6º, X. Em fiscalização após incidente, mostrar um acervo de caçadas documentadas pesa mais que declarar que "há monitoramento" [@lgpd2018; @anpd2023guia].
+
+**Cuidado com o acesso a dado pessoal durante a caçada.** Caçar frequentemente significa consultar log que contém dado de titulares e de empregados. A finalidade de segurança sustenta o tratamento, mas exige controle: acesso registrado, escopo limitado ao necessário e resultado que não replique dado pessoal desnecessariamente em relatórios e planilhas. Caçada não é autorização geral de vasculhar [@lgpd2018].
+
+**Monitoramento de empregado tem limite jurídico.** Caçadas sobre comportamento de usuários — acesso a sistemas, horários, volume de dados — precisam ficar ancoradas em segurança da informação, com política conhecida pelos empregados e proporcionalidade. Correspondência pessoal e comunicação privada têm proteção constitucional, e a jurisprudência trabalhista distingue com clareza o monitoramento de recurso corporativo, informado e proporcional, da devassa. A regra prática: caçar comportamento de conta em sistema corporativo, com política publicada; não ler conteúdo de comunicação pessoal [@marcocivil2014].
+
+## 🛠️ No Campo
+
+**1. Escreva a hipótese como afirmação verificável.** "Se houvesse X aqui, eu veria Y." Curiosidade sem hipótese vira passeio pelos dados.
+
+**2. Agende o tempo.** Quatro horas semanais protegidas produzem mais que quarenta fragmentadas. Tempo não agendado não existe.
+
+**3. Ordene crescente.** O reflexo é olhar o mais frequente; o achado está no que ocorreu três vezes em trinta dias.
+
+**4. Construa a tabela de "primeira vez visto".** Usuário × host, host × destino, host × binário. Barata de fazer e das melhores relações entre esforço e achado.
+
+**5. Cace a ausência.** Máquina que parou de reportar, servidor que parou de enviar autenticação. Ausência nunca gera alerta e é o primeiro efeito de um adversário competente.
+
+**6. Colete processo pai.** Sem ele, a análise de cadeia de execução — a técnica de melhor taxa de acerto — é impossível.
+
+**7. Termine em uma das quatro saídas.** Incidente, regra nova, lacuna de coleta ou correção de higiene. Nenhuma delas significa que a caçada não terminou.
+
+**8. Documente inclusive o que não achou.** Hipótese, fontes, período, consultas, volume e **o que ficaria invisível**. Esse último campo é o que impede autoengano.
+
+**9. Guarde as consultas no mesmo repositório das regras.** A segunda execução passa a custar dez minutos.
+
+**10. Comece pelas seis caçadas de maior retorno.** Conta de serviço fora de lugar, execução em diretório gravável, conta privilegiada fora do horário, telemetria silenciosa, agendamento novo, destino externo inédito.
+
+**11. Cace os padrões de fraude do seu negócio.** Chave Pix, dado bancário de fornecedor, exportação de base. É onde está o prejuízo local, e não existe regra pronta para isso.
+
+**12. Mantenha a caçada dentro de casa.** Terceiro não tem o contexto que separa o estranho do incomum. Terceirize o monitoramento, não a caçada.
+
+**13. Respeite o limite do monitoramento de pessoas.** Comportamento de conta em sistema corporativo, com política publicada e proporcionalidade. Conteúdo de comunicação pessoal, não.
+
+**14. Meça o acervo, não os achados.** O critério de sucesso é o número de regras e lacunas produzidas, não o número de adversários encontrados.
+
+## Resumo
+
+- Caçar é buscar, dentro dos dados já coletados, evidência de atividade adversária **que não gerou alerta**, partindo da premissa de comprometimento. Triar alerta, buscar indicador em lote, testar invasão e olhar painel são outras quatro coisas.
+- Os pré-requisitos honestos são dado com cobertura e retenção, **tempo protegido**, conhecimento do ambiente e capacidade de agir. Abaixo desse patamar, caçar é encenação — e "não temos esse dado" já é um resultado, na forma de lacuna de coleta registrada.
+- Os disparadores são hipótese, inteligência, anomalia e situação. Todos convergem para o mesmo loop: hipótese, dado e escopo, análise, triagem — e uma das **quatro saídas**: incidente, regra nova, lacuna de coleta ou correção de higiene.
+- **A saída que faz a disciplina escalar é a regra nova.** Padrão encontrado à mão e não convertido em detecção condena a equipe a reencontrá-lo manualmente para sempre.
+- As cinco técnicas de maior retorno: análise de frequência olhando a **cauda rara**, primeira ocorrência, agrupamento por atributo estrutural, **busca por ausência** e reconstrução da cadeia de execução. A ausência é a menos praticada e das mais reveladoras, porque não gera evento e portanto nunca gera alerta.
+- Documentar inclui o que não foi encontrado: hipótese, fontes, período, consultas, volume e **o que teria ficado invisível**. Esse último campo converte caçada parcial em lacuna documentada.
+- Com equipe pequena, o modelo viável é um tema por mês, quatro horas semanais agendadas, consultas reaproveitadas em repositório versionado e conversão sistemática em regra.
+- No Brasil, as caçadas de maior valor envolvem sistema de negócio — chave Pix, dado bancário de fornecedor, exportação de base — e **não se terceirizam bem**, porque dependem de conhecer o ambiente. O registro das caçadas é evidência de diligência sob a LGPD, e o monitoramento de pessoas exige política publicada e proporcionalidade.

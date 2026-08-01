@@ -1,3 +1,317 @@
 # Estrutura e operação de um SOC {#sec-cap075}
 
-*(em elaboracao)*
+Numa sexta-feira, às 3h17, o EDR de um provedor regional gerou um alerta de alta severidade: extração de credenciais em um controlador de domínio. O alerta foi entregue por e-mail para uma caixa compartilhada e por notificação em um canal de mensagens que quatro pessoas seguiam.
+
+Ninguém abriu. Na segunda-feira, às 9h40, um analista percorreu a fila de fim de semana — 1.412 alertas — e marcou o lote inteiro como "revisado". O ransomware foi executado na quarta.
+
+A investigação posterior mostrou que **a detecção funcionou**. A ferramenta viu, classificou corretamente e alertou com três dias e meio de antecedência. O que não existia era a capacidade de alguém receber aquele alerta, entender que ele era diferente dos outros 1.411 e agir.
+
+Esse é o problema que um centro de operações de segurança existe para resolver. Não é comprar detecção — é converter detecção em ação, de forma repetível, num prazo que importa. Este capítulo trata de como essa capacidade se organiza, e de por que ela falha com tanta frequência mesmo em organizações que investiram bem em ferramentas.
+
+## O que um SOC é — e o que ele não é
+
+Um SOC é a **função organizacional responsável por monitorar continuamente o ambiente, detectar atividade suspeita, investigá-la e conduzir ou coordenar a resposta** [@zimmerman2014].
+
+Três palavras dessa definição costumam ser mal-entendidas.
+
+**Função**, não sala. Um SOC não é um espaço com telas grandes e mapas de ataque animados. Uma organização de trinta pessoas pode exercer a função com duas pessoas, escala definida e procedimentos escritos; uma organização de trinta mil pode ter um centro de trezentas pessoas que não exerce a função, porque ninguém ali tem autoridade para desligar um servidor.
+
+**Continuamente**, não em horário comercial. O adversário escolhe o horário, e escolhe o pior — madrugada, feriado prolongado, véspera de festa de fim de ano. Isso não obriga toda organização a manter três turnos presenciais, mas obriga toda organização a ter uma resposta honesta para "o que acontece com um alerta crítico às 3h de sábado?". "Fica na fila" é uma resposta legítima; só precisa ser uma decisão consciente, com o risco aceito por escrito, e não uma descoberta feita durante o incidente.
+
+**Conduzir ou coordenar a resposta.** Um SOC que apenas observa e abre chamado é um sistema de alarme caro. A capacidade de agir — isolar um endpoint, bloquear uma conta, derrubar uma sessão — precisa existir, e precisa existir *sem* depender de uma reunião.
+
+E o que ele **não** é: um SOC não é o NOC com outro nome. O centro de operações de rede otimiza disponibilidade e trata desvio como falha; o SOC trata desvio como possível adversário e frequentemente pede ações que **reduzem** disponibilidade — desconectar, bloquear, isolar. Em provedores brasileiros a fusão dos dois é comum por razões de custo, e é viável, mas exige reconhecer que os dois papéis têm objetivos que colidem e precisam de critério explícito de prioridade quando isso acontecer.
+
+## As funções, antes dos cargos
+
+Organizações pequenas erram ao copiar o organograma das grandes. O caminho útil é começar pelas **funções que precisam existir** e só depois decidir quantas pessoas as exercem.
+
+**Monitoramento e triagem.** Receber o que as ferramentas produzem, separar o que merece investigação do que não merece, e fazer isso dentro de um prazo. É a função mais visível e a mais subestimada: triagem malfeita destrói toda a cadeia adiante.
+
+**Investigação.** Dado um alerta que merece atenção, reconstruir o que aconteceu: qual processo, qual usuário, qual origem, o que veio antes, o que veio depois, o que mais foi tocado. Exige acesso a dados e tempo — duas coisas que a pressão da fila tende a comer.
+
+**Resposta.** Conter, erradicar e recuperar. Em SOCs pequenos, quem investiga responde; em maiores, há equipe dedicada. O ciclo completo é tema do Volume 13.
+
+**Engenharia de detecção.** Escrever, testar, versionar e aposentar regras. É a função que, quando não existe, condena o SOC a operar para sempre com o conteúdo que veio de fábrica no produto — conteúdo genérico, calibrado para o cliente médio de outro país (@sec-cap078).
+
+**Inteligência de ameaças.** Alimentar detecção e priorização com o que se sabe sobre adversários relevantes (@sec-cap074). Em organização pequena, isso é uma pessoa lendo boletins do CERT.br e do setor por uma hora por semana — o que já é incomparavelmente melhor que nada.
+
+**Engenharia de plataforma.** Manter coleta, agentes, analisadores de log e pipeline funcionando. Quando essa função não tem dono, os logs param de chegar e ninguém percebe até precisar deles.
+
+**Gestão e melhoria.** Medir, ajustar, decidir prioridade, negociar com o resto da organização. Sem isso, o SOC vira uma máquina que consome alertas e produz cansaço.
+
+Note que **quatro dessas sete funções não olham para alertas**. Essa é a distorção mais comum na montagem de um SOC: alocar todo mundo em triagem e deixar detecção, plataforma e melhoria como "quando sobrar tempo". Nunca sobra, e a operação estagna no dia da instalação.
+
+::: {#fig-funcoes-soc}
+```{.tikz}
+%%| filename: funcoes-soc
+%%| alt: As sete funções de um centro de operações de segurança, separando as que consomem alertas das que sustentam a capacidade
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fn/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.5cm, minimum height=1.15cm}}
+
+  \node[draw=manualblue, fill=manualblue!6, thick, rounded corners=4pt,
+        minimum width=8.6cm, minimum height=2.0cm, anchor=north west]
+        at (-8.2,2.5) {};
+  \node[font=\tiny\bfseries, manualblue, anchor=north west] at (-8.1,2.4)
+    {LINHA DE FRENTE --- consome alertas};
+
+  \foreach \idx/\px/\tit/\des in {%
+    1/-6.7/{Triagem}/{separar o que merece atenção},
+    2/-4.0/{Investigação}/{reconstruir o que houve},
+    3/-1.3/{Resposta}/{conter, erradicar, recuperar}}
+    {
+      \node[fn, draw=manualblue, fill=manualblue!13] at (\px,1.1)
+        {\textbf{\tit}\\[2pt] \des};
+    }
+
+  \node[draw=manualgreen, fill=manualgreen!6, thick, rounded corners=4pt,
+        minimum width=11.4cm, minimum height=2.0cm, anchor=north west]
+        at (-8.2,-0.5) {};
+  \node[font=\tiny\bfseries, manualgreen, anchor=north west] at (-8.1,-0.6)
+    {SUSTENTAÇÃO --- não olha alertas, e sem ela nada evolui};
+
+  \foreach \idx/\px/\tit/\des in {%
+    1/-6.7/{Eng.\ de detecção}/{escrever, testar, aposentar regras},
+    2/-4.0/{Inteligência}/{o que o adversário relevante faz},
+    3/-1.3/{Plataforma}/{coleta, agentes, pipeline},
+    4/1.4/{Gestão e melhoria}/{medir, priorizar, negociar}}
+    {
+      \node[fn, draw=manualgreen, fill=manualgreen!13] at (\px,-1.9)
+        {\textbf{\tit}\\[2pt] \des};
+    }
+
+  \node[draw=manualred, fill=manualred!9, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=4.6cm]
+    at (5.0,0.0)
+    {\textbf{A distorção padrão}\\[3pt]
+     Toda a equipe entra na linha de frente e a sustentação vira
+     ``quando sobrar tempo''. Nunca sobra --- e a operação fica
+     \textbf{congelada no dia da instalação}, com as regras de
+     fábrica e uma coleta que ninguém verifica.};
+\end{tikzpicture}
+```
+As sete funções de um SOC. As quatro de baixo não produzem tíquete fechado e por isso são as primeiras a ficar sem dono.
+:::
+
+## Níveis: por que existem e onde falham
+
+O modelo clássico organiza a operação em três níveis: o primeiro tria e encaminha, o segundo investiga a fundo, o terceiro lida com o complexo, caça e escreve detecção.
+
+O modelo tem uma virtude real: **protege o tempo caro**. O analista experiente não deveria gastar o dia fechando alertas de política de senha. E tem duas falhas que aparecem em quase toda implementação.
+
+A primeira é o **primeiro nível sem autoridade e sem contexto**, transformado em roteador humano de chamados. Ele não pode consultar dados além do painel, não pode agir, e sua métrica é volume fechado por hora. O resultado previsível é o fechamento em massa, exatamente como na sexta-feira que abre o capítulo. Um analista que não pode investigar não está triando: está sorteando.
+
+A segunda é a **perda de contexto a cada salto**. Todo escalonamento descarta a parte do que o analista anterior viu e não escreveu. Em incidentes rápidos, três saltos consomem mais tempo do que o adversário precisa para terminar.
+
+Duas correções valem mais que qualquer reorganização de organograma:
+
+**Dar ao primeiro nível acesso de leitura amplo e um conjunto de ações reversíveis pré-autorizadas.** Isolar um endpoint suspeito e derrubar a sessão de uma conta são ações reversíveis, de impacto limitado, que não deveriam depender de aprovação caso a caso. Exigir autorização para elas garante que, às 3h de sábado, nada acontecerá.
+
+**Fazer o alerta carregar o contexto, em vez do analista buscá-lo.** Se toda triagem começa com as mesmas cinco consultas manuais, essas consultas devem ser executadas automaticamente e anexadas ao alerta antes que o humano o veja. Isso é enriquecimento, é barato de implementar e devolve a maior parte do tempo perdido em cliques.
+
+Uma alternativa que funciona bem em equipes pequenas é abandonar os níveis e organizar por **caso**: quem pega o alerta o conduz até o fim, com apoio de quem tiver o conhecimento necessário. Menos elegante no organograma, muito melhor na preservação de contexto.
+
+## O caminho de um alerta
+
+O valor de um SOC pode ser medido por quantos alertas relevantes atravessam o caminho inteiro sem se perder. Cada etapa desse caminho tem uma forma característica de falhar.
+
+::: {#fig-fluxo-alerta}
+```{.tikz}
+%%| filename: fluxo-alerta
+%%| alt: Caminho de um alerta desde a telemetria até a resposta, com os pontos típicos de perda em cada etapa
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=1.9cm, minimum height=1.0cm},
+    pd/.style={draw=manualred, fill=manualred!8, thick, rounded corners=2pt,
+               align=center, font=\tiny, inner sep=3pt, text width=1.9cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \foreach \idx/\px/\cor/\tit in {%
+    1/-6.0/manualblue/{Telemetria},
+    2/-3.6/manualblue/{Detecção},
+    3/-1.2/manualyellow/{Enriquecimento},
+    4/1.2/manualyellow/{Triagem},
+    5/3.6/manualgreen/{Investigação},
+    6/6.0/manualgreen/{Resposta}}
+    {
+      \node[et, draw=\cor, fill=\cor!12] (n\idx) at (\px,1.9) {\textbf{\tit}};
+    }
+
+  \foreach \idx in {1,2,3,4,5} {
+    \pgfmathtruncatemacro{\prox}{\idx+1}
+    \draw[fx] (n\idx) -- (n\prox);
+  }
+
+  \foreach \idx/\px/\fal in {%
+    1/-6.0/{a fonte parou\\e ninguém viu},
+    2/-3.6/{regra genérica\\de fábrica},
+    3/-1.2/{contexto\\montado à mão},
+    4/1.2/{fila maior que\\a capacidade},
+    5/3.6/{sem acesso\\aos dados},
+    6/6.0/{sem autoridade\\para agir}}
+    {
+      \node[pd] (p\idx) at (\px,0.0) {\fal};
+      \draw[-{Stealth[length=1.8mm]}, thick, manualred, dashed]
+        (n\idx.south) -- (p\idx.north);
+    }
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.7cm]
+    at (-3.4,-1.9)
+    {\textbf{A cadeia tem a força do elo mais fraco.}
+     Investir na etapa 2 enquanto a etapa 4 está saturada apenas
+     \textbf{acelera a produção do que já não é lido}.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.7cm]
+    at (3.4,-1.9)
+    {\textbf{A etapa 3 é a de melhor retorno.}
+     Enriquecer automaticamente devolve à triagem o tempo que ela
+     gasta repetindo sempre as mesmas consultas.};
+\end{tikzpicture}
+```
+O caminho de um alerta e o modo típico de falha de cada etapa. O alerta perdido raramente falha por falta de detecção.
+:::
+
+## Modelos de operação: interno, terceirizado e híbrido
+
+Nenhum modelo é superior; cada um troca uma coisa por outra, e a escolha errada quase sempre vem de comparar preço sem comparar o que se está comprando.
+
+**SOC interno.** Máximo conhecimento do ambiente, resposta direta, detecção sob medida. Custo alto e — o obstáculo real no Brasil — dificuldade de contratar e reter. Manter cobertura de 24 horas com equipe própria exige, na prática, entre oito e doze pessoas para não depender de heroísmo.
+
+**Serviço gerenciado (MSSP).** Monitoramento terceirizado, cobertura contínua a custo previsível. O limite é estrutural: o fornecedor **conhece as ferramentas, não o seu negócio**. Ele sabe que houve autenticação anômala; não sabe que aquele servidor guarda o cadastro de assinantes nem que a janela de manutenção é na terça de madrugada. Contratos cobrados por volume de eventos criam ainda um incentivo perverso — quanto menos você envia, menos paga, e quem passa a decidir o que enviar é o orçamento.
+
+**Detecção e resposta gerenciadas (MDR).** Evolução do modelo anterior: o fornecedor não apenas alerta, **age** — isola endpoint, bloqueia conta, contém. É o modelo com melhor relação custo-benefício para boa parte das organizações brasileiras de porte médio. Exige contrato claro sobre o que ele pode fazer sem perguntar, e exige alguém do lado do cliente capaz de avaliar o serviço.
+
+**Híbrido.** Terceiro cobre madrugada e fim de semana; equipe interna cobre o horário comercial, escreve detecção, conduz caçadas e conhece o negócio. É o arranjo mais comum entre organizações maduras e o que melhor equilibra as trocas.
+
+Em qualquer modelo terceirizado, três cláusulas separam contrato bom de contrato decorativo: **prazo de notificação por severidade**, com penalidade real; **direito de acesso aos dados brutos** — não só ao painel, e não só durante a vigência; e **procedimento escrito de escalonamento fora do horário**, com nome, telefone e substituto. A ausência da terceira é o que faz o alerta das 3h chegar às 9h de segunda.
+
+## Fadiga de alerta não é falta de disciplina
+
+Quando uma fila cresce além da capacidade de processá-la, o fechamento em massa é **inevitável**, não indisciplinado. Ninguém avalia 1.400 itens com atenção, e a alternativa a fechar em lote seria parar de trabalhar. A causa está no desenho, não no analista [@sansocmaturity2023].
+
+A conta é simples e vale fazer explicitamente: se uma triagem cuidadosa leva em média oito minutos, um analista processa cerca de sessenta alertas por turno já descontando interrupções. Se o ambiente gera quatrocentos por dia e há dois analistas, **a operação está estruturalmente quebrada** — e nenhum treinamento, painel novo ou cobrança resolve isso.
+
+::: {#fig-carga-soc}
+```{.tikz}
+%%| filename: carga-soc
+%%| alt: Gráfico comparando volume de alertas gerados e alertas efetivamente investigados, com o teto de capacidade da equipe
+\begin{tikzpicture}[font=\footnotesize]
+  \begin{axis}[
+      width=11.5cm, height=6.2cm,
+      xlabel={\tiny alertas gerados por dia},
+      ylabel={\tiny alertas de fato triados},
+      xmin=0, xmax=420, ymin=0, ymax=150,
+      xtick={0,100,200,300,400}, ytick={0,40,80,120},
+      tick label style={font=\tiny},
+      label style={font=\tiny},
+      legend style={font=\tiny, at={(0.98,0.30)}, anchor=east,
+                    draw=manualgray},
+      grid=major, grid style={manualgray!25},
+      axis lines=left]
+
+    \addplot[curva, domain=0:120, samples=2] {x};
+    \addlegendentry{enquanto cabe: tudo é triado}
+
+    \addplot[destaque, domain=120:420, samples=2] {120};
+    \addlegendentry{teto de capacidade: 2 analistas}
+
+    \draw[manualgray, dashed] (axis cs:120,0) -- (axis cs:120,120);
+    \draw[manualgray, dashed] (axis cs:0,120) -- (axis cs:420,120);
+
+    \node[font=\tiny, manualred, align=left, anchor=west]
+      at (axis cs:150,62)
+      {tudo à direita desta linha vira\\ \textbf{fila fechada sem leitura}};
+    \node[font=\tiny, manualgreen, anchor=west]
+      at (axis cs:14,134) {zona saudável};
+  \end{axis}
+\end{tikzpicture}
+```
+Acima da capacidade de triagem, alertas adicionais não produzem detecção — produzem fechamento em lote. A curva não sobe porque atenção humana não escala.
+:::
+
+As três saídas, em ordem de eficácia:
+
+**Reduzir a produção na origem.** A maior parte dos alertas de um SOC típico vem de um punhado de regras mal calibradas. Ordenar as regras por volume e atacar as cinco primeiras costuma cortar mais da metade da fila em uma semana de trabalho. Regra que gera ruído e é sempre fechada como falso positivo tem duas saídas legítimas: ser corrigida ou ser desligada. Mantê-la ligada e ignorá-la é o pior dos mundos — consome atenção e ainda produz sensação de cobertura.
+
+**Automatizar decisão, e não apenas coleta.** Se a triagem de um tipo de alerta segue sempre a mesma árvore de decisão, essa árvore pode ser executada por código, deixando ao humano os casos que saem do padrão.
+
+**Distinguir "alerta" de "sinal".** Nem toda detecção precisa virar item de fila. Muita coisa útil pertence a um painel de contexto ou a um relatório periódico, consultado durante investigação, sem interromper ninguém. Confundir as duas categorias é o que enche a fila de informação que ninguém pediu.
+
+## Procedimentos escritos: o que separa operação de improviso
+
+O procedimento de resposta a um tipo de alerta — o *runbook* — é o que permite que a pessoa de plantão às 3h de sábado faça a coisa certa sem depender de lembrar.
+
+Um procedimento útil contém **o que dispara**, **as consultas de verificação já escritas e prontas para colar**, **os critérios objetivos de escalonamento**, **as ações permitidas sem aprovação**, **quem acionar, com contato e substituto** e **o que registrar**. O que ele não deve conter é teoria: a explicação de por que a técnica importa está no material de treinamento, não no documento que alguém lê sob pressão às três da manhã.
+
+Dois cuidados que a experiência ensina. Procedimento que não é exercitado apodrece — o telefone muda, o servidor foi desativado, a consulta não roda mais. Um exercício de mesa trimestral, mesmo curto, mantém o material vivo. E procedimento não substitui julgamento: ele deve dizer explicitamente onde termina o roteiro e começa a decisão humana, porque o adversário não leu o documento.
+
+## Sinais de que a operação não está funcionando
+
+Alguns sintomas revelam mais que qualquer painel de métricas:
+
+- **A fila de fim de semana é fechada em lote na segunda.** A cobertura contínua existe apenas no papel.
+- **Nenhuma regra foi escrita ou ajustada nos últimos três meses.** A detecção é a de fábrica e o ambiente mudou.
+- **A mesma causa raiz reaparece toda semana.** Encerra-se o alerta sem tratar o que o produz.
+- **Ninguém sabe dizer quais fontes de log pararam de chegar.** A coleta não é monitorada, e silêncio parece calmaria.
+- **O último incidente foi descoberto por um terceiro** — cliente, parceiro, provedor de nuvem, pesquisador. A detecção interna não alcança o que importa [@mandiant2024mtrends].
+- **A métrica principal é volume de alertas fechados.** Otimiza-se velocidade de fechamento, que é exatamente o comportamento errado (@sec-cap081).
+
+## ⚖️ Brasil em Foco
+
+**O prazo da ANPD entrou na conta operacional.** A Resolução CD/ANPD nº 15/2024 fixou prazo para comunicação de incidente de segurança envolvendo dado pessoal — e o relógio começa no **conhecimento** do fato. Isso tem consequência direta no desenho do SOC: se um alerta crítico só é lido na segunda-feira, o prazo já está comprometido antes de a investigação começar. Cobertura fora do horário deixou de ser refinamento e virou requisito de conformidade para quem trata dado pessoal em volume [@lgpd2018; @anpd2024res15].
+
+**Guarda de registros é obrigação legal antes de ser insumo de detecção.** O Marco Civil da Internet obriga provedores de conexão a guardar registros de conexão por um ano, e provedores de aplicação a guardar registros de acesso a aplicações por seis meses. O SOC frequentemente opera a infraestrutura que atende a essa obrigação, e a confusão entre "log para detecção" e "registro para atender ordem judicial" gera dois erros simétricos: apagar cedo demais o que a lei manda guardar, ou guardar tudo indiscriminadamente, criando passivo de dado pessoal (@sec-cap076) [@marcocivil2014].
+
+**O setor financeiro tem exigência explícita de detecção e notificação.** A Resolução BCB nº 4.893/2021 exige que instituições financeiras mantenham mecanismos de detecção e tratamento de incidentes e comuniquem o Banco Central nos prazos definidos. Para fintechs e instituições de pagamento, a existência formal de um SOC — próprio ou contratado — com procedimentos documentados é item de fiscalização, não de maturidade voluntária [@bcb4893].
+
+**Provedores respondem à Anatel por continuidade, e o SOC costuma ser o mesmo NOC.** A regulamentação de segurança cibernética das redes de telecomunicações reforçou obrigações de tratamento de incidentes para prestadoras. Em provedores regionais é comum que a mesma equipe cuide de disponibilidade e de segurança — arranjo viável, desde que exista critério escrito para quando os dois objetivos colidem, porque colidem sempre no pior momento [@anatel717].
+
+**Terceirizar não transfere responsabilidade.** Contratar MSSP ou MDR não desloca a condição de controlador nem a responsabilidade perante a ANPD e o titular. O contrato precisa refletir isso: prazo de notificação ao cliente compatível com o prazo legal do cliente perante o regulador, direito de auditoria, devolução dos dados ao término e definição clara do fornecedor como operador. Contrato que promete "notificação em até 5 dias úteis" é incompatível com a obrigação legal de quem o assina [@lgpd2018; @anpd2024res15].
+
+**O mercado brasileiro de talento é restrito e caro.** Montar equipe própria de 24 horas é inviável para a maior parte das organizações fora do topo. O modelo híbrido — terceiro na madrugada e no fim de semana, equipe interna pequena e boa no horário comercial fazendo engenharia de detecção e caçada — costuma ser o que mais entrega por real investido na realidade nacional. Reconhecer isso cedo evita dois anos tentando montar um time que o orçamento não sustenta.
+
+**Feriados prolongados são o padrão de ataque local.** Carnaval, Semana Santa, Corpus Christi e o intervalo entre Natal e Ano Novo concentram incidentes por uma razão simples: a equipe está reduzida e o tempo de resposta se alonga. Escala reforçada nesses períodos, com contatos confirmados e ações pré-autorizadas, custa pouco e é uma das medidas de melhor retorno disponíveis [@cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Responda por escrito: o que acontece com um alerta crítico às 3h de sábado?** Se a resposta é "fica na fila", registre como risco aceito e faça alguém assinar. Descobrir isso durante o incidente não é aceitável.
+
+**2. Comece pelas funções, não pelo organograma.** Sete funções precisam de dono. Se detecção, plataforma e melhoria não têm, o SOC congela no dia da instalação.
+
+**3. Dê ao primeiro nível leitura ampla e ações reversíveis pré-autorizadas.** Isolar endpoint e derrubar sessão não deveriam exigir aprovação. Sem isso, a madrugada não está coberta de fato.
+
+**4. Enriqueça o alerta antes do humano.** Se toda triagem começa com as mesmas cinco consultas, automatize-as. É o investimento de melhor retorno em todo o pipeline.
+
+**5. Faça a conta de capacidade.** Alertas por dia divididos pelas triagens possíveis por analista. Se o resultado excede a equipe, o problema é de desenho — não cobre atenção que ninguém tem.
+
+**6. Ataque as cinco regras mais barulhentas.** Costumam responder por mais da metade da fila. Corrija ou desligue; manter ligada e ignorar é o pior dos mundos.
+
+**7. Separe alerta de sinal.** Nem toda detecção precisa interromper alguém. Contexto útil vive em painel de consulta, não na fila.
+
+**8. Monitore a coleta como se fosse produção.** Alerta de "fonte parou de enviar" precisa existir e precisa acordar alguém. Silêncio de log parece calmaria.
+
+**9. Escreva procedimentos e exercite-os.** Gatilho, consultas prontas, critério de escalonamento, ações permitidas, contatos com substituto. Sem exercício trimestral, o documento apodrece.
+
+**10. Reveja os contratos de terceirização em três pontos.** Prazo de notificação por severidade, acesso aos dados brutos e escalonamento nominal fora do horário. O prazo do fornecedor precisa caber no seu prazo legal.
+
+**11. Reforce a escala em feriado prolongado.** Carnaval e a virada do ano concentram incidentes justamente porque a equipe está reduzida.
+
+**12. Trate causa raiz, não ocorrência.** Se o mesmo alerta reaparece toda semana, fechá-lo é trabalho desperdiçado. Resolva o que o gera.
+
+**13. Nunca use volume de alertas fechados como métrica principal.** Ela premia exatamente o comportamento que causou o incidente da sexta-feira.
+
+## Resumo
+
+- Um SOC é uma **função** — monitorar continuamente, detectar, investigar e conduzir ou coordenar a resposta — e não uma sala com telas. A falha típica não é de detecção, mas da capacidade de converter detecção em ação dentro de um prazo que importe.
+- Sete funções precisam de dono: triagem, investigação, resposta, engenharia de detecção, inteligência, plataforma e melhoria. **Quatro delas não olham alertas** — e são as primeiras a ficar sem dono, o que congela a operação no dia da instalação.
+- O modelo de níveis protege o tempo caro, mas falha quando o primeiro nível vira roteador de chamados sem contexto nem autoridade, e quando cada escalonamento descarta contexto. As correções que funcionam: **acesso amplo com ações reversíveis pré-autorizadas** e **enriquecimento automático antes da triagem humana**.
+- Fadiga de alerta é problema de desenho, não de disciplina: acima da capacidade de triagem, alertas adicionais produzem fechamento em lote, não detecção. Reduzir a produção na origem vale mais que qualquer esforço para processar mais rápido.
+- Interno, MSSP, MDR e híbrido trocam conhecimento do negócio por custo e cobertura. Para o porte médio brasileiro, o **híbrido** costuma entregar mais por real investido; em qualquer terceirização, o contrato precisa fixar prazo por severidade, acesso a dados brutos e escalonamento nominal fora do horário.
+- Procedimentos escritos são o que sustenta a decisão às 3h: gatilho, consultas prontas, critério de escalonamento, ações permitidas e contatos. Sem exercício periódico, apodrecem em silêncio.
+- Sintomas de operação quebrada: fila de fim de semana fechada em lote, nenhuma regra nova em três meses, causa raiz recorrente, coleta não monitorada, incidente descoberto por terceiro e métrica baseada em volume fechado.
+- No Brasil, o prazo da Resolução CD/ANPD nº 15/2024 conta do conhecimento do fato, o Marco Civil impõe guarda de registros com finalidade distinta da detecção, o Banco Central exige capacidade formal de detecção no setor financeiro — e **terceirizar a operação não transfere a responsabilidade legal**.

@@ -1,3 +1,354 @@
 # Escrita de regras de detecção com Sigma e YARA {#sec-cap078}
 
-*(em elaboracao)*
+Depois do incidente de março — o carregador .NET que criou uma tarefa agendada chamada `MicrosoftEdgeUpdateTaskCore` — a equipe escreveu a regra. Ficou pronta em quinze minutos: alerta quando aparecer uma tarefa agendada com esse nome.
+
+Em julho, o mesmo grupo voltou. A tarefa se chamava `GoogleUpdateTaskMachineUA`. A regra não disparou.
+
+Escreveram a segunda regra, agora com os dois nomes. Em outubro, a tarefa se chamava `AdobeARMservice`.
+
+Cada regra levava quinze minutos e cada uma detectava exatamente um evento: o que já havia acontecido. **Escrever regra é fácil; escrever regra que ainda vale daqui a seis meses é a disciplina.** Este capítulo trata dessa disciplina e das duas linguagens que a materializam — Sigma, para eventos de log, e YARA, para arquivos e memória.
+
+## Regra de detecção é código
+
+A mudança de postura que separa uma operação madura de um amontoado de alertas é tratar regras como se tratam sistemas: versionadas em repositório, revisadas por outra pessoa, testadas antes de entrar em produção, com dono nomeado e com data de revisão.
+
+Cinco perguntas precisam ter resposta escrita antes de a regra existir. O modelo que as organiza de forma mais útil ficou conhecido como estratégia de alerta e detecção [@palantirads2018]:
+
+**Qual é a hipótese?** Que comportamento adversário concreto isso pretende pegar, e por quê. "Detectar ransomware" não é hipótese; "detectar a exclusão de cópias de sombra que precede a cifragem" é.
+
+**Que dado isso exige?** A telemetria necessária existe, chega ao repositório e tem retenção suficiente? Se não, isso é lacuna de coleta, e escrever a regra é trabalho jogado fora (@sec-cap076).
+
+**O que gera falso positivo?** A resposta não é "vamos descobrir": é uma lista de casos legítimos previsíveis — o instalador de software, a janela de manutenção, o script de backup, o agente de inventário.
+
+**Quais são os pontos cegos?** Toda regra tem um. Escrever explicitamente como um adversário informado a contornaria é o que impede a ilusão de cobertura — e frequentemente indica a segunda regra que precisa existir.
+
+**O que o analista faz quando ela disparar?** Regra sem resposta associada é ruído com aparência de rigor.
+
+## Sigma: escrever uma vez, executar em qualquer lugar
+
+Sigma é um formato aberto, em YAML, para descrever detecções sobre logs de forma independente da plataforma. Uma regra escrita em Sigma é convertida para a linguagem de consulta do SIEM em uso — e, quando o SIEM muda, o acervo continua valendo [@sigma2024].
+
+A analogia é direta: Sigma está para logs como YARA está para arquivos. Ambos existem para que conhecimento de detecção seja **compartilhável entre organizações e portátil entre ferramentas**.
+
+Uma regra tem estrutura fixa:
+
+```yaml
+title: Tarefa agendada criada apontando para diretório gravável por usuário
+id: 3f2a1c9e-7b04-4c6a-9a1d-2e5f80c4b7d1
+status: experimental
+description: >
+  Detecta a criação de tarefa agendada cujo executável reside em diretório
+  onde qualquer usuário escreve. Software legítimo instala em Program Files;
+  persistência adversária frequentemente aponta para temporário ou perfil.
+references:
+  - https://attack.mitre.org/techniques/T1053/005/
+author: SOC — engenharia de detecção
+date: 2026/03/18
+modified: 2026/07/02
+tags:
+  - attack.persistence
+  - attack.t1053.005
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selecao_binario:
+    Image|endswith:
+      - '\schtasks.exe'
+    CommandLine|contains: ' /create'
+  selecao_caminho:
+    CommandLine|contains:
+      - '\AppData\'
+      - '\Users\Public\'
+      - '\Windows\Temp\'
+      - '\ProgramData\'
+      - '%TEMP%'
+  filtro_manutencao:
+    ParentImage|endswith:
+      - '\ccmexec.exe'
+      - '\msiexec.exe'
+    User|startswith: 'CORP\svc-deploy'
+  condition: selecao_binario and selecao_caminho and not filtro_manutencao
+falsepositives:
+  - Instaladores que extraem para temporário e registram tarefa a partir dali
+  - Ferramentas internas empacotadas fora do padrão
+level: high
+```
+
+Alguns pontos merecem atenção porque são onde as regras reais erram.
+
+O bloco `logsource` define **de onde** o dado vem, e é ele que permite ao conversor escolher o índice, o campo e o dialeto certos. Errar aqui produz uma regra sintaticamente perfeita que nunca é avaliada contra nada.
+
+O bloco `detection` é uma conjunção de blocos nomeados, combinados na linha `condition`. A convenção de manter blocos de inclusão e blocos de filtro separados — e negar os filtros na condição — é o que permite ajustar exceções depois sem reescrever a lógica.
+
+O bloco `falsepositives` não é documentação decorativa: é o que o analista lê às 3h para decidir. Regra publicada com esse campo vazio empurra o trabalho de descoberta para quem está sob pressão.
+
+Os modificadores de campo (`|contains`, `|endswith`, `|startswith`, `|re`, `|base64offset`) evitam o erro clássico de casar caminho completo. `Image: 'C:\Windows\System32\schtasks.exe'` falha quando o binário é copiado para outro lugar; `Image|endswith: '\schtasks.exe'` não.
+
+A conversão para a plataforma em uso é feita por ferramenta de linha de comando, e é aqui que a portabilidade se paga:
+
+```bash
+# converter uma regra para o backend em uso
+sigma convert -t <backend> -p <pipeline-do-ambiente> regra.yml
+
+# validar sintaxe e campos de todo o acervo, em integração contínua
+sigma check regras/
+```
+
+O `pipeline` merece explicação: ele mapeia os campos genéricos da regra para os nomes reais do seu ambiente. Sem ele, `CommandLine` pode não existir com esse nome no índice — e a consulta gerada roda, retorna zero e parece saudável. **Regra que retorna sempre zero é indistinguível de ambiente limpo**, e é assim que acervos inteiros ficam mudos sem que ninguém perceba.
+
+## Frágil e robusta: a diferença que decide o valor
+
+O caso que abre o capítulo é o exemplo canônico. Vale ver as três camadas possíveis de abstração para o mesmo comportamento.
+
+::: {#fig-abstracao-regra}
+```{.tikz}
+%%| filename: abstracao-regra
+%%| alt: Três níveis de abstração de uma regra de detecção, do nome exato ao comportamento estrutural, com durabilidade crescente
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    nv/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=6.2cm, minimum height=1.7cm},
+    ob/.style={align=left, font=\tiny, text width=4.9cm, anchor=west,
+               manualgray}}
+
+  \node[nv, draw=manualred, fill=manualred!12] at (-4.0,2.4)
+    {\textbf{NÍVEL 1 --- o procedimento}\\[3pt]
+     \texttt{TaskName = 'MicrosoftEdgeUpdateTaskCore'}\\[2pt]
+     Pega o incidente de março. Nada além dele.};
+  \node[nv, draw=manualyellow, fill=manualyellow!14] at (-4.0,0.2)
+    {\textbf{NÍVEL 2 --- a ferramenta}\\[3pt]
+     \texttt{Image|endswith: '\textbackslash schtasks.exe'}\\
+     \texttt{CommandLine|contains: ' /create'}\\[2pt]
+     Pega quem usa essa ferramenta. Não pega quem cria
+     a tarefa por API ou por WMI.};
+  \node[nv, draw=manualgreen, fill=manualgreen!13] at (-4.0,-2.0)
+    {\textbf{NÍVEL 3 --- o efeito estrutural}\\[3pt]
+     \emph{surgiu uma tarefa agendada nova, cujo alvo
+     está em diretório gravável por usuário, criada
+     fora de janela de manutenção e por processo que
+     não é instalador conhecido}\\[2pt]
+     Pega março, julho e outubro --- e a próxima.};
+
+  \node[ob] at (-0.5,2.4)
+    {\textbf{Vida útil: dias.}\\
+     Custa ao adversário renomear uma variável.};
+  \node[ob] at (-0.5,0.2)
+    {\textbf{Vida útil: meses.}\\
+     Custa trocar de mecanismo --- barato, mas exige
+     alguma reescrita.};
+  \node[ob] at (-0.5,-2.0)
+    {\textbf{Vida útil: anos.}\\
+     Custa \textbf{abandonar a técnica}. Detectar o
+     efeito, e não o meio, é o que faz a regra
+     sobreviver à troca de ferramenta.};
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray] (-7.5,3.2) -- (-7.5,-2.8);
+  \node[font=\tiny\bfseries, manualgray, rotate=90, anchor=south]
+    at (-7.8,0.2) {durabilidade e custo de escrita crescem};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=11.5cm]
+    at (-1.9,-4.2)
+    {\textbf{O nível 1 não é inútil --- é temporário.} Vale como bloqueio imediato
+     durante um incidente ativo. O erro é \textbf{encerrar o trabalho ali} e chamar
+     aquilo de detecção da técnica.};
+\end{tikzpicture}
+```
+Três níveis de abstração para o mesmo comportamento. Cada degrau custa mais para escrever e sobrevive por uma ordem de grandeza a mais.
+:::
+
+Três armadilhas concretas separam a regra que parece boa da que resiste.
+
+**Casar texto exato de linha de comando.** Um mesmo comando admite muitas grafias equivalentes: variação de maiúsculas, aspas em posições diferentes, abreviação de parâmetro, uso de variável de ambiente no lugar do caminho. Regra que exige uma grafia específica falha contra qualquer variante. A defesa é casar por trecho e por efeito, e — quando a plataforma permitir — comparar sobre a linha de comando já normalizada.
+
+**Confiar em nome de processo sem verificar caminho.** Um binário renomeado para `svchost.exe` numa pasta de usuário não é o `svchost.exe` do sistema. Regra por nome, sem caminho nem processo pai, é enganada trivialmente; e regra por caminho apenas ignora o binário legítimo abusado onde ele já está.
+
+**Escrever a exceção larga demais.** É a mais comum e a mais perigosa, porque nasce de uma reclamação legítima sobre ruído. Excluir "tudo que vem do servidor de gerenciamento" é entregar ao adversário o alvo mais valioso do ambiente: comprometer aquele servidor passa a garantir invisibilidade. Exceção deve ser a mais estreita possível — conta específica, mais caminho específico, mais janela de horário — e ter dono e data de revisão.
+
+## YARA: reconhecer conteúdo, não evento
+
+Enquanto Sigma descreve o que aconteceu, YARA descreve **o que uma coisa é**. Ele casa padrões em bytes: arquivos em disco, conteúdo de memória, anexo de e-mail, objeto em repositório [@yara2024].
+
+```
+rule Documento_Com_Macro_Baixando_Executavel
+{
+    meta:
+        descricao   = "Documento OOXML com macro que busca e grava executável"
+        autor       = "SOC — engenharia de detecção"
+        data        = "2026-04-02"
+        referencia  = "attack.t1566.001"
+        confianca   = "media"
+
+    strings:
+        $vba1 = "AutoOpen"        ascii nocase
+        $vba2 = "Document_Open"   ascii nocase
+        $vba3 = "Shell"           ascii nocase
+
+        $net1 = "MSXML2.XMLHTTP"  ascii wide nocase
+        $net2 = "URLDownloadToFile" ascii wide nocase
+        $net3 = "WinHttp.WinHttpRequest" ascii wide nocase
+
+        $gravar = /ADODB\.Stream|SaveToFile|CreateObject\(\"Scripting/ nocase
+
+    condition:
+        uint32(0) == 0x04034b50        // assinatura de contêiner ZIP (OOXML)
+        and filesize < 5MB
+        and 1 of ($vba*)
+        and 1 of ($net*)
+        and $gravar
+}
+```
+
+A estrutura tem três blocos. `meta` carrega informação que não participa do casamento, mas decide o que o analista faz — autor, data, confiança, referência. `strings` declara os padrões: texto, sequência hexadecimal ou expressão regular. `condition` é a expressão booleana que decide.
+
+Os modificadores importam mais do que parecem. `nocase` cobre variação de caixa; `wide` casa texto em UTF-16, que é como o Windows guarda a maior parte das cadeias — **esquecer `wide` é o defeito mais comum em regras escritas às pressas**, e faz a regra falhar contra exatamente o alvo pretendido. `fullword` evita casar dentro de outra palavra.
+
+A condição merece disciplina própria. Ancorar em assinatura de formato (`uint32(0)`, `uint16(0) == 0x5A4D` para executáveis do Windows) e limitar `filesize` reduz drasticamente o custo de varredura e o falso positivo, porque impede que a regra sequer considere arquivos do tipo errado. Construções como `1 of ($net*)` e `all of them` expressam intenção com clareza e evitam listas gigantes de disjunções.
+
+Onde YARA roda define o que ele consegue enxergar. Em **disco**, pega o que está gravado — e falha contra o que só existe empacotado ou cifrado. Em **memória**, pega o conteúdo já desempacotado, o que é muito mais eficaz e é a razão de YARA ser central em análise de memória (@sec-cap072). Em **gateway de e-mail e repositório de arquivos**, pega antes da execução. Muitos EDRs aceitam regras próprias, o que permite levar a detecção escrita internamente para dentro da ferramenta comprada.
+
+Os erros que se repetem em regras YARA: cadeias genéricas demais (`"http://"`, `"cmd.exe"`) que casam com metade do sistema; cadeias que na verdade pertencem ao compilador ou ao empacotador, e não ao artefato, casando com todo software criado com a mesma ferramenta; e ausência de condição de tipo e tamanho, que transforma uma varredura de repositório em consumo de CPU por horas.
+
+## O ciclo de vida da regra
+
+Uma regra não é entregue: ela é operada.
+
+::: {#fig-ciclo-regra}
+```{.tikz}
+%%| filename: ciclo-regra
+%%| alt: Ciclo de vida de uma regra de detecção, da hipótese à aposentadoria, com o ponto de decisão sobre ruído
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fa/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.15cm, minimum height=1.25cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[fa, draw=manualblue, fill=manualblue!12] (h) at (-6.2,1.8)
+    {\textbf{1. Hipótese}\\[2pt] que comportamento, e por quê};
+  \node[fa, draw=manualblue, fill=manualblue!12] (dd) at (-3.5,1.8)
+    {\textbf{2. Dado}\\[2pt] a telemetria existe e tem retenção?};
+  \node[fa, draw=manualyellow, fill=manualyellow!14] (pr) at (-0.8,1.8)
+    {\textbf{3. Protótipo}\\[2pt] consulta sobre dado histórico};
+  \node[fa, draw=manualyellow, fill=manualyellow!14] (te) at (1.9,1.8)
+    {\textbf{4. Teste}\\[2pt] emular a técnica e ver se dispara};
+  \node[fa, draw=manualgreen, fill=manualgreen!13] (pd) at (4.6,1.8)
+    {\textbf{5. Produção}\\[2pt] com dono e resposta escrita};
+
+  \node[fa, draw=manualgreen, fill=manualgreen!13] (mo) at (4.6,-0.6)
+    {\textbf{6. Monitorar}\\[2pt] volume, acerto, último disparo};
+  \node[fa, draw=manualred, fill=manualred!12, text width=2.6cm] (aj) at (1.0,-0.6)
+    {\textbf{7. Ajustar ou aposentar}};
+
+  \draw[fx] (h) -- (dd);
+  \draw[fx] (dd) -- (pr);
+  \draw[fx] (pr) -- (te);
+  \draw[fx] (te) -- (pd);
+  \draw[fx] (pd) -- (mo);
+  \draw[fx] (mo) -- (aj);
+  \draw[fx] (aj.west) to[out=180,in=-90] node[left=2pt, font=\tiny, pos=0.7]
+    {reabre} (pr.south);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.7cm]
+    at (-4.3,-1.4)
+    {\textbf{A etapa 2 é a que ordena o trabalho.}
+     Se o dado não existe, escrever a regra é trabalho perdido ---
+     a lacuna é de \textbf{coleta}.};
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.7cm]
+    at (-4.3,-3.2)
+    {\textbf{A etapa 7 é a que quase ninguém executa.}
+     Acervo só cresce, regra morta permanece ligada, e o ruído acumulado
+     vira a fadiga de alerta que satura a triagem.};
+\end{tikzpicture}
+```
+Ciclo de vida de uma regra. Sem a etapa 4, a cobertura é declaração de intenção; sem a etapa 7, o acervo cresce até virar ruído.
+:::
+
+Duas etapas merecem detalhe.
+
+**Protótipo sobre dado histórico.** Antes de ligar qualquer coisa, rode a lógica contra os últimos trinta ou noventa dias. Isso responde de imediato quantos alertas por dia ela produziria e quais são os falsos positivos reais — e não os imaginados. Regra que teria gerado quatrocentos alertas no mês passado não entra em produção; volta para ajuste.
+
+**Teste por emulação.** Executar a técnica em ambiente controlado e confirmar que o alerta aparece é a única evidência honesta de cobertura. Bibliotecas abertas de testes atômicos e plataformas de emulação existem exatamente para isso [@atomicredteam2024; @caldera2024].
+
+## Regras como código, na prática
+
+O acervo vive em repositório Git, com o mesmo rigor de qualquer código:
+
+- **Uma regra por arquivo**, com identificador estável que sobrevive a renomeações.
+- **Revisão por outra pessoa** antes de mesclar. A pergunta obrigatória do revisor é "como eu contornaria isso?".
+- **Integração contínua** validando sintaxe, campos, presença de `falsepositives` e de dono, e — quando existirem — executando eventos de exemplo que devem e que não devem casar.
+- **Implantação automatizada** para a plataforma, de modo que o repositório seja a fonte de verdade e não exista regra viva que ninguém sabe de onde veio.
+- **Registro de exceções com data de validade.** Exceção sem prazo é permanente por omissão, e o inventário de exceções é uma das leituras mais reveladoras de um SOC antigo.
+
+Três medidas por regra bastam para dirigir a manutenção: **volume** de alertas por semana, **taxa de acerto** entre os que foram triados e **tempo desde o último disparo**. Volume alto com acerto baixo pede ajuste. Volume zero por muitos meses pede investigação — pode ser ambiente limpo, e pode ser campo que mudou de nome e ninguém viu.
+
+## De onde vêm as regras
+
+Quatro fontes, em ordem crescente de valor.
+
+**Catálogo do fornecedor.** Ponto de partida razoável, calibrado para o cliente médio. Fica como base, nunca como destino.
+
+**Acervo comunitário aberto.** O repositório público de regras Sigma cobre muita coisa e é excelente material de aprendizado. Exige adaptação: o que é anômalo lá pode ser rotina aqui [@sigma2024].
+
+**Inteligência de ameaças.** Boletins e relatórios setoriais que descrevem técnicas com detalhe suficiente para virar detecção (@sec-cap074).
+
+**Os próprios incidentes.** A fonte mais valiosa, porque descreve o adversário que de fato alcança a organização. Todo incidente deveria terminar com a pergunta "que regra teria pegado isso mais cedo?" — e com essa regra escrita, no nível 3 da escada, antes do encerramento.
+
+## ⚖️ Brasil em Foco
+
+**Regra é conhecimento compartilhável; indicador expira.** Trocar hashes e endereços entre pares tem validade de horas. Trocar regras Sigma e YARA transfere método, dura meses e não expõe dado de vítima — o que resolve a maior objeção jurídica ao compartilhamento. Comunidades setoriais, CSIRTs e o CERT.br operam nessa lógica, e para provedores regionais é a forma mais barata de ter detecção que nenhum deles teria orçamento para desenvolver sozinho [@cert2024praticas; @nistsp800150].
+
+**O que é anômalo aqui não é o que é anômalo no acervo importado.** Regras públicas assumem ambientes com padronização alta e ferramentas homogêneas. A realidade brasileira comum — sistemas de gestão próprios, automação em VBScript herdada, acesso remoto de terceiro para suporte, execução de scripts a partir de compartilhamento de rede — dispara massivamente contra regras escritas para outro contexto. Adaptar não é enfraquecer a regra: é fazê-la funcionar.
+
+**Detecção de fraude local não existe em acervo estrangeiro.** Alteração de chave Pix, mudança de dado bancário de fornecedor às vésperas do pagamento, exportação em massa de base cadastral, acesso a sistema de folha fora do expediente, consulta atípica a CPF — nada disso aparece em repositório internacional, e é onde está boa parte do prejuízo real no país. **Essas regras precisam ser escritas em casa, sobre o log de aplicação**, e são as de melhor retorno para quem opera sistema de negócio próprio (@sec-cap066).
+
+**Regra de detecção pode virar prova, e por isso versionamento importa.** Em incidente com desdobramento judicial ou com fiscalização da ANPD, demonstrar quando a detecção passou a existir, quem a aprovou e o que ela cobria sustenta a alegação de diligência. Histórico em Git, com autoria e data, é evidência de processo — declaração posterior não é [@lgpd2018; @anpd2024res15].
+
+**Cuidado com dado pessoal dentro da regra e do alerta.** Regra que casa CPF, nome de titular ou conteúdo de mensagem produz alerta contendo dado pessoal, replicado em painel, e-mail, chamado e histórico. Minimizar no alerta — referenciar identificador em vez de reproduzir o dado — evita transformar a operação de detecção em fonte de vazamento [@lgpd2018].
+
+**Portabilidade tem valor econômico direto.** Com licenças reajustadas anualmente em moeda estrangeira, manter o acervo em Sigma e YARA — e não no formato proprietário da plataforma — preserva o poder de negociação. Trocar de SIEM deixa de significar reescrever anos de trabalho, e isso muda o resultado da renegociação [@sigma2024].
+
+## 🛠️ No Campo
+
+**1. Escreva a hipótese antes da consulta.** Que comportamento, por quê, e o que o analista faz quando disparar. Regra sem resposta associada é ruído com aparência de rigor.
+
+**2. Verifique o dado antes de escrever.** Sem a telemetria, a lacuna é de coleta e a regra é trabalho perdido.
+
+**3. Suba a escada de abstração.** Nome exato serve para o incidente de hoje. Escreva também a regra do efeito estrutural, que pega a próxima campanha.
+
+**4. Nunca deixe `falsepositives` vazio.** É o campo que o analista lê às 3h. Preenchê-lo é parte do trabalho de escrever a regra.
+
+**5. Documente o ponto cego.** "Como eu contornaria isso?" é a pergunta obrigatória do revisor, e a resposta costuma indicar a segunda regra.
+
+**6. Use modificadores em vez de caminho completo.** `|endswith` e `|contains` sobrevivem ao binário copiado para outro diretório.
+
+**7. Em YARA, lembre de `wide`.** Cadeia em UTF-16 é o padrão no Windows. Esquecer o modificador faz a regra falhar exatamente contra o alvo pretendido.
+
+**8. Ancore YARA por tipo e tamanho.** `uint32(0)`/`uint16(0)` e `filesize` cortam falso positivo e custo de varredura de uma vez.
+
+**9. Prototipe contra 30 a 90 dias de histórico.** Descobre o volume real e os falsos positivos verdadeiros antes de a fila sofrer.
+
+**10. Valide emulando a técnica.** Sem isso, "coberto" é declaração de intenção.
+
+**11. Mantenha o acervo em Git com revisão e verificação automática.** Sintaxe, campos, dono, exemplos que devem e não devem casar.
+
+**12. Escreva exceções estreitas, com dono e prazo.** "Tudo do servidor de gerenciamento" transforma esse servidor no alvo mais valioso do ambiente.
+
+**13. Meça volume, acerto e último disparo.** Volume zero por meses pede investigação: pode ser ambiente limpo, pode ser campo renomeado.
+
+**14. Aposente regra morta.** Acervo que só cresce vira a fadiga de alerta do capítulo @sec-cap075.
+
+**15. Escreva as regras que ninguém publica para você.** Chave Pix, dado bancário de fornecedor, exportação de base, acesso a folha fora do expediente. É onde está o prejuízo local.
+
+## Resumo
+
+- Regra de detecção é código: versionada, revisada, testada, com dono e data de revisão. Cinco perguntas precedem a escrita — hipótese, dado necessário, falsos positivos previsíveis, pontos cegos e resposta esperada.
+- **Sigma** descreve detecções sobre log em formato aberto e é convertido para a linguagem do SIEM em uso, preservando o acervo quando a plataforma muda. O bloco `logsource` decide se a regra será sequer avaliada, e **regra que retorna sempre zero é indistinguível de ambiente limpo**.
+- A escada de abstração define a vida útil: nome exato dura dias, ferramenta específica dura meses, **efeito estrutural dura anos**. O nível mais baixo é legítimo durante o incidente ativo; o erro é encerrar o trabalho ali.
+- As três armadilhas recorrentes: casar texto exato de linha de comando, confiar em nome de processo sem caminho nem processo pai, e escrever exceção larga — esta última entrega ao adversário o alvo que garante invisibilidade.
+- **YARA** casa padrões em bytes — disco, memória, anexo, repositório. `wide` é o modificador mais esquecido e o que mais quebra regras no Windows; ancorar por assinatura de formato e `filesize` corta falso positivo e custo de varredura.
+- O ciclo de vida vai da hipótese ao dado, ao protótipo sobre histórico, ao **teste por emulação**, à produção com dono, ao monitoramento e ao **ajuste ou aposentadoria**. A última etapa é a que quase ninguém executa, e é o que faz o acervo virar ruído.
+- Três medidas por regra dirigem a manutenção: volume semanal, taxa de acerto e tempo desde o último disparo. Silêncio prolongado exige investigação, não confiança.
+- No Brasil, compartilhar regra vale mais que compartilhar indicador, acervo importado precisa de adaptação ao ambiente local, e **as detecções de fraude que mais importam — chave Pix, dado bancário de fornecedor, exportação de base — não existem em repositório estrangeiro e precisam ser escritas em casa**.

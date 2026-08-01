@@ -126,13 +126,13 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 12 — Blue Team, SOC e Detecção
 
-- [ ] **cap 075** - Estrutura e operação de um SOC - `vol12/cap075-estrutura-e-operacao-de-um-soc.qmd`
-- [ ] **cap 076** - Logging: o que registrar, por quanto tempo e por quê - `vol12/cap076-logging-o-que-registrar-por-quanto-tempo-e.qmd`
-- [ ] **cap 077** - SIEM: arquitetura, ingestão e correlação - `vol12/cap077-siem-arquitetura-ingestao-e-correlacao.qmd`
-- [ ] **cap 078** - Escrita de regras de detecção com Sigma e YARA - `vol12/cap078-escrita-de-regras-de-deteccao-com-sigma-e-yara.qmd`
-- [ ] **cap 079** - Threat hunting: caçando o que a regra não pegou - `vol12/cap079-threat-hunting-cacando-o-que-a-regra-nao-pegou.qmd`
-- [ ] **cap 080** - Deception: honeypots, honeytokens e canários - `vol12/cap080-deception-honeypots-honeytokens-e-canarios.qmd`
-- [ ] **cap 081** - Métricas e maturidade da detecção - `vol12/cap081-metricas-e-maturidade-da-deteccao.qmd`
+- [x] **cap 075** - Estrutura e operação de um SOC - `vol12/cap075-estrutura-e-operacao-de-um-soc.qmd`
+- [x] **cap 076** - Logging: o que registrar, por quanto tempo e por quê - `vol12/cap076-logging-o-que-registrar-por-quanto-tempo-e.qmd`
+- [x] **cap 077** - SIEM: arquitetura, ingestão e correlação - `vol12/cap077-siem-arquitetura-ingestao-e-correlacao.qmd`
+- [x] **cap 078** - Escrita de regras de detecção com Sigma e YARA - `vol12/cap078-escrita-de-regras-de-deteccao-com-sigma-e-yara.qmd`
+- [x] **cap 079** - Threat hunting: caçando o que a regra não pegou - `vol12/cap079-threat-hunting-cacando-o-que-a-regra-nao-pegou.qmd`
+- [x] **cap 080** - Deception: honeypots, honeytokens e canários - `vol12/cap080-deception-honeypots-honeytokens-e-canarios.qmd`
+- [x] **cap 081** - Métricas e maturidade da detecção - `vol12/cap081-metricas-e-maturidade-da-deteccao.qmd`
 
 ### Volume 13 — Resposta a Incidentes e Forense Digital
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (74 concluidos).
+**Total:** 107 capitulos em 16 volumes (81 concluidos).
 

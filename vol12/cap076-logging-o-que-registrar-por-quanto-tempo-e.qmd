@@ -1,3 +1,290 @@
 # Logging: o que registrar, por quanto tempo e por quê {#sec-cap076}
 
-*(em elaboracao)*
+O incidente foi detectado numa terça. O adversário havia entrado por uma conta de VPN sem segundo fator, e a pergunta que o cliente fez — a única que importava para ele — foi: **"desde quando?"**
+
+A equipe tinha logs. Tinha muitos logs: 4,2 TB por dia de registros de firewall anotando aceitação e negação de pacote, guardados por noventa dias. E descobriu, nas primeiras duas horas de investigação, três coisas.
+
+O log de autenticação da VPN era mantido por **sete dias**, porque ninguém havia decidido o contrário e sete era o padrão do aparelho. O log dos servidores Windows registrava criação de processo, mas **sem a linha de comando** — o padrão de fábrica —, de modo que todo `powershell.exe` era indistinguível de todo outro `powershell.exe`. E os carimbos de tempo dos três sistemas envolvidos divergiam entre si em até quarenta minutos, porque dois apontavam para servidores de tempo diferentes e um estava configurado como UTC enquanto gravava horário local.
+
+A resposta a "desde quando?" foi: *não sabemos*. E não saber "desde quando" significa não saber o que foi acessado, o que significa não conseguir dimensionar o incidente perante o cliente, o contrato e o regulador.
+
+**Volume de log não é capacidade de investigação.** Este capítulo trata da diferença.
+
+## A pergunta que ordena todas as decisões
+
+Existe uma pergunta única que resolve a maior parte das dúvidas sobre o que coletar e por quanto tempo:
+
+> **Que pergunta eu vou precisar responder, e quanto tempo depois do fato?**
+
+Ela é melhor que "o que é boa prática coletar?" porque conecta o log a um uso. Um log que não responde nenhuma pergunta previsível é custo puro — armazenamento, licença, atenção e passivo de dado pessoal — e a maior parte do volume de um pipeline típico é exatamente isso [@nistsp80092; @nistsp80092r1].
+
+Quatro famílias de perguntas cobrem quase todo o uso real:
+
+**Detecção** — "isso está acontecendo agora?" Precisa de dado fresco, em minutos, e de campos que permitam decidir.
+
+**Investigação** — "o que mais essa conta fez, e quando começou?" Precisa de retenção longa e de capacidade de pivô: a partir de um usuário, chegar às máquinas; a partir de uma máquina, chegar aos destinos.
+
+**Prova e obrigação legal** — "o que foi feito a partir deste endereço em tal data?" Precisa de integridade, de rastreabilidade e de prazo definido por lei, não por conveniência.
+
+**Operação e auditoria** — "quem alterou essa regra de firewall?" Precisa de registro de mudança administrativa.
+
+Prazos e requisitos das quatro famílias são diferentes, e tratá-las como se fossem uma só é a origem do pipeline que custa caro e não responde nada. O log de negação de pacote do firewall é ótimo para operação e quase inútil para investigação; o log de autenticação é o contrário — e é justamente ele que quase sempre está com retenção curta.
+
+## As fontes que realmente pagam a conta
+
+Nem toda telemetria vale o mesmo. A ordenação abaixo reflete o que aparece repetidamente em investigações reais, não o que é mais fácil de habilitar.
+
+**1. Criação de processo com linha de comando e processo pai.** É a fonte de maior valor por byte em qualquer ambiente. Responde "o que foi executado, por quem, a partir de quê" — a espinha dorsal de quase toda investigação de endpoint. No Windows exige habilitar a auditoria de criação de processo **e** a inclusão da linha de comando, que vem desligada; no Linux, exige regra de `auditd` ou equivalente [@microsoft2024auditing; @auditd2024].
+
+**2. Autenticação e autorização.** Sucesso *e* falha, em todos os pontos: diretório, VPN, nuvem, aplicação, acesso remoto, banco de dados. Registrar apenas falha é um erro clássico — o comprometimento por credencial válida produz **sucessos**, e é o vetor mais comum. Sucesso de autenticação é a fonte que responde "desde quando?".
+
+**3. Consultas DNS a partir dos endpoints.** Barata em relação ao valor, e frequentemente ausente. Registra intenção de comunicação mesmo quando a conexão falha, sobrevive a canais cifrados e permite descobrir, meses depois, quais máquinas contataram um domínio recém-divulgado (@sec-cap032).
+
+**4. Telemetria de EDR.** Processo, injeção, carregamento de módulo, persistência, acesso à memória de outro processo. É a fonte mais rica, a mais cara e a que costuma ter a retenção mais curta no plano contratado (@sec-cap038).
+
+**5. Plano de controle da nuvem.** Chamadas de API, criação e alteração de identidade, mudança de política, criação de chave de acesso. Em nuvem, o plano de controle **é** o sistema operacional, e não registrá-lo é operar cego exatamente onde o adversário passa (@sec-cap051).
+
+**6. Proxy, acesso web e cabeçalhos de e-mail.** Respondem por onde algo entrou e para onde algo saiu.
+
+**7. Log de aplicação relevante para o negócio.** Alteração de cadastro, mudança de chave Pix, troca de dado bancário de fornecedor, exportação em massa. Fonte quase sempre esquecida e a única capaz de detectar fraude interna e desvio de pagamento (@sec-cap065).
+
+**8. Firewall e fluxo de rede.** Úteis para escopo e correlação — e são o que domina o volume. Registrar toda aceitação e toda negação de um perímetro movimentado gera terabytes que raramente respondem pergunta que outra fonte não responda melhor. Fluxos agregados costumam bastar por uma fração do custo.
+
+::: {#fig-valor-log}
+```{.tikz}
+%%| filename: valor-log
+%%| alt: Dispersão de fontes de log comparando volume gerado e valor para investigação, destacando as de alto valor e baixo volume
+\begin{tikzpicture}[font=\footnotesize]
+  \begin{axis}[
+      width=12.0cm, height=7.4cm,
+      xlabel={\tiny volume gerado (custo mensal)},
+      ylabel={\tiny valor para detecção e investigação},
+      xmin=0, xmax=10, ymin=0, ymax=10,
+      xtick={0,5,10}, ytick={0,5,10},
+      xticklabels={baixo,médio,alto},
+      yticklabels={baixo,médio,alto},
+      tick label style={font=\tiny},
+      label style={font=\tiny},
+      grid=major, grid style={manualgray!22},
+      axis lines=left, clip=false]
+
+    \addplot[only marks, mark=*, mark size=1.9pt, manualgreen]
+      coordinates {(1.5,9.3) (1.1,8.2) (1.9,7.0) (1.3,5.9)};
+    \addplot[only marks, mark=*, mark size=1.9pt, manualblue]
+      coordinates {(4.9,8.6) (5.4,6.4)};
+    \addplot[only marks, mark=*, mark size=1.9pt, manualred]
+      coordinates {(9.0,3.2) (8.1,1.8)};
+
+    \node[font=\tiny, manualgreen, anchor=west] at (axis cs:1.8,9.4)
+      {autenticação: sucesso e falha};
+    \node[font=\tiny, manualgreen, anchor=west] at (axis cs:1.4,8.3)
+      {criação de processo com linha de comando};
+    \node[font=\tiny, manualgreen, anchor=west] at (axis cs:2.2,7.0)
+      {plano de controle da nuvem};
+    \node[font=\tiny, manualgreen, anchor=west] at (axis cs:1.6,5.9)
+      {consulta DNS do endpoint};
+    \node[font=\tiny, manualblue, anchor=west] at (axis cs:5.2,8.7)
+      {telemetria de EDR};
+    \node[font=\tiny, manualblue, anchor=west] at (axis cs:5.7,6.4)
+      {proxy e acesso web};
+    \node[font=\tiny, manualred, anchor=east] at (axis cs:8.8,3.3)
+      {firewall: aceitação e negação por pacote};
+    \node[font=\tiny, manualred, anchor=east] at (axis cs:7.9,1.8)
+      {log de depuração de aplicação};
+
+    \draw[manualgray, dashed, thick] (axis cs:0,5.2) -- (axis cs:10,5.2);
+  \end{axis}
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=11.3cm]
+    at (5.7,-1.6)
+    {\textbf{O canto superior esquerdo é onde o esforço deveria ir primeiro} --- e é
+     exatamente onde ficam as fontes que vêm \textbf{desligadas de fábrica}, custando
+     configuração e não dinheiro. O canto inferior direito costuma consumir a maior
+     parte da licença e do armazenamento em pipelines montados sem essa pergunta.};
+\end{tikzpicture}
+```
+Fontes de log por volume e por valor investigativo. Habilitar o que está no canto superior esquerdo custa configuração; manter o canto inferior direito custa dinheiro todo mês.
+:::
+
+## O que o padrão de fábrica não entrega
+
+Quase todo ambiente tem a mesma lacuna previsível, porque os padrões são calibrados para não gerar volume — não para permitir investigação.
+
+**Windows.** A auditoria de criação de processo vem desabilitada e, mesmo habilitada, não inclui a linha de comando sem configuração adicional. Registro de bloco de script e transcrição do PowerShell também vêm desligados, e sem eles a atividade em PowerShell é praticamente opaca. O tamanho padrão do log de segurança rotaciona em horas num controlador de domínio movimentado — o evento existiu e desapareceu antes de ser coletado [@microsoft2024auditing].
+
+**Linux.** Sem regras de auditoria não há registro confiável de execução. O arquivo `~/.bash_history` não é log de segurança: pertence ao usuário, é editável por ele, não tem carimbo de tempo por padrão e não registra o que foi executado fora do shell interativo [@auditd2024].
+
+**Servidores DNS.** O registro de consulta costuma vir desligado por causa do volume, e é a fonte com melhor relação entre valor e preço da lista.
+
+**Nuvem.** O registro do plano de controle costuma vir habilitado; o registro de acesso a dados — quem leu qual objeto de qual bucket — normalmente não. E é justamente ele que responde "o que vazou".
+
+**Aplicações internas.** Registram erro para o desenvolvedor e não registram ação de negócio para o investigador. Alteração de dado bancário de fornecedor é evento de segurança, não linha de depuração.
+
+Dois complementos merecem menção: agentes de telemetria de sistema, como o Sysmon no Windows, cobrem boa parte dessas lacunas com configurações abertas e amplamente compartilhadas; e o `osquery` permite consultar o estado do sistema como se fosse banco de dados, útil tanto para caçada quanto para inventário [@sysmon2024; @osquery2024].
+
+## Anatomia de um evento que serve
+
+Um evento útil responde a cinco perguntas sem exigir consulta a outro sistema: **quem** (identidade, não apenas endereço), **o quê** (ação), **quando** (carimbo confiável, com fuso explícito), **onde** (origem e destino, com identificador de máquina) e **resultado** (sucesso, falha, motivo).
+
+Falte um desses e o evento vira quase inútil. Um "acesso negado" sem nome de usuário, um "login bem-sucedido" sem endereço de origem, um "arquivo excluído" sem o processo que o excluiu — todos existem em produção, todos consomem armazenamento e nenhum responde pergunta alguma.
+
+Dois campos merecem destaque por serem os que mais se perdem: **o processo pai**, que transforma um evento isolado em cadeia de execução, e **o identificador de correlação**, que amarra eventos do mesmo pedido através de sistemas diferentes.
+
+Formatos estruturados — JSON, ou syslog estruturado conforme a RFC 5424 — evitam o custo e a fragilidade de extrair campos de texto livre por expressão regular, trabalho que quebra silenciosamente na primeira mudança de versão do produto [@rfc5424].
+
+## Tempo: o detalhe que decide investigações
+
+Nenhum outro problema de logging causa tanto prejuízo silencioso quanto tempo malfeito.
+
+**Sincronize tudo contra a mesma fonte.** NTP configurado, funcionando e **monitorado** — inclusive nos equipamentos de rede, nas câmeras, nos controladores de acesso físico e em todo aparelho que ninguém lembra que tem relógio [@rfc5905].
+
+**Grave em UTC e exiba em horário local.** Guardar horário local no dado é convidar ambiguidade permanente. O Brasil abandonou o horário de verão em 2019, mas ainda existem sistemas com a regra antiga embutida e registros históricos com duas ocorrências da mesma hora local.
+
+**Deixe o fuso explícito no dado.** Carimbo sem indicação de fuso é uma hipótese, não um fato [@rfc9557].
+
+**Registre também o horário de coleta.** A diferença entre a hora do evento e a hora em que ele chegou ao repositório é a métrica que revela atraso de pipeline e adulteração de relógio.
+
+Reconstruir linha do tempo com relógios divergentes é pior do que não ter linha do tempo, porque produz uma narrativa **plausível e errada**: a ordem se inverte e conclui-se que o servidor A contaminou o B quando foi o contrário.
+
+## Retenção: onde o custo mora
+
+Retenção é decisão econômica com restrição legal, não preferência técnica. A prática que funciona divide os dados em camadas com custo e latência diferentes.
+
+::: {#fig-camadas-retencao}
+```{.tikz}
+%%| filename: camadas-retencao
+%%| alt: Camadas de retenção de log, da camada quente pesquisável à camada fria de arquivamento, com prazos e usos
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cam/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=4.6cm, minimum height=1.5cm},
+    ob/.style={align=left, font=\tiny, text width=5.5cm, anchor=west}}
+
+  \node[cam, draw=manualred, fill=manualred!12] at (-4.2,2.3)
+    {\textbf{QUENTE --- 7 a 30 dias}\\[3pt]
+     busca em segundos, correlação ativa, painéis\\
+     \textbf{custo por GB: alto}};
+  \node[cam, draw=manualyellow, fill=manualyellow!14] at (-4.2,0.3)
+    {\textbf{MORNA --- 90 a 180 dias}\\[3pt]
+     busca em minutos, investigação retroativa\\
+     \textbf{custo por GB: médio}};
+  \node[cam, draw=manualgreen, fill=manualgreen!13] at (-4.2,-1.7)
+    {\textbf{FRIA --- 1 a 5 anos}\\[3pt]
+     restauração sob demanda, obrigação legal\\
+     \textbf{custo por GB: baixo}};
+
+  \node[ob, manualgray] at (-1.5,2.3)
+    {``isso está acontecendo agora?''\\
+     Detecção e triagem. Só o que alimenta regra
+     precisa estar aqui.};
+  \node[ob, manualgray] at (-1.5,0.3)
+    {``desde quando?''\\
+     A pergunta que mais custa caro quando não há
+     resposta. \textbf{Autenticação pertence aqui,
+     no mínimo.}};
+  \node[ob, manualgray] at (-1.5,-1.7)
+    {``o que foi feito a partir deste endereço em tal
+     data?''\\
+     Marco Civil, contrato, ordem judicial.
+     Integridade importa mais que velocidade.};
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray]
+    (-6.9,2.9) -- (-6.9,-2.4);
+  \node[font=\tiny\bfseries, manualgray, rotate=90, anchor=south]
+    at (-7.2,0.3) {custo por GB diminui};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=11.7cm]
+    at (-0.9,-3.7)
+    {\textbf{O erro que custa o incidente:} aplicar a mesma retenção a tudo. Firewall
+     por 90 dias e autenticação por 7 é a combinação exata que produz ``não sabemos
+     desde quando''. \textbf{O que é mais barato de guardar costuma ser o que mais
+     responde.}};
+\end{tikzpicture}
+```
+Camadas de retenção por uso e por custo. A decisão errada quase nunca é guardar pouco no total — é guardar pouco justamente da fonte mais barata e mais decisiva.
+:::
+
+Duas regras práticas fecham o assunto. **Retenção se define por fonte, nunca em bloco** — e a fonte mais valiosa costuma ser a mais barata de guardar, o que torna a decisão fácil quando ela é tomada conscientemente. E **retenção maior que a obrigação legal é passivo**: guardar dado pessoal além do necessário amplia a superfície de vazamento e a exposição sob a LGPD sem melhorar a segurança.
+
+## Proteger o log de quem apagou o log
+
+Adversário competente apaga rastro. Se o único registro do que ele fez está na máquina que ele controla, não há registro.
+
+**Encaminhe para fora do host, em tempo quase real.** É a medida isolada de maior impacto. Evento que já saiu da máquina sobrevive à limpeza do log local.
+
+**Torne o repositório central imutável dentro do prazo de retenção.** Armazenamento com bloqueio de objeto, ou índice em modo apenas-anexo, impede que uma credencial de administrador comprometida destrua a evidência.
+
+**Separe as credenciais.** Se a mesma conta que administra o domínio administra o repositório de logs, comprometer o domínio é comprometer a evidência. Identidade separada, preferencialmente em domínio ou provedor distinto.
+
+**Monitore o silêncio.** Fonte que para de enviar precisa gerar alerta próprio, com limiar por fonte. Queda de volume é sinal de incidente com a mesma frequência com que é sinal de problema operacional — e a ausência dessa detecção é o que leva equipes a passar semanas sem perceber que metade dos servidores deixou de reportar.
+
+**Registre o acesso ao próprio repositório.** Quem consultou o quê é auditoria necessária, especialmente porque esse repositório concentra dado pessoal de toda a organização [@cisalogging2023].
+
+## Dado pessoal dentro do log
+
+Log é tratamento de dado pessoal, e a LGPD se aplica integralmente a ele. Três consequências práticas.
+
+**Minimize na coleta.** Corpo de requisição HTTP, parâmetro de consulta com CPF, cabeçalho de autorização, conteúdo de mensagem — nada disso precisa estar no log de segurança, e tudo isso aparece quando ninguém revisou. O que vaza junto com o repositório de logs costuma ser pior que o incidente original.
+
+**Mascare o que precisa existir mas não precisa ser legível.** CPF parcial e cartão truncado permitem correlação sem expor o dado completo; resumo criptográfico com sal permite igualar registros sem revelar o valor.
+
+**Documente base legal e prazo.** Segurança da informação sustenta o tratamento por legítimo interesse ou por cumprimento de obrigação legal, mas a finalidade precisa estar declarada e o prazo precisa ser definido e cumprido. Retenção indefinida não tem defesa [@lgpd2018; @lei13709art46].
+
+## ⚖️ Brasil em Foco
+
+**Marco Civil: dois prazos distintos, obrigatórios e frequentemente confundidos.** Provedor de conexão guarda registros de conexão por **um ano**; provedor de aplicação guarda registros de acesso a aplicações por **seis meses**. São mínimos legais, mantidos sob sigilo, e a disponibilização depende de ordem judicial. Provedores regionais que também operam serviços próprios exercem os dois papéis ao mesmo tempo e precisam de política que os separe — inclusive porque a lei veda ao provedor de conexão guardar registros de acesso a aplicações [@marcocivil2014].
+
+**Registro de conexão sem porta de origem não identifica ninguém.** Com CGNAT, um endereço IPv4 é compartilhado por dezenas ou centenas de assinantes simultaneamente. Registro sem porta de origem e sem carimbo preciso não individualiza o assinante, e responder a um ofício com base nele pode apontar a pessoa errada — com consequência real para quem não fez nada. Guardar a tradução de NAT com porta e horário sincronizado é obrigação prática de qualquer provedor que use CGNAT (@sec-cap009).
+
+**A LGPD impõe minimização e prazo também ao log.** Registro é tratamento. Coletar corpo de requisição com dado pessoal "por precaução", ou manter tudo indefinidamente "porque armazenamento é barato", contraria a minimização e amplia o dano de um vazamento do próprio repositório. Prazo definido por fonte, com base legal declarada, é o que se demonstra em fiscalização [@lgpd2018; @anpd2023guia].
+
+**O prazo de notificação da ANPD depende de investigação rápida.** O prazo da Resolução CD/ANPD nº 15/2024 corre a partir do conhecimento do fato, e a comunicação exige descrever os dados afetados e o número aproximado de titulares. Sem log de acesso a dados com retenção adequada, essa descrição é chute — e chute em comunicação a autoridade é problema maior que o incidente [@anpd2024res15].
+
+**O setor financeiro tem exigências próprias de trilha.** Instituições sob a Resolução BCB nº 4.893/2021 precisam de rastreabilidade de acesso a dados e de capacidade de reconstituir eventos, com prazos de retenção que costumam superar os de outros setores. Para participantes do Pix, a trilha de alteração de chave e de dado cadastral é o registro que sustenta a apuração de fraude [@bcb4893; @bcbpix].
+
+**A hora legal brasileira tem fonte oficial.** O Observatório Nacional mantém a referência distribuída pelos servidores do `ntp.br`, operados pelo NIC.br. Apontar a infraestrutura para essa fonte, além de correto tecnicamente, simplifica a defesa de um carimbo de tempo questionado — algo que aparece em disputa sobre registro de conexão com mais frequência do que se imagina [@nicbr2024registro].
+
+**Ofício chega sem aviso, e o prazo é curto.** Provedores recebem determinações judiciais com prazo de resposta contado em dias. Ter procedimento escrito, responsável nomeado e capacidade de consultar o período correto é o que separa a resposta tempestiva da multa. Descobrir na hora que o log daquele mês já rotacionou é situação sem saída [@cert2024logs].
+
+## 🛠️ No Campo
+
+**1. Comece pela pergunta, não pela fonte.** "Que pergunta esse log responde, e quanto tempo depois?" Log que não responde nada é custo e passivo.
+
+**2. Habilite criação de processo com linha de comando e processo pai.** É a maior lacuna de fábrica e a fonte de maior valor por byte. Sem ela, o endpoint é caixa-preta.
+
+**3. Registre sucesso de autenticação, não só falha.** Comprometimento por credencial válida produz sucesso. É a fonte que responde "desde quando?".
+
+**4. Ligue o log de consulta DNS dos endpoints.** Barato, e é o que permite varrer o passado quando um domínio novo aparece num boletim.
+
+**5. Defina retenção por fonte.** Firewall por 90 dias e autenticação por 7 é a combinação que garante desconhecer o escopo. Autenticação merece a retenção mais longa da operação.
+
+**6. Sincronize relógios contra o `ntp.br` e monitore o desvio.** Inclua equipamento de rede, câmera e controle de acesso. Relógio errado produz linha do tempo plausível e falsa.
+
+**7. Grave em UTC com fuso explícito e registre a hora de coleta.** A diferença entre hora do evento e hora de chegada revela atraso de pipeline e adulteração.
+
+**8. Encaminhe log para fora do host em tempo quase real.** Evento que saiu da máquina sobrevive ao apagamento. É a medida isolada de maior impacto.
+
+**9. Torne o repositório imutável e com credencial separada.** Se o administrador de domínio administra os logs, comprometer o domínio apaga a evidência.
+
+**10. Alerte sobre silêncio de fonte.** Limiar por fonte, com dono definido. Queda de volume é incidente até prova em contrário.
+
+**11. Guarde a tradução de CGNAT com porta de origem.** Sem porta, o registro não identifica ninguém — e pode apontar o assinante errado.
+
+**12. Minimize dado pessoal no log e mascare o que sobrar.** O vazamento do repositório de logs costuma ser pior que o incidente que ele deveria ajudar a investigar.
+
+**13. Corte volume sem valor antes de comprar licença maior.** Aceitação por pacote no perímetro e log de depuração de aplicação são os dois maiores desperdícios típicos.
+
+**14. Tenha procedimento escrito para ofício judicial.** Responsável nomeado, consulta testada, prazo mapeado. Descobrir a rotação do log dentro do prazo não tem conserto.
+
+## Resumo
+
+- A pergunta que ordena todas as decisões de logging é **"que pergunta eu vou precisar responder, e quanto tempo depois do fato?"**. As quatro famílias — detecção, investigação, prova legal e auditoria — têm requisitos de prazo e integridade diferentes, e tratá-las como uma só produz o pipeline caro que não responde nada.
+- As fontes de maior valor por byte são **criação de processo com linha de comando**, **autenticação (sucesso e falha)**, **DNS do endpoint** e **plano de controle da nuvem** — todas de volume modesto e quase todas desligadas por padrão. Aceitação de pacote no firewall domina o custo e raramente responde algo exclusivo.
+- Um evento útil responde quem, o quê, quando, onde e resultado sem consulta externa. Os campos que mais se perdem são **processo pai** e **identificador de correlação**, justamente os que transformam eventos isolados em cadeia.
+- Tempo malfeito é o defeito mais caro e mais silencioso: sincronizar contra fonte única, gravar em UTC com fuso explícito, registrar a hora de coleta. Relógio divergente não impede a linha do tempo — produz uma **plausível e errada**.
+- Retenção se define **por fonte**, em camadas de custo e latência. O padrão que arruína investigações é reter muito da fonte cara e inútil e pouco da fonte barata e decisiva. Retenção além da obrigação legal é passivo, não segurança.
+- Log só é evidência se sobreviver ao adversário: **encaminhamento para fora do host**, repositório imutável, credenciais separadas, alerta de silêncio por fonte e auditoria de quem consulta o repositório.
+- Log é tratamento de dado pessoal: minimizar na coleta, mascarar o que precisa existir e documentar base legal e prazo. O vazamento do próprio repositório costuma ser pior que o incidente original.
+- No Brasil, o Marco Civil impõe um ano para registros de conexão e seis meses para registros de acesso a aplicações; com CGNAT, **registro sem porta de origem não identifica ninguém**; e a hora legal tem fonte oficial no `ntp.br`, o que importa quando o carimbo de tempo é questionado.

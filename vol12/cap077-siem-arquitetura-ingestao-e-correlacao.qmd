@@ -1,3 +1,288 @@
 # SIEM: arquitetura, ingestão e correlação {#sec-cap077}
 
-*(em elaboracao)*
+Dezoito meses depois da compra, a plataforma custava mais que a equipe que a operava. Ingeria 3 TB por dia, mantinha 240 regras ativas — todas vindas do catálogo de fábrica do fornecedor — e produzia cerca de novecentos alertas diários, dos quais 96% eram fechados como falso positivo.
+
+Nenhum dos três incidentes daquele ano foi descoberto por ela. O primeiro veio de um telefonema do provedor de nuvem, o segundo de um cliente e o terceiro de um administrador que estranhou uma conta nova.
+
+Na revisão de contrato, a pergunta da diretoria foi inevitável: *para que serve isso?* E a resposta honesta era desconfortável — a ferramenta funcionava exatamente como projetada. **O que não existia era alguém decidindo o que ela deveria procurar.**
+
+Um SIEM é um pipeline de dados com finalidade de segurança. Ele não sabe o que é anômalo no seu ambiente, porque isso depende do seu ambiente. Este capítulo trata de como esse pipeline é construído, onde o dinheiro vaza e por que a etapa que decide o resultado quase nunca é a que aparece na demonstração comercial.
+
+## O pipeline, etapa por etapa
+
+Toda plataforma — comercial, aberta ou montada em casa — executa a mesma sequência. Vale conhecê-la porque cada etapa tem um custo e um modo de falhar próprios.
+
+::: {#fig-pipeline-siem}
+```{.tikz}
+%%| filename: pipeline-siem
+%%| alt: Pipeline de um SIEM da coleta ao alerta, com o custo e o modo de falha de cada etapa
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.05cm, minimum height=1.05cm},
+    nt/.style={align=center, font=\tiny, text width=2.05cm, manualgray},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \foreach \idx/\px/\cor/\tit in {%
+    1/-6.4/manualblue/{1. Coleta},
+    2/-3.85/manualblue/{2. Transporte},
+    3/-1.3/manualyellow/{3. Análise sintática},
+    4/1.25/manualyellow/{4. Normalização},
+    5/3.8/manualgreen/{5. Enriquecimento},
+    6/6.35/manualgreen/{6. Retenção}}
+    {
+      \node[et, draw=\cor, fill=\cor!12] (n\idx) at (\px,2.4) {\textbf{\tit}};
+    }
+
+  \foreach \idx in {1,2,3,4,5} {
+    \pgfmathtruncatemacro{\prox}{\idx+1}
+    \draw[fx] (n\idx) -- (n\prox);
+  }
+
+  \foreach \idx/\px/\nota in {%
+    1/-6.4/{agente ou coletor;\\ \textbf{falha: fonte muda\\e ninguém vê}},
+    2/-3.85/{fila e cifra;\\ \textbf{falha: perda\\silenciosa em pico}},
+    3/-1.3/{extrair campos;\\ \textbf{falha: regex quebra\\na nova versão}},
+    4/1.25/{esquema comum;\\ \textbf{falha: cada fonte\\com nome próprio}},
+    5/3.8/{identidade, ativo,\\ criticidade;\\ \textbf{falha: não existe}},
+    6/6.35/{quente, morna, fria;\\ \textbf{falha: prazo\\igual para tudo}}}
+    {
+      \node[nt] at (\px,1.05) {\nota};
+    }
+
+  \node[et, draw=manualred, fill=manualred!12, text width=3.1cm] (c)
+    at (-2.4,-0.9) {\textbf{7. Correlação e detecção}};
+  \node[et, draw=manualred, fill=manualred!12, text width=3.1cm] (al)
+    at (2.4,-0.9) {\textbf{8. Alerta e resposta}};
+  \draw[fx] (c) -- (al);
+  \draw[fx] (n6.south) to[out=-90,in=0] (c.east);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=12.4cm]
+    at (0,-2.6)
+    {\textbf{As etapas 1 a 6 são engenharia; a etapa 7 é a que decide o resultado.}
+     A demonstração comercial mostra a 8, o contrato precifica a 6 --- e a organização
+     que não assume a 7 opera para sempre com o conteúdo genérico de fábrica, calibrado
+     para o cliente médio de outro país.};
+\end{tikzpicture}
+```
+As oito etapas de um SIEM, com o modo típico de falha de cada uma. O gargalo real quase nunca é o que se compra.
+:::
+
+**Coleta.** Agente no host, coletor em rede, leitura de API na nuvem. O modo de falha característico é a fonte que muda de formato ou simplesmente para, sem que nada avise. Coleta precisa ser monitorada como se fosse produção.
+
+**Transporte.** Do ponto de origem até o repositório. Exige fila com capacidade de absorver picos e cifra em trânsito. Perda por estouro de buffer é silenciosa por natureza — e picos de volume acontecem exatamente durante incidentes.
+
+**Análise sintática.** Converter texto em campos. É a etapa mais frágil de todas: expressão regular escrita para uma versão do produto quebra na seguinte, e o sintoma é um campo que passa a chegar vazio — o que faz a regra parar de disparar sem nenhum erro visível. Preferir fontes que já emitem estrutura (JSON, syslog estruturado) elimina a maior parte desse risco [@rfc5424].
+
+**Normalização.** Fazer com que `src_ip`, `source-address`, `ClientIP` e `IPOrigem` virem o mesmo campo. É o que torna uma regra portável entre fontes e o que permite investigar sem decorar o dialeto de cada fabricante. Dois esquemas abertos dominam hoje: o Elastic Common Schema e o OCSF, este último com adoção crescente por ser neutro de fornecedor [@ecs2024; @ocsf2024].
+
+**Enriquecimento.** Anexar ao evento aquilo que a decisão exige e o log não traz: o dono da conta, o departamento, se a máquina é servidor de produção ou notebook de estagiário, se o endereço é de rede corporativa, se o destino consta em alguma lista de inteligência, se o usuário está de férias. É a etapa de melhor retorno de todo o pipeline, e a mais frequentemente ausente — porque não é vendida como funcionalidade, é construída.
+
+**Retenção.** As camadas discutidas em @sec-cap076: quente para detecção, morna para investigação, fria para obrigação legal.
+
+**Correlação e detecção.** A lógica que transforma eventos em alertas. É o assunto da próxima seção e do capítulo seguinte.
+
+**Alerta e resposta.** Entrega ao humano ou à automação, com contexto suficiente para decidir.
+
+## Normalizar: por que vale o trabalho
+
+Considere o mesmo fato — um login bem-sucedido — como ele chega de três fontes distintas:
+
+```json
+// firewall (syslog em texto, após análise sintática)
+{ "msg": "user vitor login OK from 200.10.20.30", "sev": 5 }
+
+// diretório (evento do Windows)
+{ "EventID": 4624, "TargetUserName": "vitor",
+  "IpAddress": "200.10.20.30", "LogonType": 10 }
+
+// provedor de nuvem (JSON de API)
+{ "eventName": "ConsoleLogin", "userIdentity": { "userName": "vitor" },
+  "sourceIPAddress": "200.10.20.30", "responseElements": { "ConsoleLogin": "Success" } }
+```
+
+Sem normalização, "mostre todos os logins do usuário `vitor` nas últimas 24 horas" exige três consultas diferentes, escritas por quem conhece os três formatos, e qualquer fonte nova exige uma quarta. Com normalização, o mesmo fato vira:
+
+```json
+{
+  "@timestamp": "2026-03-14T02:11:48.320Z",
+  "event": { "category": "authentication", "outcome": "success",
+             "action": "interactive-logon" },
+  "user":   { "name": "vitor", "domain": "CORP" },
+  "source": { "ip": "200.10.20.30", "geo": { "country_iso_code": "RU" } },
+  "host":   { "name": "DC01", "role": "domain-controller" },
+  "related": { "user": ["vitor"], "ip": ["200.10.20.30"] }
+}
+```
+
+Três coisas ficam visíveis nesse exemplo e nenhuma delas vinha no log original: o país de origem, o papel da máquina e os campos de correlação que permitem pivotar. **É o enriquecimento que transforma dado em decisão** — e uma regra escrita sobre o esquema normalizado funciona igualmente para as três fontes, inclusive para a quarta que ainda vai chegar.
+
+## Os cinco tipos de correlação
+
+"Correlação" é usada comercialmente como se fosse uma capacidade mágica. Na prática são cinco mecanismos distintos, com custos e limites bem diferentes.
+
+::: {#fig-tipos-correlacao}
+```{.tikz}
+%%| filename: tipos-correlacao
+%%| alt: Cinco tipos de correlação em um SIEM, do casamento simples de campo à detecção comportamental, com custo e fragilidade
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    tp/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=5.6cm, minimum height=1.4cm},
+    ex/.style={align=left, font=\tiny, text width=5.6cm, anchor=west,
+               manualgray}}
+
+  \foreach \idx/\py/\cor/\tit/\des in {%
+    1/3.0/manualgreen/{1. Casamento de campo}/{um evento, uma condição --- barata,
+       previsível, cega para contexto},
+    2/1.4/manualgreen/{2. Agregação e limiar}/{contar ocorrências numa janela ---
+       exige calibrar o limiar contra o ambiente},
+    3/-0.2/manualyellow/{3. Sequência com estado}/{A seguido de B em N minutos ---
+       cara em memória, poderosa para cadeias},
+    4/-1.8/manualyellow/{4. Lista de referência}/{cruzar com inventário, inteligência,
+       RH --- só vale se a lista estiver viva},
+    5/-3.4/manualred/{5. Linha de base e desvio}/{comparar com o histórico do próprio
+       sujeito --- precisa de meses de dado limpo}}
+    {
+      \node[tp, draw=\cor, fill=\cor!12] at (-4.4,\py)
+        {\textbf{\tit}\\[2pt] \des};
+    }
+
+  \foreach \idx/\py/\exe in {%
+    1/3.0/{\textbf{Exemplo:} criação de conta com privilégio
+       administrativo.},
+    2/1.4/{\textbf{Exemplo:} 40 falhas de autenticação seguidas de 1 sucesso,
+       na mesma conta, em 10 minutos.},
+    3/-0.2/{\textbf{Exemplo:} anexo aberto $\rightarrow$ processo filho de aplicativo
+       de escritório $\rightarrow$ conexão a domínio novo, em 5 minutos.},
+    4/-1.8/{\textbf{Exemplo:} autenticação bem-sucedida de conta cujo
+       desligamento consta no sistema de RH.},
+    5/-3.4/{\textbf{Exemplo:} usuário que sempre acessa 3 servidores toca 40
+       em uma hora.}}
+    {
+      \node[ex] at (1.7,\py) {\exe};
+    }
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray] (-7.7,3.6) -- (-7.7,-4.0);
+  \node[font=\tiny\bfseries, manualgray, rotate=90, anchor=south]
+    at (-8.0,-0.2) {custo, poder e fragilidade crescem};
+\end{tikzpicture}
+```
+Os cinco mecanismos de correlação. A maior parte do valor real está nos tipos 2 a 4; o tipo 5 é o mais vendido e o que mais frustra sem dado histórico limpo.
+:::
+
+Vale um comentário sobre o quinto tipo, geralmente vendido sob o rótulo de análise comportamental. Ele funciona — em ambientes com histórico longo, coleta estável e população grande o bastante para que "normal" tenha significado estatístico. Em ambiente pequeno, com rotatividade alta e coleta que muda de mês em mês, ele produz alertas de "comportamento incomum" que descrevem, na verdade, um ambiente incomum. Não é fraude do fornecedor; é pré-requisito não atendido.
+
+O ponto geral: **nenhum desses mecanismos descobre sozinho o que importa no seu ambiente**. Todos executam uma lógica que alguém precisou escrever. É por isso que a etapa 7 do pipeline não pode ser terceirizada para o catálogo de fábrica.
+
+## Onde o dinheiro vaza
+
+O custo de um SIEM cresce com o volume ingerido, e volume cresce sozinho — cada sistema novo, cada aumento de tráfego, cada nível de verbosidade que alguém elevou para depurar um problema e esqueceu de baixar.
+
+Três decisões controlam a conta.
+
+**Filtrar e transformar antes de ingerir.** Uma camada de processamento na borda — genericamente chamada de pipeline de telemetria — descarta o que não serve, agrega o repetitivo, remove campos volumosos e roteia cada tipo de dado para o destino de custo adequado. Descartar eventos de saúde de balanceador e agregar aceitações de firewall costuma cortar entre 30% e 60% do volume sem perder nada que responda pergunta.
+
+**Rotear por valor, não por origem.** O que alimenta regra vai para a camada quente e cara. O que serve só para investigação retroativa vai para armazenamento barato consultável sob demanda. O que existe por obrigação legal vai para arquivo imutável. Enviar tudo para a camada mais cara é o erro que mais aparece — e o modelo de licenciamento por volume ingerido dá ao fornecedor pouco incentivo para apontá-lo.
+
+**Entender o que o contrato mede.** Volume diário ingerido, eventos por segundo, capacidade computacional, usuários monitorados: cada modelo cria um incentivo diferente. Sob licenciamento por volume, existe pressão permanente para não coletar — e a fonte cortada costuma ser a mais barulhenta, que às vezes é também a mais útil. Reconhecer esse conflito antes de assinar evita descobri-lo durante um incidente.
+
+Uma arquitetura que se popularizou combina os dois mundos: SIEM enxuto para detecção sobre o dado que alimenta regras, e repositório analítico barato guardando o histórico completo, consultado sob demanda em investigação e caçada. Custa mais engenharia e bem menos licença.
+
+## SIEM, XDR e repositório analítico
+
+Três categorias que se sobrepõem e confundem compradores.
+
+O **SIEM** é agnóstico de fonte: ingere qualquer coisa, inclusive o sistema legado da empresa e o roteador de borda. Amplitude é sua virtude e seu custo.
+
+O **XDR** é profundo nas fontes do próprio fabricante — endpoint, e-mail, identidade, nuvem — e traz detecção pronta e boa nesse recorte, com pouca configuração. É limitado ao que o fabricante enxerga, e no Brasil isso costuma deixar de fora o que mais importa em provedores: equipamento de rede, sistemas de gestão próprios e a infraestrutura que não roda o agente dele (@sec-cap038).
+
+O **repositório analítico** guarda tudo, barato, sem opinião sobre detecção. Excelente para investigação e caçada, exige que a lógica de detecção viva em outro lugar.
+
+Para a maioria das organizações brasileiras de porte médio, a combinação que funciona é **XDR cobrindo endpoint e identidade** — onde ele é forte e barato de operar — **mais um SIEM enxuto** ingerindo o que o XDR não vê: rede, aplicação de negócio, plano de controle da nuvem e sistemas próprios. Comprar o SIEM para reprocessar o que o XDR já detecta é pagar duas vezes pela mesma coisa.
+
+## Automação de resposta: onde ajuda, onde vira dívida
+
+Ferramentas de orquestração e automação (SOAR) executam sequências de ações a partir de um alerta. Elas entregam valor real em duas frentes e criam problemas em uma terceira.
+
+**Enriquecimento automático** é o uso de melhor retorno, e o mais seguro: consultar reputação, buscar o dono do ativo, verificar se a conta está ativa, listar o que mais aquela máquina fez. São ações somente de leitura, sem risco, que devolvem à triagem o tempo gasto em cliques repetidos.
+
+**Contenção automática de casos estreitos e de alta confiança** vem em seguida: derrubar sessão de conta com autenticação impossível, isolar máquina com detecção de alta confiança, bloquear remetente com fraude confirmada. Exige critério estreito e caminho de reversão testado.
+
+**Automatizar decisão ambígua** é a dívida. Fluxo que decide sozinho, com base em sinal fraco, ora prende diretoria fora do sistema em dia de fechamento, ora deixa passar o que deveria pegar — e depurar um fluxo com trinta caixas é mais difícil que depurar uma regra. A regra prática: **automatize o que você faria manualmente da mesma forma todas as vezes**. Se há hesitação, o fluxo herda a hesitação.
+
+## Testar o pipeline de ponta a ponta
+
+A verificação mais valiosa e menos praticada: gerar um evento sintético conhecido na ponta e confirmar que ele chegou íntegro, com todos os campos, dentro do tempo esperado — e que a regra correspondente disparou.
+
+Fazer isso periodicamente e de forma automática detecta, antes do incidente, a fonte que parou, o analisador sintático que quebrou na atualização, o campo que passou a chegar vazio e a regra que ficou órfã. Sem esse teste, essas falhas são descobertas durante a investigação, que é o pior momento possível.
+
+Vale complementar com emulação controlada de técnicas: executar a técnica e verificar se o alerta aparece é a única forma honesta de afirmar que ela está coberta (@sec-cap073) [@atomicredteam2024].
+
+## Anti-padrões que se repetem
+
+**"Vamos ingerir tudo e depois decidir."** O custo chega antes da decisão, e o volume vira argumento para cortar justamente o que interessa.
+
+**Operar só com o conteúdo de fábrica.** Ele é calibrado para o cliente médio, não para o seu ambiente. Serve de ponto de partida; ficar nele é o cenário que abre este capítulo.
+
+**Comprar pela demonstração.** O que é mostrado é a etapa 8, com dados preparados. O que decide o resultado é a etapa 7, que depende de gente e não vem na caixa.
+
+**Usar o SIEM como arquivo de conformidade.** Ingerir para exibir ao auditor, sem nenhuma detecção associada, é o uso mais caro possível de armazenamento — e armazenamento de objeto imutável faz isso por uma fração do preço.
+
+**Não ter dono para o pipeline.** Sem responsável pela plataforma, analisadores quebram, fontes somem e o repositório apodrece em silêncio.
+
+## ⚖️ Brasil em Foco
+
+**Onde os logs ficam armazenados importa juridicamente.** SIEM em nuvem estrangeira implica transferência internacional de dados pessoais, e a LGPD exige base adequada para isso. A ANPD regulamentou o tema e o assunto deixou de ser hipotético: contratos precisam prever o mecanismo de transferência, e a organização precisa saber responder em qual país os dados residem — pergunta que aparece em diligência de cliente grande e em fiscalização [@lgpd2018; @anpd2024res19].
+
+**Repositório de log é concentração de dado pessoal.** Ele reúne, num só lugar e com acesso privilegiado, informação de todos os sistemas. Isso o torna alvo de alto valor e ativo de alto risco sob a LGPD: exige controle de acesso rigoroso, registro de quem consulta o quê, minimização na coleta e prazo definido. Vazamento de SIEM é incidente de gravidade máxima por definição, porque expõe transversalmente a organização inteira.
+
+**O custo em moeda forte é restrição real de projeto.** Licenças cobradas em dólar por volume ingerido tornam o SIEM tradicional proibitivo para provedores regionais, prefeituras e empresas de porte médio. A arquitetura que funciona aqui costuma ser híbrida: detecção sobre um conjunto enxuto e bem escolhido de fontes, histórico completo em armazenamento de objeto nacional, e ferramentas abertas onde a engenharia interna dá conta. Isso não é solução de segunda linha — é engenharia adequada à restrição.
+
+**Setor financeiro tem exigência de rastreabilidade e de plano de continuidade da própria plataforma.** A Resolução BCB nº 4.893/2021 e a regulamentação de contratação de serviços de nuvem impõem requisitos sobre contratação relevante de processamento de dados, incluindo previsão de acesso a informações pelo Banco Central e continuidade do serviço. O SIEM entra nesse escopo quando processa dado de instituição regulada [@bcb4893; @bcb85].
+
+**Ordem judicial pode alcançar o SIEM.** Requisições de registro de conexão e de acesso a aplicações são atendidas com o dado que existir e for autêntico. Se a plataforma é a única fonte consultável, ela precisa reter o período legal, preservar integridade e permitir extração com carimbo de tempo defensável. Extração de tela não é resposta adequada a ofício [@marcocivil2014].
+
+**Padrão aberto reduz aprisionamento e sobrevive à troca de fornecedor.** Normalizar para ECS ou OCSF em vez do formato proprietário faz com que regras, painéis e consultas continuem valendo quando o contrato mudar. Em mercado com poucos fornecedores e reajuste anual em moeda estrangeira, essa portabilidade tem valor econômico direto na renegociação [@ecs2024; @ocsf2024].
+
+## 🛠️ No Campo
+
+**1. Trate o pipeline como produção, com dono nomeado.** Coleta, análise sintática e normalização quebram em silêncio. Sem responsável, o repositório apodrece sem aviso.
+
+**2. Prefira fontes que emitem estrutura.** JSON ou syslog estruturado eliminam a fragilidade da extração por expressão regular, que é a etapa que mais quebra na atualização de versão.
+
+**3. Normalize para um esquema aberto.** ECS ou OCSF. Regra escrita sobre esquema comum sobrevive à troca de fonte e de fornecedor.
+
+**4. Enriqueça antes de detectar.** Dono da conta, criticidade do ativo, país de origem, situação no RH. É a etapa de melhor retorno e a que ninguém vende.
+
+**5. Filtre e agregue na borda, antes de ingerir.** Cortar 30% a 60% do volume sem perder resposta é resultado comum. Faça antes de negociar licença maior.
+
+**6. Roteie por valor.** O que alimenta regra vai para a camada cara; o resto vai para armazenamento barato consultável. Enviar tudo para a camada quente é o erro mais caro do projeto.
+
+**7. Conheça o que o contrato mede.** Licenciamento por volume cria pressão para não coletar. Saiba disso antes de assinar, não durante o incidente.
+
+**8. Escolha o tipo de correlação certo para a pergunta.** Limiar e sequência entregam a maior parte do valor. Linha de base exige meses de dado limpo — sem isso, gera ruído com nome sofisticado.
+
+**9. Não fique no conteúdo de fábrica.** Ele é ponto de partida, calibrado para o cliente médio. Sem engenharia de detecção própria, a plataforma congela no dia da instalação.
+
+**10. Teste o pipeline de ponta a ponta, automaticamente.** Evento sintético conhecido, verificação de chegada íntegra e no prazo, e confirmação de que a regra disparou.
+
+**11. Automatize enriquecimento à vontade; contenção com critério estreito.** Automatize apenas o que você faria igual todas as vezes, com caminho de reversão testado.
+
+**12. Não use o SIEM como arquivo de conformidade.** Armazenamento de objeto imutável faz isso por uma fração do preço.
+
+**13. Saiba em que país os dados residem.** É pergunta de fiscalização, de diligência de cliente e de contrato — e precisa de resposta documentada.
+
+**14. Restrinja e audite o acesso ao próprio repositório.** Ele concentra dado pessoal de toda a organização; seu vazamento é incidente de gravidade máxima.
+
+## Resumo
+
+- Um SIEM é um **pipeline de dados com finalidade de segurança**, em oito etapas: coleta, transporte, análise sintática, normalização, enriquecimento, retenção, correlação e alerta. As seis primeiras são engenharia; **a sétima decide o resultado** e não vem na caixa.
+- Normalizar para um esquema aberto (ECS ou OCSF) torna a regra portável entre fontes e sobrevive à troca de fornecedor — o que tem valor econômico direto em mercado com licenciamento em moeda estrangeira.
+- **Enriquecimento é a etapa de melhor retorno e a mais ausente**: dono da conta, criticidade do ativo, geolocalização, situação no RH. É o que transforma dado em decisão, e é construído, não comprado.
+- Correlação não é uma capacidade única: são cinco mecanismos — casamento de campo, agregação com limiar, sequência com estado, cruzamento com lista de referência e desvio de linha de base — com custo e fragilidade crescentes. O último exige histórico longo e coleta estável para significar algo.
+- O custo vaza por três frentes: ingerir sem filtrar, rotear tudo para a camada quente e não entender o que o contrato mede. Filtrar e agregar na borda costuma cortar de 30% a 60% do volume sem perder capacidade de resposta.
+- SIEM, XDR e repositório analítico resolvem problemas diferentes. Para o porte médio brasileiro, **XDR em endpoint e identidade mais SIEM enxuto no que ele não vê** costuma ser a combinação de melhor custo — e reprocessar no SIEM o que o XDR já detecta é pagar duas vezes.
+- Automação entrega valor em enriquecimento e em contenção de casos estreitos e de alta confiança. Automatizar decisão ambígua vira dívida difícil de depurar: automatize só o que você faria igual todas as vezes.
+- **Teste o pipeline de ponta a ponta com evento sintético e emulação de técnica.** Sem isso, a fonte que parou e o analisador que quebrou só aparecem durante a investigação — o pior momento possível.
