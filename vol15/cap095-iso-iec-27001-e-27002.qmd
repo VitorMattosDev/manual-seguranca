@@ -1,3 +1,242 @@
 # ISO/IEC 27001 e 27002 {#sec-cap095}
 
-*(em elaboracao)*
+O certificado estava emoldurado na recepção. O escopo, impresso em letra menor no rodapé do documento, dizia: *"processo de desenvolvimento de software da unidade de São Paulo"*. A intrusão que derrubou a empresa entrou pelo servidor de arquivos do escritório de Curitiba, que nunca esteve no escopo, operado por uma equipe que nunca tinha lido a política, através de uma credencial de fornecedor que nunca passou pela avaliação de terceiros.
+
+Ninguém mentiu. O certificado era autêntico, o auditor era competente, o sistema de gestão funcionava — dentro do escopo declarado. O que aconteceu foi a falha mais comum da certificação: **a organização otimizou o escopo para passar na auditoria, não para proteger o negócio**.
+
+Este capítulo trata da norma que sustenta esses certificados. A tese, que vale ser dita antes de qualquer detalhe, é que a ISO/IEC 27001 é um instrumento honesto e bastante útil quando se entende o que ela é — um sistema de gestão — e bastante enganoso quando se espera dela o que ela não promete: que a organização esteja segura.
+
+## O que é um sistema de gestão
+
+A 27001 não é uma lista de controles a implantar. É a especificação de um **sistema de gestão de segurança da informação** — um SGSI —, e a diferença muda tudo.
+
+Um sistema de gestão é um mecanismo que faz uma organização decidir com método, executar o que decidiu, medir o resultado e corrigir o rumo. A norma prescreve esse mecanismo. Quais controles a organização vai adotar é uma **saída** do sistema, não uma entrada dele: dependem do contexto, dos riscos e das decisões daquela organização específica.
+
+Isso explica por que duas empresas certificadas podem ter controles bastante diferentes e ambas estarem em conformidade. E explica também a limitação: a norma garante que a organização decidiu com método, não que decidiu bem. Um SGSI pode, formalmente, aceitar riscos altíssimos — desde que os identifique, os avalie, e alguém com autoridade os aceite por escrito.
+
+A estrutura da 27001 segue as cláusulas 4 a 10, comuns a todas as normas de sistema de gestão da ISO, o que facilita integrar com qualidade, continuidade ou privacidade [@iso27001; @iso27000].
+
+::: {#fig-ciclo-sgsi}
+```{.tikz}
+%%| filename: ciclo-sgsi
+%%| alt: Ciclo PDCA do SGSI com as clausulas 4 a 10 da ISO 27001 distribuidas nas quatro fases
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fs/.style={draw, thick, rounded corners=4pt, align=left, font=\tiny,
+               inner sep=5pt, text width=4.4cm, minimum height=1.9cm},
+    sx/.style={-{Stealth[length=2.6mm]}, very thick, manualgray}}
+
+  \node[fs, draw=manualblue, fill=manualblue!12] (f1) at (-2.7,2.1)
+    {\textbf{PLANEJAR}\\
+     \textbf{4} contexto, partes interessadas, escopo\\
+     \textbf{5} liderança, política, papéis\\
+     \textbf{6} riscos, objetivos, tratamento, SoA};
+  \node[fs, draw=manualgreen, fill=manualgreen!12] (f2) at (2.7,2.1)
+    {\textbf{FAZER}\\
+     \textbf{7} recursos, competência, conscientização, documentação\\
+     \textbf{8} operação, avaliação e tratamento de riscos};
+  \node[fs, draw=manualyellow, fill=manualyellow!18] (f3) at (2.7,-1.0)
+    {\textbf{VERIFICAR}\\
+     \textbf{9} monitoramento e medição, auditoria interna, análise crítica pela direção};
+  \node[fs, draw=manualred, fill=manualred!12] (f4) at (-2.7,-1.0)
+    {\textbf{AGIR}\\
+     \textbf{10} não conformidade, ação corretiva, melhoria contínua};
+
+  \draw[sx] (f1) -- (f2);
+  \draw[sx] (f2) -- (f3);
+  \draw[sx] (f3) -- (f4);
+  \draw[sx] (f4) -- (f1);
+
+  \node[font=\tiny, manualgray, align=center] at (0,0.55)
+    {ciclo anual\\de gestão};
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.6cm]
+    at (0,-3.0)
+    {\textbf{As cláusulas 4 a 10 são o que se audita.} O Anexo A entra na
+     cláusula 6.1.3, como referência para a escolha dos controles --- e não
+     como uma lista obrigatória. Organizações que começam pelo Anexo A e
+     tentam voltar para o risco depois produzem um SGSI que não sobrevive à
+     segunda auditoria.};
+\end{tikzpicture}
+```
+O ciclo do SGSI e a distribuição das cláusulas auditáveis da ISO/IEC 27001.
+:::
+
+## As cláusulas, uma a uma, e onde cada uma costuma falhar
+
+**Cláusula 4 — contexto e escopo.** A organização identifica questões internas e externas relevantes, as partes interessadas e seus requisitos, e define os limites do SGSI. É aqui que mora a decisão mais consequente de todo o processo, e é a que a abertura deste capítulo ilustra. Um escopo estreito é legítimo e às vezes correto — mas precisa ser uma escolha consciente de negócio, não um artifício para reduzir custo de auditoria. E as interfaces do escopo com o resto da organização precisam ser tratadas explicitamente, porque é por elas que o risco entra.
+
+**Cláusula 5 — liderança.** A alta direção precisa demonstrar comprometimento, aprovar a política e definir papéis e responsabilidades. Auditores experientes gastam tempo aqui, e o teste é simples e revelador: entrevistar um diretor e perguntar o que ele decidiu sobre segurança no último ano. Se a resposta é "isso é com o pessoal de TI", a cláusula 5 não está atendida, independentemente do que a ata diga.
+
+**Cláusula 6 — planejamento.** O coração da norma. Contém o processo de avaliação de riscos (identificar, analisar, avaliar), o processo de tratamento (mitigar, transferir, evitar, aceitar), os objetivos de segurança e a **Declaração de Aplicabilidade**. A norma não impõe uma metodologia de risco específica — a 27005 oferece uma, e a abordagem discutida no @sec-cap006 é compatível —, mas exige que a metodologia seja documentada, repetível e produza resultados comparáveis entre ciclos.
+
+**Cláusula 7 — apoio.** Recursos, competência, conscientização, comunicação e informação documentada. É a cláusula que sustenta o programa de conscientização do @sec-cap068 e a que mais gera não conformidade menor em auditoria, tipicamente por registro de treinamento incompleto.
+
+**Cláusula 8 — operação.** Execução do que foi planejado, com controle de mudanças e de processos terceirizados. Aqui entra o requisito de reavaliar riscos quando há mudança significativa — o que, na prática, quase nenhuma organização faz fora do ciclo anual.
+
+**Cláusula 9 — avaliação de desempenho.** Monitoramento, medição, auditoria interna e **análise crítica pela direção**. A análise crítica é uma reunião formal, com pauta prescrita pela norma, em que a direção examina desempenho, resultados de auditoria, incidentes, risco residual e decide sobre mudanças. É frequentemente a única evidência real de que a cláusula 5 é verdadeira.
+
+**Cláusula 10 — melhoria.** Tratamento de não conformidades com análise de causa, e melhoria contínua. Um SGSI sem nenhuma não conformidade registrada em um ano inteiro não é um SGSI maduro — é um SGSI que não está olhando.
+
+## A Declaração de Aplicabilidade
+
+A SoA — do inglês *Statement of Applicability* — é o documento mais característico da 27001 e o mais mal compreendido. Ela lista os controles do Anexo A, e para cada um declara: se é aplicável, a justificativa da decisão, se está implantado, e como.
+
+Três pontos importam.
+
+**Excluir controle é permitido e esperado.** Uma empresa sem desenvolvimento de software não implanta controles de desenvolvimento seguro. A norma pede justificativa, não implantação universal.
+
+**A justificativa precisa se ligar ao risco.** "Não aplicável porque não temos" é justificativa. "Não aplicável porque é caro" não é — nesse caso o controle é aplicável, e a organização está aceitando o risco de não implantá-lo, o que é uma decisão diferente e precisa do registro do @sec-cap094.
+
+**A SoA é o mapa que o auditor usa.** Cada linha que diz "implantado" é uma afirmação que ele pode testar. SoA copiada de modelo, com controles declarados implantados que ninguém implantou, é a origem mais comum de não conformidade maior — e, no limite, de suspensão de certificado.
+
+## O Anexo A e a ISO/IEC 27002:2022
+
+A revisão de 2022 reorganizou os controles de forma significativa. Onde a versão anterior tinha 114 controles em 14 seções, a atual tem **93 controles em 4 temas**, com consolidações, e 11 controles novos [@iso27002].
+
+::: {#fig-temas-anexo-a}
+```{.tikz}
+%%| filename: temas-anexo-a
+%%| alt: Os quatro temas de controle da ISO 27002 2022 com contagem e exemplos e os onze controles novos da revisao
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    tm/.style={draw, thick, rounded corners=4pt, align=left, font=\tiny,
+               inner sep=5pt, text width=5.5cm, minimum height=2.5cm}}
+
+  \node[tm, draw=manualblue, fill=manualblue!12] at (-3.1,1.9)
+    {\textbf{5. ORGANIZACIONAIS} --- 37 controles\\[2pt]
+     políticas, papéis, segregação de funções, contato com autoridades,
+     inteligência de ameaças, classificação da informação, gestão de
+     fornecedores, continuidade, conformidade legal};
+  \node[tm, draw=manualgreen, fill=manualgreen!12] at (3.1,1.9)
+    {\textbf{6. PESSOAS} --- 8 controles\\[2pt]
+     triagem na contratação, termos de emprego, conscientização,
+     processo disciplinar, responsabilidades no encerramento,
+     trabalho remoto, canal de reporte de eventos};
+  \node[tm, draw=manualyellow, fill=manualyellow!18] at (-3.1,-1.1)
+    {\textbf{7. FÍSICOS} --- 14 controles\\[2pt]
+     perímetro, controle de entrada, salas seguras, segurança de
+     equipamento e de cabeamento, mesa limpa e tela limpa,
+     descarte seguro de mídia};
+  \node[tm, draw=manualred, fill=manualred!12] at (3.1,-1.1)
+    {\textbf{8. TECNOLÓGICOS} --- 34 controles\\[2pt]
+     endpoint, privilégios, criptografia, registro e monitoramento,
+     filtragem web, segregação de redes, backup, gestão de
+     vulnerabilidades, desenvolvimento seguro};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.8cm]
+    at (0,-3.2)
+    {\textbf{Os 11 controles novos da revisão de 2022} respondem ao que
+     mudou na década: inteligência de ameaças, segurança no uso de serviços
+     em nuvem, prontidão para continuidade em TIC, monitoramento de
+     atividades, filtragem web, prevenção de vazamento de dados,
+     mascaramento de dados, gestão de configuração, exclusão de informação,
+     codificação segura e apagamento de dados.};
+\end{tikzpicture}
+```
+Os quatro temas do Anexo A na revisão de 2022 e os controles introduzidos pela atualização.
+:::
+
+A 27002 traz ainda cinco **atributos** por controle — tipo de controle (preventivo, detectivo, corretivo), propriedade de segurança afetada, conceito de segurança cibernética alinhado ao CSF do @sec-cap096, capacidade operacional e domínio. Eles permitem filtrar o conjunto por perspectiva: extrair todos os controles detectivos, ou todos os que se ligam à função "Detectar". É um recurso subutilizado e bastante útil para construir um plano de trabalho por área.
+
+Uma observação sobre a relação entre as duas normas: **a 27001 é certificável, a 27002 não é**. A 27002 é um código de prática — explica cada controle, seu propósito e orientações de implantação. Ninguém se certifica na 27002; ela é a referência que se consulta ao implantar o que a SoA declarou.
+
+## A família e o que ela cobre
+
+A 27001 é o centro de uma família extensa, e conhecer as peças evita reinventar processo:
+
+- **27005** — orientações para gestão de riscos de segurança da informação, a companhia natural da cláusula 6.
+- **27017** e **27018** — controles adicionais para serviços em nuvem e para proteção de dados pessoais em nuvem, tema do @sec-cap050.
+- **27031** e **22301** — prontidão de TIC para continuidade e sistema de gestão de continuidade de negócio, tratados no @sec-cap090.
+- **27035** — gestão de incidentes, base do ciclo do @sec-cap082.
+- **27037** e **27042** — identificação, coleta e análise de evidência digital, tema do @sec-cap085.
+- **27701** — extensão do SGSI para gestão de privacidade, a ponte natural entre a 27001 e as exigências do @sec-cap097.
+
+## O processo de certificação
+
+A certificação é feita por um organismo de certificação acreditado, e segue um ciclo de três anos.
+
+**A auditoria de estágio 1** é documental: o auditor verifica se o SGSI existe no papel — escopo, política, metodologia de risco, SoA, resultados de auditoria interna e da análise crítica. Costuma identificar o que falta antes que custe caro.
+
+**A auditoria de estágio 2** é de implantação: o auditor testa se o que está documentado acontece. Entrevista pessoas, examina registros, pede evidência de controles específicos. É aqui que a distância entre o documento e a realidade aparece.
+
+**Auditorias de manutenção** ocorrem anualmente, com escopo amostral, e a **recertificação** completa acontece no terceiro ano.
+
+Os achados se classificam em três níveis. **Não conformidade maior** é falha sistêmica ou ausência total de um requisito — impede ou suspende a certificação até correção comprovada. **Não conformidade menor** é falha pontual, corrigida com plano de ação. **Oportunidade de melhoria** é observação sem obrigação.
+
+Vale destacar quem audita: o organismo de certificação precisa ser acreditado por um organismo de acreditação reconhecido, e essa cadeia é o que dá valor ao certificado. Certificado emitido por entidade não acreditada tem exatamente o valor do papel em que foi impresso — e existe mercado para isso.
+
+## Onde a certificação engana
+
+Três armadilhas merecem nome, porque são as que produzem o cenário da abertura.
+
+**O escopo cirúrgico.** Reduzir o escopo ao mínimo que passa na auditoria e ao mesmo tempo permite estampar o certificado no material comercial. Quando um cliente pedir o certificado, peça também o **documento de escopo** — é ali que mora a informação.
+
+**A evidência produzida para a auditoria.** Registros criados na semana anterior, análise crítica realizada retroativamente, treinamento aplicado às pressas. Passa na auditoria e não protege ninguém, porque o sistema não está operando — está sendo encenado.
+
+**A confusão entre conformidade e segurança.** Este é o ponto de fundo, e o @sec-cap101 volta a ele. Um SGSI conforme prova que a organização tem método. Não prova que a organização escolheu bem, nem que os controles são adequados às ameaças atuais, nem que funcionam sob pressão. Certificação é piso, não teto.
+
+Dito isso, é justo reconhecer o outro lado: uma organização que passa por um ciclo honesto de 27001 sai dele com inventário de ativos, análise de risco documentada, política aprovada pela direção, papéis definidos, gestão de fornecedores estruturada e auditoria interna funcionando. Para a maioria das organizações que nunca teve nada disso, o ganho é real e considerável. O problema nunca foi a norma — foi o que se espera dela.
+
+## ⚖️ Brasil em Foco
+
+**A norma é brasileira também.** A ABNT publica a versão nacional como ABNT NBR ISO/IEC 27001:2022 e ABNT NBR ISO/IEC 27002:2022, com texto em português e mesmo conteúdo normativo. Para organizações brasileiras, essa é a referência a citar em política interna e em contrato, e evita a discussão sobre tradução de termos em auditoria [@iso27001; @iso27002].
+
+**A acreditação passa pelo Inmetro.** No Brasil, os organismos de certificação são acreditados pela Coordenação Geral de Acreditação do Inmetro, que participa dos acordos internacionais de reconhecimento mútuo. Verificar se o organismo consta como acreditado é passo elementar de diligência — tanto para quem vai se certificar quanto para quem recebe o certificado de um fornecedor [@iso17021].
+
+**A LGPD dá efeito jurídico às boas práticas.** O artigo 50 prevê que agentes de tratamento podem formular regras de boas práticas e programas de governança em privacidade, e o artigo 52, §1º, inciso IX, estabelece que a adoção comprovada de boas práticas e de mecanismos de governança é considerada na dosimetria de sanções pela ANPD. Um SGSI certificado, com escopo abrangente e evidência genuína de operação, entra nessa conta. A regulamentação de dosimetria da autoridade detalha os critérios [@lgpd2018; @lei13709art46; @anpd2023dosimetria].
+
+**Editais e contratos passaram a exigir.** A Lei nº 14.133/2021 permite estabelecer requisitos técnicos e de qualidade em contratações, e a certificação ISO/IEC 27001 aparece com frequência crescente em editais públicos, em contratos com instituições financeiras e em processos de homologação de fornecedores de grandes empresas. Para muitos prestadores de serviço brasileiros — provedores de internet, empresas de software, operadores de dados —, é a exigência comercial que financia o programa de segurança [@lei14133].
+
+**Reguladores setoriais referenciam a família.** A Resolução CMN nº 4.893/2021 e a Resolução BCB nº 85/2021 estabelecem requisitos de política de segurança cibernética que dialogam diretamente com a estrutura da 27001, e a Resolução Anatel nº 740/2020 faz o mesmo no setor de telecomunicações. Organizações reguladas frequentemente descobrem que atender o regulador e manter o SGSI são o mesmo trabalho, feito uma vez, se o desenho for integrado desde o início [@bcb4893; @bcb85; @anatel740].
+
+**Na administração pública federal, a referência normativa é explícita.** As normas complementares do Gabinete de Segurança Institucional e os modelos de governança adotados por órgãos públicos referenciam a família 27000 como base para política de segurança da informação, gestão de riscos e tratamento de incidentes, com prestação de contas ao TCU [@ingsi5; @gtcsg2024].
+
+**Cuidado com o certificado de fachada.** Existe no mercado brasileiro oferta de "certificação" emitida por entidades sem acreditação, às vezes com auditoria remota de poucas horas. Ao receber o certificado de um fornecedor, confira três coisas: o organismo é acreditado; qual é exatamente o escopo declarado; e qual a data de validade e de última auditoria de manutenção. As três informações estão no próprio certificado ou no registro público do organismo [@iso17021].
+
+## 🛠️ No Campo
+
+**1. Defina o escopo pelo risco de negócio, não pelo custo de auditoria.** Escopo estreito é legítimo se for uma escolha consciente — e as interfaces com o resto da organização precisam de tratamento explícito.
+
+**2. Ao receber certificado de fornecedor, leia o documento de escopo.** É onde mora a informação. O certificado sozinho não diz o que foi auditado.
+
+**3. Verifique a acreditação do organismo certificador.** Certificado sem cadeia de acreditação vale o papel em que foi impresso.
+
+**4. Documente a metodologia de risco e mantenha-a estável entre ciclos.** A norma exige repetibilidade e comparabilidade, não uma metodologia específica.
+
+**5. Escreva a SoA a partir da análise de risco, nunca de um modelo pronto.** Cada linha "implantado" é uma afirmação testável em auditoria.
+
+**6. Justifique exclusões pelo contexto, não pelo custo.** "Caro" não é justificativa de não aplicabilidade — é aceitação de risco, e precisa do registro correspondente.
+
+**7. Faça a análise crítica pela direção de verdade, com a pauta da norma.** É a evidência mais forte de que a cláusula 5 é real, e a mais fácil de desmontar quando é encenada.
+
+**8. Registre não conformidades ao longo do ano.** Zero achados em doze meses não é maturidade; é ausência de olhar.
+
+**9. Use os atributos da 27002 para montar o plano de trabalho.** Filtrar por tipo de controle e por função do CSF converte 93 controles em blocos executáveis por área.
+
+**10. Reavalie riscos em mudanças significativas, não só no ciclo anual.** Nova nuvem, nova aquisição, novo fornecedor crítico — a cláusula 8 pede isso e quase ninguém faz.
+
+**11. Integre 27001 com as exigências do regulador desde o desenho.** No financeiro e em telecomunicações, é o mesmo trabalho feito uma vez, se planejado junto.
+
+**12. Não produza evidência na semana da auditoria.** Passa no estágio 2 e não protege nada — e o auditor experiente identifica pelo padrão das datas.
+
+**13. Use a 27002 como manual de implantação, não como norma certificável.** Ninguém se certifica na 27002.
+
+**14. Trate a certificação como piso.** Ela prova método, não adequação às ameaças atuais nem funcionamento sob pressão.
+
+**15. Guarde a evidência de governança para a ANPD.** Programa de governança em privacidade e boas práticas comprovadas contam na dosimetria de sanções.
+
+## Resumo
+
+- A ISO/IEC 27001 especifica um **sistema de gestão**, não uma lista de controles. Quais controles a organização adota é saída do sistema; a norma garante que ela decidiu com método, não que decidiu bem.
+- As cláusulas 4 a 10 são o que se audita: contexto e escopo, liderança, planejamento e riscos, apoio, operação, avaliação de desempenho e melhoria. O Anexo A entra dentro da cláusula 6 como referência para escolha de controles.
+- **O escopo é a decisão mais consequente do processo.** Escopo estreito otimizado para a auditoria produz certificado autêntico e organização exposta — e as interfaces do escopo são por onde o risco entra.
+- A Declaração de Aplicabilidade lista os controles com decisão e justificativa. Excluir é permitido; justificar por custo não é exclusão, é aceitação de risco e exige registro formal.
+- A revisão de 2022 reorganizou o Anexo A em **93 controles e 4 temas** — organizacionais, de pessoas, físicos e tecnológicos — com 11 controles novos e cinco atributos que permitem filtrar o conjunto por perspectiva.
+- A 27001 é certificável; a 27002 é código de prática e não é. A família cobre risco (27005), nuvem (27017/27018), continuidade (27031/22301), incidentes (27035), forense (27037/27042) e privacidade (27701).
+- A certificação segue ciclo de três anos: estágio 1 documental, estágio 2 de implantação, manutenções anuais e recertificação. Achados se classificam em não conformidade maior, menor e oportunidade de melhoria.
+- A cadeia de acreditação é o que dá valor ao certificado. Certificado de organismo não acreditado não significa nada, e existe mercado para isso no Brasil.
+- **Certificação é piso, não teto.** Ela não prova adequação às ameaças atuais nem funcionamento sob pressão. Ainda assim, um ciclo honesto entrega inventário, análise de risco, política aprovada, papéis definidos e auditoria interna — o que, para quem não tinha nada, é ganho substancial.
+- No Brasil, a norma existe como ABNT NBR, os organismos são acreditados via Inmetro, a LGPD considera boas práticas comprovadas na dosimetria de sanções, e reguladores do setor financeiro e de telecomunicações estabelecem requisitos que se integram naturalmente ao SGSI.
