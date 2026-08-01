@@ -1,3 +1,197 @@
 # Privacidade, anonimato e vigilância {#sec-cap106}
 
-*(em elaboracao)*
+O provedor quis fazer a coisa certa. Antes de entregar à área de inteligência de negócio a base de registros de conexão, removeu o nome, o CPF e o endereço dos assinantes, substituiu o identificador de contrato por um código sequencial e chamou o resultado de "base anonimizada". A partir dali, considerou que aquilo já não era dado pessoal e podia circular internamente sem os controles da LGPD.
+
+O que ficou na base foi o endereço IP atribuído, o horário de início e fim de cada sessão, o volume trafegado e a estação rádio-base ou o ponto de conexão utilizado. Ou seja: exatamente o conjunto de campos que o Marco Civil obriga o provedor a guardar **porque ele permite identificar o assinante**. A base não estava anonimizada; estava pseudonimizada com uma chave que a própria empresa mantinha em outra tabela, e um único registro de rota de deslocamento durante duas semanas basta para individualizar uma pessoa mesmo sem essa tabela.
+
+Essa confusão — remover o nome e concluir que o dado deixou de ser pessoal — é o erro mais comum e mais caro de toda a engenharia de privacidade. Ela aparece em projeto de análise de dados, em ambiente de homologação populado com dados de produção, em treinamento de modelo e em compartilhamento com parceiro. **Anonimização é uma propriedade do conjunto inteiro e do contexto, não uma operação sobre colunas.**
+
+## Privacidade não é confidencialidade
+
+O manual inteiro tratou de impedir acesso não autorizado. Privacidade é outra coisa, e a diferença é o que torna o assunto difícil para quem vem da segurança.
+
+**Confidencialidade responde a "quem não deveria ver, viu?".** É uma propriedade sobre acesso não autorizado, e a resposta é controle de acesso, cifra e segmentação.
+
+**Privacidade responde a "o que estamos fazendo com isso é legítimo, proporcional e esperado pela pessoa?".** É uma propriedade sobre o tratamento **autorizado**. Um sistema pode estar perfeitamente seguro — sem nenhum acesso indevido, com toda a cifra em ordem — e ser um desastre de privacidade, porque coleta o que não precisa, guarda por mais tempo do que deveria, cruza bases que não deveriam se encontrar e usa o dado para finalidade que a pessoa jamais imaginou.
+
+O arcabouço de privacidade do NIST formaliza essa distinção separando dois tipos de risco: os **eventos de segurança**, que são acessos não autorizados, e os **eventos problemáticos de dados**, que decorrem do tratamento autorizado e ainda assim produzem dano — discriminação, exposição, constrangimento, perda de autonomia, efeito inibitório sobre comportamento legítimo [@nistprivacy2020]. A segunda categoria não tem correção técnica: tem decisão de projeto.
+
+## O espectro da identificabilidade
+
+A prática trata "dado pessoal" e "dado anonimizado" como duas caixas. Na realidade há um espectro contínuo, e a posição dentro dele depende do conjunto todo e de quem está olhando.
+
+::: {#fig-identificabilidade}
+```{.tikz}
+%%| filename: identificabilidade
+%%| alt: Espectro da identificabilidade do dado identificado ao agregado com o ponto onde a LGPD deixa de incidir
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    faixa/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                  inner sep=4pt, text width=2.55cm, minimum height=1.35cm},
+    nota/.style={align=center, font=\tiny, text width=2.55cm}}
+
+  \draw[manualgray, very thick, -{Stealth[length=2.4mm]}] (-6.1,1.95) -- (6.3,1.95);
+  \node[font=\tiny, manualgray, anchor=south] at (0,2.05)
+    {risco de reidentificação decrescente --- e nunca zero};
+
+  \node[faixa, draw=manualred, fill=manualred!14] (f1) at (-4.9,0.75)
+    {\textbf{identificado}\\ nome, CPF, conta, e-mail};
+  \node[faixa, draw=manualred, fill=manualred!10] (f2) at (-1.95,0.75)
+    {\textbf{pseudonimizado}\\ chave separada, ainda reversível pelo detentor};
+  \node[faixa, draw=manualyellow, fill=manualyellow!20] (f3) at (1.0,0.75)
+    {\textbf{``desidentificado''}\\ sem identificador direto, mas com combinação
+     única};
+  \node[faixa, draw=manualgreen, fill=manualgreen!14] (f4) at (3.95,0.75)
+    {\textbf{agregado ou com ruído}\\ k-anonimidade, privacidade diferencial};
+
+  \draw[manualred, very thick, dashed] (2.45,-1.35) -- (2.45,1.75);
+  \node[font=\tiny, manualred, anchor=south west, align=left] at (2.55,1.35)
+    {a LGPD deixa\\ de incidir só\\ \textbf{depois} desta linha};
+
+  \node[nota, anchor=north] at (-4.9,-0.05) {dado pessoal};
+  \node[nota, anchor=north] at (-1.95,-0.05)
+    {\textbf{dado pessoal} --- pseudonimizar reduz risco, não muda a natureza};
+  \node[nota, anchor=north] at (1.0,-0.05)
+    {\textbf{quase sempre ainda é dado pessoal} --- é aqui que mora o erro};
+  \node[nota, anchor=north] at (3.95,-0.05)
+    {fora do alcance \textbf{enquanto} a reversão exigir esforço
+     desproporcional};
+
+  \node[draw=manualgray, fill=manualgray!10, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.2cm]
+    at (0.1,-2.15)
+    {\textbf{A posição no espectro depende do conjunto inteiro e de quem
+     olha.} Três campos aparentemente inofensivos --- data de nascimento, CEP
+     e sexo --- individualizam a maior parte da população. Rota de
+     deslocamento, histórico de compras e padrão de horário são
+     quase-identificadores poderosos. E a anonimização de hoje é revisível
+     amanhã, quando surgir a base auxiliar que ninguém previu.};
+\end{tikzpicture}
+```
+O espectro da identificabilidade e o ponto exato em que a lei deixa de incidir.
+:::
+
+Duas demonstrações clássicas fixam a lição. Latanya Sweeney mostrou que a combinação de **data de nascimento, CEP e sexo** individualiza a maior parte da população dos Estados Unidos — e usou isso para reidentificar, numa base hospitalar "anônima", o prontuário do governador do estado, cruzando com a lista pública de eleitores [@sweeney2002]. Narayanan e Shmatikov reidentificaram usuários de uma base de avaliações de filmes divulgada para uma competição pública, cruzando as notas com avaliações públicas de outro site [@narayanan2008].
+
+O que os dois têm em comum é o mecanismo: **o atacante não quebra a anonimização; ele traz uma base auxiliar**. E como não há como saber que bases auxiliares existirão amanhã, a conclusão prática é desconfortável mas necessária — **anonimização não é permanente**. Um conjunto considerado anônimo hoje pode deixar de ser quando surgir o vazamento, o registro público ou o serviço que fornece a chave que falta.
+
+As técnicas sérias existem e têm limites conhecidos. A **k-anonimidade** garante que cada combinação de quase-identificadores apareça em pelo menos $k$ registros, e falha quando o grupo inteiro compartilha o mesmo valor sensível — daí extensões como a $l$-diversidade. A **privacidade diferencial** é a única com garantia matemática: adiciona ruído calibrado de modo que a presença ou ausência de um indivíduo específico não altere significativamente o resultado da consulta, com um parâmetro que expressa exatamente quanta privacidade se gasta a cada consulta [@dwork2006]. É excelente para estatística agregada e inadequada quando se precisa do registro individual. **Dados sintéticos** ajudam para desenvolvimento e teste, com a ressalva de que um gerador ajustado sobre a base real pode memorizar e reproduzir registros originais.
+
+A regra operacional que resolve a maior parte dos casos é mais simples do que a teoria: **em ambiente de desenvolvimento e homologação, não use dado de produção**. Nenhuma técnica de mascaramento é tão barata e tão eficaz quanto não ter o dado ali.
+
+## Metadados são o conteúdo
+
+Existe uma crença persistente de que proteger o conteúdo basta e que metadados são detalhe técnico. É o contrário: **metadados são estruturados, agregáveis e analisáveis em escala, e o conteúdo não é**.
+
+Considere o que se sabe sem ler uma única mensagem. Quem se comunicou com quem, quando, com que frequência, por quanto tempo, de onde. Um padrão de chamadas para um oncologista, seguido de chamadas para um laboratório e depois para familiares, conta a história inteira sem que nenhuma palavra tenha sido interceptada. Registros de conexão com IP e horário reconstroem deslocamento. Consultas de DNS revelam cada serviço utilizado — e é por isso que o DNS cifrado do @sec-cap032 é medida de privacidade antes de ser medida de segurança. O tamanho e o ritmo dos pacotes vazam informação mesmo dentro de um túnel cifrado.
+
+Para quem opera infraestrutura, a consequência é direta: **o registro que você é obrigado a manter é um dos ativos de privacidade mais sensíveis da sua organização**, e é frequentemente o menos protegido. Base de registros de conexão em servidor com acesso amplo, exportada para planilha, replicada para um ambiente de análise sem controle, é o cenário que produz o incidente com dano real a pessoas.
+
+## Anonimato em rede: o que funciona e o que é marketing
+
+**O Tor** encaminha o tráfego por três relés escolhidos pelo cliente, com cifra em camadas, de modo que nenhum relé conhece simultaneamente a origem e o destino [@dingledine2004]. É a ferramenta de anonimato mais sólida disponível, sustenta o acesso à informação sob censura e o trabalho de jornalistas, defensores de direitos humanos e denunciantes — e o seu uso é perfeitamente legal no Brasil e na maior parte do mundo.
+
+O que ele **não** faz: não protege contra quem já está autenticado — logar na conta pessoal pela rede Tor destrói o anonimato instantaneamente; não protege o conteúdo depois do nó de saída, se o destino não for cifrado; não protege contra um adversário capaz de observar simultaneamente as duas pontas, que correlaciona por tempo e volume; e não protege contra vazamento pelo próprio dispositivo — extensões, fontes, resolução de tela, comportamento.
+
+**VPN comercial não é anonimato.** Ela transfere a confiança do provedor de acesso para o provedor da VPN — que também vê tudo, também tem registro e também responde a ordem judicial, às vezes de jurisdição diversa. Como medida de proteção em rede não confiável, é útil e legítima. Como escudo de anonimato, é publicidade.
+
+**Criptografia ponta a ponta protege conteúdo, não a existência da comunicação.** Quem, quando, com que frequência e de onde permanecem visíveis para quem opera o serviço ou observa a rede. Protocolos de mensageria em grupo com garantias formais avançaram bastante nesse campo, mas o metadado permanece o problema estruturalmente mais difícil [@rfc9420].
+
+## Vigilância: três origens, três modelos de ameaça
+
+**Vigilância estatal** existe legitimamente, sob autorização judicial e limite legal, e ilegitimamente quando extrapola esse regime. A discussão relevante não é se ela deve existir, e sim se há autorização específica, proporcionalidade, controle judicial e prestação de contas. Para o profissional de infraestrutura, isso deixa de ser abstração no dia em que uma ordem chega à sua mesa — assunto que o @sec-cap099 tratou e que retorna adiante.
+
+**Vigilância comercial** é a de maior alcance sobre a maior parte das pessoas, e a menos percebida. Rastreadores em páginas e aplicativos, identificadores de publicidade, corretoras de dados que compram, cruzam e revendem perfis, e a inferência de atributos sensíveis — saúde, orientação, religião, situação financeira — a partir de sinais aparentemente inócuos. Do lado de quem constrói sistemas, o ponto prático é que **cada SDK de análise ou de publicidade embutido num aplicativo é um tratamento de dados pessoais feito pela sua organização**, com sua base legal e sua responsabilidade, como visto no @sec-cap105.
+
+**Vigilância mercenária** é a venda de capacidade de intrusão a Estados e a atores privados: implantes em telefones, muitas vezes sem interação da vítima, capazes de ler mensagens antes da cifra, ativar microfone e extrair tudo do aparelho. A documentação técnica produzida por laboratórios independentes mostrou uso repetido contra jornalistas, advogados e defensores de direitos humanos [@citizenlab2021]. Para quem tem esse modelo de ameaça, as recomendações mudam de natureza: reinicialização periódica, modos de bloqueio oferecidos pelos sistemas móveis, redução radical de superfície, dispositivos separados por função e apoio de organizações especializadas — e não "instale um antivírus".
+
+## Engenharia de privacidade: o que fazer no sistema
+
+Privacidade por projeto virou slogan; o que a torna operacional é um conjunto pequeno de decisões tomadas cedo, quando ainda são baratas [@cavoukian2011; @nistprivacy2020].
+
+**Minimização é a decisão de maior retorno.** Não coletar é o único controle com eficácia de cem por cento. Antes de cada campo, a pergunta: que decisão do produto depende disso? Se não houver resposta concreta, o campo sai. Isso vale especialmente para o que "pode ser útil um dia" — o campo que ninguém usa é o campo que aparece no vazamento.
+
+**Granularidade proporcional.** Se basta a faixa etária, não guarde a data de nascimento. Se basta o município, não guarde a coordenada. Se basta saber que houve acesso, não guarde o conteúdo consultado. Reduzir precisão preserva a utilidade e corta o risco de forma desproporcionalmente grande.
+
+**Retenção com prazo e com eliminação que de fato ocorre.** Prazo definido por finalidade e por obrigação legal, implementado como rotina automática — e verificado, porque a eliminação que existe só na política não existe. Incluir backups, réplicas, ambientes de análise e exportações. É aqui que a política do @sec-cap076 encontra a lei.
+
+**Separação por finalidade.** Base operacional e base analítica não precisam ter a mesma granularidade nem os mesmos identificadores. O cruzamento que cria o perfil completo é uma decisão, e ela merece ser explícita.
+
+**Controle de acesso por necessidade real, com registro de consulta.** Quem consultou o cadastro de quem, e por quê. Em base de dados pessoais, a consulta indevida por funcionário é o incidente mais frequente e o menos detectado — e sem registro de acesso não há como investigar nem como responder ao titular.
+
+**Transparência que uma pessoa entenda.** Aviso de privacidade legível, e não contrato de adesão de quarenta páginas. É requisito legal e, na prática, o principal determinante de confiança.
+
+## A tensão que não se resolve com slogan
+
+Este é um capítulo de fronteira, e seria desonesto encerrá-lo fingindo que privacidade e segurança pública são conciliáveis por definição. Não são, sempre. Investigação criminal precisa de dados; retenção obrigatória de registros existe porque sem ela crimes ficam sem elucidação; e há casos concretos — exploração sexual infantil, sequestro, fraude organizada — em que o acesso a metadados foi decisivo.
+
+Ao mesmo tempo, todo mecanismo de acesso construído para uso legítimo é utilizável para uso ilegítimo, por quem tiver acesso a ele. Não existe porta dos fundos que só abre para o lado certo: enfraquecer a cifra para permitir interceptação enfraquece a cifra para todo mundo, e o histórico de bases de retenção comprometidas é longo.
+
+Para quem opera infraestrutura, essa tensão se resolve em procedimento, não em opinião. **Cumprir a ordem judicial válida, no limite exato do que ela determina; recusar o pedido que não tem base legal; registrar tudo; e minimizar o que existe para ser pedido.** Este último ponto é o mais importante e o mais esquecido: o dado que não foi coletado, ou que já foi legitimamente eliminado, não é objeto de ordem nenhuma nem de vazamento nenhum.
+
+## ⚖️ Brasil em Foco
+
+**A proteção de dados pessoais é direito fundamental na Constituição.** O Supremo Tribunal Federal, ao julgar a medida provisória que determinava o compartilhamento de dados de assinantes de telecomunicações com o IBGE, reconheceu a autodeterminação informativa como direito fundamental autônomo — e a Emenda Constitucional nº 115/2022 o inscreveu expressamente no artigo 5º, além de fixar competência privativa da União para legislar sobre o tema. Isso muda o patamar do argumento: não se discute mais se há direito, discute-se proporcionalidade [@stfadi6387; @ec115].
+
+**A LGPD define anonimização por um teste de esforço, não por uma técnica.** Dado anonimizado é aquele que perdeu a possibilidade de associação a um indivíduo considerando meios técnicos razoáveis e disponíveis **na ocasião do tratamento** — o que traz duas consequências: a avaliação é contextual e datada, e dado que possa ser revertido por esforço razoável continua sendo dado pessoal. A lei também trata expressamente da pseudonimização como medida de segurança, e não como saída do regime legal [@lgpd2018].
+
+**Registros de conexão e de acesso a aplicações são dados pessoais sob guarda obrigatória.** O Marco Civil impõe ao provedor de conexão a guarda dos registros por um ano e ao provedor de aplicações por seis meses, sob sigilo, e condiciona o fornecimento a ordem judicial. O decreto regulamentador detalha os deveres de segurança dessa guarda. Na prática: **a obrigação legal de reter cria um repositório de altíssima sensibilidade, e protegê-lo é parte da obrigação, não um extra** [@marcocivil2014; @decreto8771; @cgibr2009].
+
+**Interceptação de comunicação tem lei própria e regime estrito.** A Lei nº 9.296/1996 disciplina a interceptação de comunicações telefônicas e de sistemas de informática, exigindo ordem judicial, e tipifica como crime a realização sem autorização. Para quem opera rede, a fronteira é nítida e vale repetir: **inspecionar tráfego de cliente sem ordem judicial é crime, não zona cinzenta** — e a monitoração operacional legítima se limita a metadados de rede necessários à operação do serviço, com finalidade e retenção definidas [@lei9296; @marcocivil2014].
+
+**A ANPD é a autoridade e já produziu orientação prática.** Guias sobre agentes de tratamento, sobre legítimo interesse, sobre relatório de impacto e a regulamentação de comunicação de incidentes formam o corpo de referência a consultar antes de decidir sobre base legal, sobre avaliação de risco e sobre notificação [@anpd2021agentes; @anpd2022legitimo; @anpd2024ripd; @anpd2024res15].
+
+**Videomonitoramento, biometria e geolocalização exigem cuidado reforçado.** Dado biométrico é sensível pelo artigo 5º da LGPD, o que estreita as bases legais aplicáveis e eleva a exigência de necessidade e proporcionalidade. Reconhecimento facial em espaço público é objeto de contestação judicial e de debate regulatório no país, e implantá-lo sem relatório de impacto, base legal sólida e avaliação de viés é assumir risco jurídico e reputacional relevante [@lgpd2018; @anpd2024ripd].
+
+**Acesso a dados no exterior e cooperação internacional têm caminho definido.** A Convenção de Budapeste, internalizada pelo Brasil, e os acordos de cooperação estruturam o pedido de dados armazenados fora do país. Para o provedor nacional, isso importa quando o pedido chega por via inadequada: a resposta correta é exigir o instrumento próprio, não facilitar por informalidade [@budapeste2023; @lei9296].
+
+**Transparência ativa e sigilo convivem no setor público.** A Lei de Acesso à Informação garante acesso à informação pública e, no mesmo movimento, protege informação pessoal com restrição de acesso e prazo. Órgãos que publicam base de dados "aberta" contendo quase-identificadores criam vazamento por transparência mal executada — e o remédio é agregação e avaliação de reidentificação antes da publicação, não a supressão do dado público [@lai2011; @lgpd2018].
+
+## 🛠️ No Campo
+
+**1. Pare de chamar de anonimizado o que só perdeu o nome.** Anonimização é propriedade do conjunto e do contexto, não uma operação sobre colunas.
+
+**2. Trate IP com horário como dado pessoal.** É exatamente o par que a lei obriga a guardar porque identifica o assinante.
+
+**3. Não use dado de produção em desenvolvimento e homologação.** É a medida de privacidade mais barata e mais eficaz que existe.
+
+**4. Minimize antes de proteger.** O campo que ninguém usa é o campo que aparece no vazamento; não coletar tem eficácia de cem por cento.
+
+**5. Reduza granularidade sempre que possível.** Faixa etária em vez de data, município em vez de coordenada — preserva utilidade e corta risco desproporcionalmente.
+
+**6. Implemente retenção como rotina automática e verifique que ela roda.** Inclua backups, réplicas, ambientes de análise e exportações.
+
+**7. Proteja a base de registros de conexão como ativo crítico.** A obrigação de reter cria o repositório mais sensível que você tem.
+
+**8. Registre quem consultou dados de quem.** Consulta indevida por pessoa interna é o incidente mais frequente e o menos detectado.
+
+**9. Separe base operacional de base analítica.** O cruzamento que forma o perfil completo deve ser decisão explícita, não efeito colateral.
+
+**10. Use privacidade diferencial para estatística agregada.** É a única técnica com garantia matemática — e é inadequada quando se precisa do registro individual.
+
+**11. Não trate anonimização como permanente.** Reavalie quando surgir base auxiliar nova; o que era anônimo pode deixar de ser.
+
+**12. Considere metadados no modelo de ameaça.** Quem falou com quem, quando e de onde conta a história sem que ninguém leia o conteúdo.
+
+**13. Não venda VPN comercial como anonimato.** Ela transfere a confiança, não a elimina.
+
+**14. Exija ordem judicial válida e cumpra apenas o que ela determina.** Registrar o pedido, a base legal e o que foi entregue é proteção da organização e da pessoa.
+
+**15. Nunca inspecione tráfego de cliente sem ordem judicial.** É crime pela Lei nº 9.296/1996, não zona cinzenta.
+
+**16. Faça relatório de impacto antes de biometria, reconhecimento facial ou geolocalização contínua.** Dado sensível estreita as bases legais e eleva a exigência de proporcionalidade.
+
+**17. Avalie reidentificação antes de publicar base "aberta".** Transparência mal executada é vazamento com aval institucional.
+
+## Resumo
+
+- **Privacidade não é confidencialidade.** Confidencialidade trata do acesso não autorizado; privacidade trata do tratamento autorizado que ainda assim causa dano — discriminação, exposição, perda de autonomia. A segunda categoria não tem correção técnica, tem decisão de projeto.
+- A identificabilidade é um **espectro**, não duas caixas. Remover o nome produz dado pseudonimizado, que continua sendo dado pessoal; a LGPD só deixa de incidir quando a reversão exigir esforço desproporcional, avaliado no contexto e na data.
+- Sweeney e Narayanan mostraram o mecanismo: **o atacante não quebra a anonimização, ele traz uma base auxiliar**. Por isso anonimização não é permanente e precisa ser reavaliada.
+- k-anonimidade e suas extensões reduzem risco com limites conhecidos; **privacidade diferencial** é a única com garantia matemática, adequada a estatística agregada e inadequada ao registro individual. E a regra que resolve a maior parte dos casos é não levar dado de produção para desenvolvimento.
+- **Metadados são o conteúdo**: estruturados, agregáveis e analisáveis em escala. Para quem opera infraestrutura, o registro que a lei obriga a guardar é o ativo de privacidade mais sensível e frequentemente o menos protegido.
+- Tor é anonimato real com limites precisos — autenticação destrói, correlação de pontas derrota, vazamento de dispositivo contorna. **VPN comercial transfere confiança, não anonimiza.** Criptografia ponta a ponta protege conteúdo, não a existência da comunicação.
+- Vigilância tem três origens com modelos de ameaça distintos: **estatal** (a discussão é de autorização e proporcionalidade), **comercial** (a de maior alcance e menor percepção) e **mercenária** (que exige recomendações de outra natureza para quem é alvo).
+- Engenharia de privacidade se resume a decisões tomadas cedo: **minimização**, granularidade proporcional, retenção com eliminação verificada, separação por finalidade, registro de consulta e transparência legível.
+- A tensão entre privacidade e investigação não se resolve com slogan, mas se resolve em procedimento: cumprir ordem válida no limite exato, recusar pedido sem base legal, registrar tudo e **minimizar o que existe para ser pedido**.
+- No Brasil, a proteção de dados é direito fundamental expresso na Constituição desde a EC nº 115/2022; a LGPD define anonimização por teste de esforço; o Marco Civil cria guarda obrigatória sob sigilo; e a Lei nº 9.296/1996 torna crime a interceptação sem ordem judicial — fronteira nítida para quem opera rede.
