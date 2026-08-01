@@ -1,3 +1,259 @@
 # Contenção, erradicação e recuperação {#sec-cap084}
 
-*(em elaboracao)*
+Uma indústria de médio porte detectou, numa quarta-feira, um binário desconhecido em uma estação da engenharia. A equipe agiu rápido: removeu o arquivo, formatou a máquina, reinstalou o sistema e devolveu ao usuário no mesmo dia. Chamaram isso de resposta a incidente e fecharam o chamado com a observação "ameaça erradicada".
+
+Onze dias depois, o ambiente inteiro foi cifrado.
+
+O que aconteceu entre uma coisa e outra é a matéria deste capítulo. A estação da engenharia não era o problema; era o sintoma mais visível de um comprometimento que já incluía três servidores, duas contas de serviço com privilégio elevado, uma tarefa agendada em um controlador de domínio e uma conta de VPN criada catorze dias antes por alguém que não existia no RH. Formatar a estação não removeu nada disso. Removeu apenas a evidência que teria revelado tudo isso.
+
+Contenção, erradicação e recuperação formam a fase em que a organização passa da observação à ação — e é onde o dano evitável se materializa, porque cada ação tomada aqui é irreversível em algum sentido. Este capítulo trata da ordem certa, das decisões que não têm resposta única e do que precisa acontecer para que o adversário não volte na semana seguinte.
+
+## Contenção: o objetivo é tempo, não vitória
+
+Contenção não elimina o adversário. Ela **limita o dano enquanto a análise avança** — compra tempo. Confundir contenção com erradicação é o que produz o caso de abertura: uma ação local aplicada como se fosse solução global.
+
+A literatura distingue contenção de curto e de longo prazo [@nistsp80061]. A distinção prática que mais importa, porém, é outra: **contenção parcial ou total**.
+
+Contenção parcial atinge parte do que o adversário controla. Ela tem uma propriedade perigosa: **avisa**. O adversário percebe que uma máquina sumiu, que uma conta parou de funcionar, que um endereço foi bloqueado — e reage. As reações típicas são acelerar o objetivo (disparar o ransomware antes do previsto), destruir evidência ou recuar para a persistência secundária e esperar. Nas três, a organização perde.
+
+Contenção total atinge simultaneamente tudo o que foi mapeado. É a que funciona, e exige que o mapeamento esteja completo — o que leva tempo. Daí a tensão central da fase.
+
+**A regra prática:** contenha imediatamente o que for necessário para interromper dano em curso; para o resto, mapeie primeiro e execute de uma vez. Se o ransomware está cifrando agora, não há o que discutir. Se o adversário está lá há três semanas e ninguém está sendo prejudicado neste minuto, mais duas horas de mapeamento valem mais que uma contenção precipitada.
+
+O que precisa estar mapeado antes da contenção total:
+
+- todos os hosts com sinal de comprometimento — não só os que geraram alerta;
+- todas as identidades usadas, incluindo contas de serviço e credenciais de aplicação;
+- todos os mecanismos de persistência: tarefas agendadas, serviços, chaves de execução, webshells, chaves SSH autorizadas, regras de encaminhamento de e-mail, aplicativos OAuth autorizados, contas criadas;
+- todos os canais de comando e controle observados;
+- todos os pontos de entrada, incluindo acesso legítimo obtido (VPN, acesso de fornecedor, portal externo).
+
+Persistência esquecida é a causa número um de reentrada, e a mais esquecida de todas é a **credencial legítima**. Não há malware a remover: o adversário simplesmente entra pela porta com uma senha válida.
+
+::: {#fig-observar-cortar}
+```{.tikz}
+%%| filename: observar-cortar
+%%| alt: Arvore de decisao entre continuar observando e conter imediatamente durante um incidente
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    dec/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                inner sep=4pt, text width=3.5cm, minimum height=0.95cm},
+    res/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                inner sep=4pt, text width=3.1cm, minimum height=0.9cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[dec, draw=manualblue, fill=manualblue!12] (q1) at (0,3.4)
+    {Há dano em curso agora?\\(cifragem, exfiltração, destruição)};
+
+  \node[res, draw=manualred, fill=manualred!13] (r1) at (-4.6,1.9)
+    {\textbf{Conter já}\\o que interrompe o dano};
+  \node[dec, draw=manualblue, fill=manualblue!12] (q2) at (1.9,1.9)
+    {O mapeamento está completo?};
+
+  \node[res, draw=manualgreen, fill=manualgreen!13] (r2) at (-2.4,0.4)
+    {\textbf{Contenção total}\\tudo de uma vez};
+  \node[dec, draw=manualblue, fill=manualblue!12] (q3) at (3.6,0.4)
+    {Ele pode ampliar o alcance nas próximas horas?};
+
+  \node[res, draw=manualyellow, fill=manualyellow!20] (r3) at (0.6,-1.2)
+    {\textbf{Contenção mínima}\\+ vigilância reforçada};
+  \node[res, draw=manualblue, fill=manualblue!13] (r4) at (5.2,-1.2)
+    {\textbf{Observar}\\com prazo definido};
+
+  \draw[fx] (q1) -| node[above left, font=\tiny] {sim} (r1);
+  \draw[fx] (q1) -| node[above right, font=\tiny] {não} (q2);
+  \draw[fx] (q2) -| node[above left, font=\tiny] {sim} (r2);
+  \draw[fx] (q2) -| node[above right, font=\tiny] {não} (q3);
+  \draw[fx] (q3) -| node[above left, font=\tiny] {sim} (r3);
+  \draw[fx] (q3) -| node[above right, font=\tiny] {não} (r4);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=5.0cm]
+    at (-4.4,-1.0)
+    {\textbf{O caminho que não existe:} conter um pedaço e continuar
+     investigando. A contenção parcial \textbf{avisa} --- e a reação
+     típica é acelerar o objetivo ou destruir evidência.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=10.6cm]
+    at (0.4,-2.9)
+    {\textbf{``Observar'' nunca é indefinido.} A decisão vem com prazo,
+     com critério explícito de interrupção (qualquer sinal de movimentação
+     para ativo crítico, qualquer acesso a base com dado pessoal) e com
+     quem decide registrado. Observação sem prazo é omissão com nome
+     técnico --- e, sob a LGPD, é omissão com consequência.};
+\end{tikzpicture}
+```
+A decisão de observar ou cortar. Ela é do comandante do incidente, não do analista — e precisa ficar registrada com a justificativa.
+:::
+
+## Preservar antes de conter
+
+Quase toda ação de contenção destrói evidência. Isolar da rede encerra conexões. Desabilitar uma conta apaga sessões. Reinstalar um sistema elimina tudo.
+
+A regra é simples e frequentemente atropelada: **colete antes de agir, quando o atraso for tolerável**. Em um host que será isolado, a coleta de memória e a triagem de artefatos levam minutos e preservam o que nunca mais existirá (@sec-cap085, @sec-cap087). Em ambiente virtualizado, o instantâneo com memória resolve os dois problemas de uma vez e é a forma mais barata de preservação existente.
+
+Uma ordem de trabalho que funciona para cada host comprometido:
+
+1. **Instantâneo com memória**, se for máquina virtual.
+2. **Coleta de memória**, se for física e o processo ainda estiver ativo.
+3. **Triagem de artefatos** — registros de eventos, artefatos de execução, persistência, histórico de comandos.
+4. **Isolamento de rede**, mantendo a máquina ligada.
+5. **Imagem completa de disco**, se o caso justificar — e sempre que houver perspectiva de processo judicial.
+
+Quando o volume de máquinas torna isso inviável, a saída é **amostrar com critério**: preservar integralmente os hosts que respondem às perguntas centrais (o primeiro comprometido, o que tem privilégio, o que tocou o dado) e fazer triagem rápida no resto.
+
+## Táticas de contenção, por tipo de acesso
+
+**Endpoint.** O isolamento por EDR é a ferramenta preferencial: corta a rede mantendo o canal de gestão, o que permite continuar coletando. Onde não houver EDR, a mudança de VLAN em porta de switch equivale. Desconectar o cabo funciona e tem a desvantagem de impedir a coleta remota.
+
+**Identidade.** Desabilitar a conta não basta — **é preciso encerrar as sessões e revogar os tokens já emitidos**. Este é um erro clássico em ambientes federados: a senha muda, a conta é desabilitada, e o token de acesso emitido antes continua válido até expirar. Em ambiente de nuvem, revogar sessões e sair de todos os dispositivos é passo obrigatório. Antes de tudo isso, registre o que a conta configurou — regras de encaminhamento, aplicativos autorizados, dispositivos registrados, chaves de API criadas —, porque a revogação apaga esse rastro.
+
+**Rede.** Bloqueio de destinos de comando e controle no firewall e no DNS interno, com a ressalva de que bloquear apenas um domínio quando há três é contenção parcial com todos os riscos que ela traz. Segmentação emergencial — isolar o segmento de servidores do de estações — é medida de alto impacto e alto valor em ransomware.
+
+**Nuvem e aplicação.** Revogar chaves de acesso, rotacionar segredos, desabilitar integrações, remover regras de firewall criadas pelo adversário, revisar políticas de IAM alteradas. Em nuvem, a persistência favorita não é malware: é uma chave de acesso criada com permissão ampla (@sec-cap051).
+
+**E-mail.** Remover regras de encaminhamento e de exclusão automática criadas, revogar consentimentos OAuth concedidos a aplicativos, purgar mensagens maliciosas ainda em caixas de entrada.
+
+## Erradicação: remover a causa, não o sintoma
+
+Erradicação é onde o caso de abertura falhou. Remover o binário encontrado é tratar sintoma. Erradicar exige responder à pergunta *como ele entrou e o que garante que ele continua entrando* — e agir sobre todos os itens da lista mapeada na contenção.
+
+**Reconstruir ou limpar?** Para um host com comprometimento confirmado e privilégio administrativo obtido, a resposta honesta é **reconstruir a partir de imagem confiável**. Remover malware conhecido não dá garantia sobre o que não foi encontrado, e o custo de errar é repetir o incidente. Limpeza é aceitável quando o comprometimento é comprovadamente superficial e limitado — e essa comprovação precisa ser mais forte que "o antivírus não acha mais nada".
+
+Reconstruir tem um pré-requisito frequentemente ignorado: **a imagem de origem precisa ser confiável**. Se o comprometimento durou semanas e o modelo de implantação foi atualizado nesse período, ele pode estar contaminado. O mesmo vale para os backups, tema do Volume 14.
+
+**Fechar o vetor de entrada.** Aplicar a correção da vulnerabilidade explorada, remover a exposição desnecessária, corrigir a configuração, exigir MFA no acesso que não exigia. Sem isso, tudo o mais é encenação.
+
+**A rotação de credenciais é a parte mais subestimada.** Em um domínio Windows com comprometimento de controlador de domínio, o escopo é maior do que a intuição sugere: contas de administrador de domínio e locais, contas de serviço, contas de aplicação e integração, chaves de API, segredos em pipeline, certificados cuja chave privada possa ter sido acessada, chaves SSH autorizadas — e a conta `krbtgt`, cuja senha precisa ser rotacionada **duas vezes**, respeitando o intervalo de replicação, porque o histórico de duas senhas mantém válidos os tíquetes forjados de outra forma. Rotacionar uma vez só é um dos erros mais comuns e mais caros da erradicação em Active Directory (@sec-cap037).
+
+::: {#fig-escopo-rotacao}
+```{.tikz}
+%%| filename: escopo-rotacao
+%%| alt: Escopo de rotacao de credenciais apos comprometimento de dominio, em camadas concentricas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ca/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=3.5cm, minimum height=0.95cm}}
+
+  \node[ca, draw=manualred, fill=manualred!14] (c1) at (-4.6,2.6)
+    {\textbf{1. O óbvio}\\senha do usuário afetado};
+  \node[ca, draw=manualred, fill=manualred!12] (c2) at (-4.6,1.2)
+    {\textbf{2. Administradores}\\domínio e locais};
+  \node[ca, draw=manualyellow, fill=manualyellow!18] (c3) at (-4.6,-0.2)
+    {\textbf{3. Contas de serviço}\\e de aplicação};
+  \node[ca, draw=manualyellow, fill=manualyellow!16] (c4) at (-4.6,-1.6)
+    {\textbf{4. Segredos não humanos}\\chaves de API, tokens, pipeline};
+  \node[ca, draw=manualblue, fill=manualblue!13] (c5) at (-4.6,-3.0)
+    {\textbf{5. Chaves e certificados}\\SSH autorizadas, chave privada};
+
+  \node[draw=manualred, fill=manualred!10, very thick, rounded corners=4pt,
+        align=left, inner sep=6pt, font=\tiny, text width=6.0cm]
+    at (1.6,2.2)
+    {\textbf{6. A conta \texttt{krbtgt} --- duas vezes}\\[3pt]
+     É a chave com que o controlador assina os tíquetes Kerberos.
+     Quem a obteve pode forjar tíquete para qualquer identidade,
+     e o tíquete forjado continua válido \textbf{mesmo depois de
+     todas as senhas trocadas}.\\[3pt]
+     O histórico guarda \textbf{duas} senhas: rotacionar uma vez não
+     invalida nada. É preciso rotacionar, aguardar a replicação
+     completa e rotacionar de novo.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=6.0cm]
+    at (1.6,-2.0)
+    {\textbf{A camada que quase sempre falta}\\[3pt]
+     A erradicação típica para na camada 2. As camadas 3 a 5 não têm
+     dono claro, não estão inventariadas e não aparecem em nenhum
+     painel --- e é por elas que o adversário volta, \textbf{sem
+     precisar de malware algum}.};
+
+  \foreach \na/\nb in {c1/c2, c2/c3, c3/c4, c4/c5}
+    { \draw[-{Stealth[length=2mm]}, thick, manualgray] (\na) -- (\nb); }
+\end{tikzpicture}
+```
+Escopo de rotação após comprometimento de domínio. A intuição para na camada 2; o adversário volta pelas camadas 3 a 5.
+:::
+
+## Recuperação: voltar sob critério, não sob pressão
+
+Recuperação é restaurar a operação normal com **confiança verificada** de que o ambiente está limpo. A pressão para voltar rápido é enorme e legítima — cada hora parada custa. É justamente por isso que os critérios precisam existir antes.
+
+**Critérios de retorno.** Vetor de entrada fechado e verificado; persistência mapeada removida em todos os hosts; credenciais rotacionadas no escopo completo; monitoramento adicional instalado; capacidade de detectar a reentrada do adversário.
+
+**Ordem de restauração.** Primeiro os serviços de infraestrutura de que tudo depende — diretório, DNS, autenticação —, reconstruídos em ambiente limpo e não simplesmente religados. Depois os sistemas críticos ao negócio. Por último, o restante. Restaurar aplicação de negócio antes do diretório limpo é reconstruir sobre fundação comprometida.
+
+**Restaurar de backup exige verificar o backup.** Se a permanência foi de três semanas, um backup de duas semanas pode conter a persistência. Verificação de integridade, varredura e — quando possível — restauração em ambiente isolado antes do retorno.
+
+**Monitoramento reforçado por um período definido.** As duas a quatro semanas seguintes ao retorno merecem vigilância acima do normal: detecção específica para os indicadores e comportamentos do caso, revisão diária de autenticações privilegiadas, alerta para qualquer uso das contas de emergência. As regras escritas a partir do incidente valem mais que qualquer indicador comprado, porque descrevem o adversário que já escolheu esta organização (@sec-cap078).
+
+**Encerrar formalmente.** O incidente termina quando alguém declara que terminou, com critérios atendidos e registro assinado. Sem encerramento explícito, o monitoramento reforçado se dissolve por atrito e ninguém sabe dizer se o caso está aberto.
+
+## Quando o adversário volta
+
+Reentrada em poucos dias é informação, não azar: significa que a erradicação foi incompleta. As causas, em ordem de frequência:
+
+**Persistência não mapeada** — uma tarefa agendada, um webshell em um servidor que ninguém lembrou, uma chave SSH autorizada. **Credencial não rotacionada** — a camada 3 a 5 da figura anterior. **Vetor não fechado** — o mesmo appliance de borda, ainda sem correção. **Backup contaminado** — a persistência voltou com a restauração. **Segundo adversário** — o acesso inicial foi vendido a mais de um comprador, cenário comum no modelo de corretagem de acesso.
+
+A resposta à reentrada não é repetir a mesma erradicação com mais empenho. É **reabrir a análise assumindo que o mapa estava errado**, ampliar o escopo e considerar reconstrução mais agressiva. E é o momento de reavaliar honestamente se a organização tem capacidade própria para o caso ou precisa de apoio externo.
+
+## ⚖️ Brasil em Foco
+
+**Mitigar é obrigação legal, não boa prática.** A LGPD exige que o controlador adote medidas para mitigar os efeitos do incidente, e a comunicação à ANPD deve descrever exatamente **quais medidas foram adotadas** e em que prazo. Contenção e erradicação, portanto, não são apenas ação técnica: são o conteúdo do que será relatado ao regulador, e a qualidade dessa resposta pesa na avaliação de diligência do agente de tratamento [@lgpd2018; @anpd2024res15].
+
+**Contenção não pode apagar registro que a lei manda guardar.** Reconstruir servidores e girar logs durante a resposta pode destruir registros de conexão e de acesso a aplicações cuja guarda o Marco Civil impõe a provedores, além de evidência que autoridade poderá requisitar. Antes de reconstruir, exporte e preserve; e se houver pedido de preservação cautelar, ele prevalece sobre a política interna de retenção [@marcocivil2014].
+
+**Pagamento de resgate: não há proibição expressa, e há risco real.** A legislação brasileira não veda expressamente o pagamento de resgate em ransomware, mas a decisão carrega riscos concretos: possível enquadramento em lavagem de dinheiro conforme o destinatário, exposição a sanções internacionais, ausência de garantia de recuperação, e o fato de o pagamento **não elimina a obrigação de comunicar o incidente à ANPD e aos titulares**. Pagar não torna o vazamento inexistente. A decisão é executiva, precisa envolver jurídico desde o início e ser registrada com fundamentação [@cert2024ransomware; @anpd2023ransomware].
+
+**A recuperação de valores em fraude financeira tem janela curta.** Em desvio por transferência instantânea, o Mecanismo Especial de Devolução do Pix permite à instituição bloquear e devolver recursos em situações de fraude, mas depende de acionamento imediato pela instituição financeira. O playbook precisa conter o contato direto do banco e o procedimento de acionamento, porque a janela útil é medida em minutos, não em dias (@sec-cap066) [@bcbmed; @bcbpix].
+
+**Setor financeiro e telecomunicações: continuidade é dever regulado.** A Resolução BCB nº 4.893/2021 exige procedimentos de resposta que assegurem continuidade e restabelecimento dos serviços, com registro dos efeitos. Prestadoras de telecomunicações têm dever equivalente perante a Anatel, com atenção ao impacto no assinante. Em ambos os casos, a recuperação precisa ser documentada, não apenas executada [@bcb4893; @anatel717].
+
+**Reconstruir estação de trabalho tem implicação trabalhista e de dados pessoais.** Formatar o equipamento de um empregado apaga dados que podem ser relevantes para apuração interna e para eventual processo — e, se houver dado pessoal do próprio empregado ou de terceiros, a coleta e o descarte precisam observar finalidade e minimização. Preservar imagem antes de reconstruir resolve os dois problemas simultaneamente [@lgpd2018; @lei13964].
+
+**CERT.br e o ecossistema de bloqueio.** Comunicar indicadores ao CERT.br e às operadoras envolvidas ajuda a derrubar infraestrutura de comando e controle hospedada no país e frequentemente devolve informação sobre a campanha. É ação de baixo custo, subutilizada na resposta brasileira [@cert2024ransomware; @cert2024incidentes].
+
+**Seguro cibernético condiciona cobertura a procedimento.** Apólices praticadas no mercado brasileiro costumam exigir comunicação em prazo curto, uso de prestadores credenciados e preservação de evidência. Reconstruir tudo antes de comunicar a seguradora é caminho conhecido para a negativa de cobertura.
+
+## 🛠️ No Campo
+
+**1. Não contenha pela metade.** Interrompa imediatamente o dano em curso; para o resto, mapeie tudo e execute de uma vez. Contenção parcial avisa o adversário e a reação típica é acelerar.
+
+**2. Mapeie cinco coisas antes da contenção total:** hosts, identidades, persistência, canais de comando e controle e pontos de entrada — incluindo o acesso legítimo com credencial válida.
+
+**3. Preserve antes de agir.** Instantâneo com memória em VM, coleta de memória em física, triagem de artefatos, só então isolamento. Minutos de coleta contra evidência que não volta.
+
+**4. Isole sem desligar, e prefira o EDR.** Ele corta a rede e mantém o canal de gestão, o que permite continuar coletando.
+
+**5. Desabilitar conta não basta: encerre sessões e revogue tokens.** Token emitido antes continua válido depois da troca de senha.
+
+**6. Antes de revogar, registre o que a conta configurou.** Encaminhamentos, aplicativos OAuth, dispositivos, chaves de API. A revogação apaga esse rastro.
+
+**7. Reconstrua em vez de limpar, quando houve privilégio administrativo.** E verifique se a imagem de origem e o modelo de implantação não foram contaminados no período.
+
+**8. Feche o vetor de entrada antes de restaurar qualquer coisa.** Sem isso, o resto é encenação com data marcada.
+
+**9. Rotacione a camada que ninguém lembra:** contas de serviço, chaves de API, segredos de pipeline, chaves SSH autorizadas e certificados. É por aí que ele volta.
+
+**10. Rotacione `krbtgt` duas vezes, respeitando a replicação.** Uma vez só não invalida os tíquetes forjados.
+
+**11. Restaure na ordem: diretório e autenticação limpos primeiro**, depois sistemas críticos, depois o resto.
+
+**12. Verifique o backup antes de confiar nele.** Se a permanência foi longa, o backup pode trazer a persistência de volta.
+
+**13. Mantenha monitoramento reforçado por duas a quatro semanas**, com regras escritas a partir deste incidente — valem mais que qualquer indicador comprado.
+
+**14. Encerre formalmente, com critérios atendidos e registro.** Sem declaração de encerramento, o reforço se dissolve por atrito.
+
+**15. Trate reentrada como falha de mapeamento, não como azar.** Reabra a análise assumindo que o mapa estava errado e reavalie a necessidade de apoio externo.
+
+## Resumo
+
+- Contenção **compra tempo**, não elimina o adversário. Confundi-la com erradicação produz o padrão clássico: formatar a máquina visível e ser cifrado onze dias depois.
+- Contenção parcial **avisa** o adversário, e a reação típica é acelerar o objetivo ou destruir evidência. A regra é interromper imediatamente o dano em curso e, para o restante, mapear tudo e executar de uma só vez.
+- Preservar vem antes de conter sempre que o atraso for tolerável: instantâneo com memória, coleta de memória, triagem de artefatos e só então isolamento. Cada ação de contenção destrói alguma evidência.
+- Em identidade, desabilitar a conta não basta — é preciso **encerrar sessões e revogar tokens** já emitidos, e registrar antes o que a conta configurou, porque a revogação apaga esse rastro.
+- Erradicação exige fechar o vetor de entrada e remover **toda** a persistência mapeada. Para host com privilégio administrativo comprometido, reconstruir a partir de imagem confiável é a resposta honesta.
+- A rotação de credenciais vai muito além dos administradores: contas de serviço, segredos de pipeline, chaves de API, chaves SSH e certificados — e a conta `krbtgt`, que precisa ser rotacionada **duas vezes**.
+- Recuperação obedece a critérios definidos antes, restaura na ordem (diretório limpo primeiro), verifica o backup, mantém monitoramento reforçado por semanas e **encerra formalmente**.
+- No Brasil, mitigar é obrigação da LGPD e o conteúdo do relatório à ANPD; a reconstrução não pode destruir registros cuja guarda o Marco Civil impõe; pagar resgate não é proibido, mas não elimina o dever de comunicar nem os riscos jurídicos; e em fraude via Pix a janela de bloqueio é de minutos.
