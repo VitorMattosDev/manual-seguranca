@@ -1,3 +1,248 @@
 # Phishing, spear phishing e fraude do e-mail corporativo {#sec-cap065}
 
-*(em elaboracao)*
+O e-mail chegou de um endereço conhecido: o gerente comercial do fornecedor de equipamentos com quem a empresa trabalha há seis anos. Estava na mesma conversa dos meses anteriores, com todo o histórico de respostas abaixo, escrito no mesmo tom e assinando com a mesma assinatura de sempre. Informava, em duas linhas, que a empresa havia migrado de banco e pedia a atualização dos dados de recebimento para as próximas faturas. Anexava o novo documento com os dados.
+
+O analista do contas a pagar atualizou o cadastro. Trinta e um dias depois, o fornecedor ligou cobrando três faturas vencidas — R$ 480 mil que haviam sido pagos, pontualmente, para a conta certa segundo o cadastro e errada segundo a realidade.
+
+Nada nesse e-mail era falsificado. Ele veio mesmo da caixa do gerente comercial, cuja conta havia sido comprometida três semanas antes. Passou em SPF, em DKIM e em DMARC. Nenhum anexo tinha malware. Nenhum link levava a lugar nenhum. **Não havia nada para um filtro detectar** — e é por isso que este é o tipo de fraude que mais dinheiro move no mundo corporativo.
+
+## O espectro: de rede de arrasto a alvo único
+
+Chamar tudo de "phishing" esconde diferenças que mudam completamente a defesa. Vale separar.
+
+**Phishing em massa.** Milhões de mensagens idênticas, custo próximo de zero, taxa de conversão baixíssima e ainda assim lucrativa — o volume agregado medido trimestralmente segue na casa dos milhões de campanhas únicas [@apwg2024]. Isca genérica: banco, transportadora, restituição de imposto, streaming. Defesa: filtro de reputação e conteúdo resolve a maior parte, e o que passa é razoavelmente reconhecível.
+
+**Spear phishing.** Mensagem construída para uma pessoa ou um pequeno grupo, com o reconhecimento do @sec-cap057 por trás: nome do gestor, projeto em andamento, fornecedor real, evento que a pessoa realmente frequentou. Volume baixo demais para reputação; conteúdo plausível demais para heurística. É o vetor de entrada preferido de operações dirigidas.
+
+**Whaling.** Spear phishing contra a alta direção, ou usando a identidade dela. O executivo é alvo valioso e, simultaneamente, o pretexto mais eficaz — poucos subordinados questionam um pedido do CEO.
+
+**Comprometimento de e-mail corporativo (BEC/EAC).** A categoria da abertura deste capítulo, e a que causa o maior prejuízo financeiro direto reportado ano após ano [@ic3report2024]. Não há malware, não há link, e frequentemente não há sequer falsificação: a mensagem parte de uma caixa legítima comprometida ou de um domínio parecido, e o "payload" é uma instrução de negócio.
+
+::: {#fig-espectro-phishing}
+```{.tikz}
+%%| filename: espectro-phishing
+%%| alt: Espectro do phishing do ataque em massa ao comprometimento de e-mail corporativo, mostrando volume decrescente, personalização crescente e a queda da eficácia dos filtros
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    tipo/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                 inner sep=4pt, text width=2.55cm, minimum height=1.9cm}}
+
+  \foreach \idx/\cor/\tit/\des in {
+    0/manualgreen/{Phishing em massa}/{Milhões de cópias\\Isca genérica\\Conversão baixa,\\lucro por volume},
+    1/manualyellow/{Spear phishing}/{Dezenas de alvos\\OSINT por trás\\Contexto real:\\projeto, gestor, evento},
+    2/manualred/{Whaling}/{Direção como alvo\\ou como identidade\\usada no pretexto},
+    3/manualblue/{BEC / EAC}/{Alvo único\\Conta legítima\\comprometida.\\Sem link, sem anexo}}
+    {
+      \node[tipo, draw=\cor, fill=\cor!12] (t\idx) at (\idx*2.95-4.42, 1.5)
+        {\textbf{\tit}\\[3pt]\des};
+    }
+
+  \draw[->, >=stealth, very thick, manualgray] (-5.9,-0.05) -- (5.9,-0.05);
+  \node[font=\tiny, anchor=north] at (-4.42,-0.2) {volume alto};
+  \node[font=\tiny, anchor=north] at (4.42,-0.2) {volume um};
+  \node[font=\tiny, anchor=south, manualgray] at (0,0.05)
+    {personalização, custo por alvo e prejuízo por incidente crescem $\rightarrow$};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\tiny, text width=5.4cm, anchor=north] at (-3.1,-0.9)
+    {\textbf{Filtro resolve bem}\\Reputação, assinatura, volume e\\conteúdo repetido dão sinal forte.};
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\tiny, text width=5.4cm, anchor=north] at (3.1,-0.9)
+    {\textbf{Filtro não tem o que ver}\\Origem legítima, texto plausível,\\zero indicador técnico. O controle\\tem de estar no \emph{processo de negócio}.};
+\end{tikzpicture}
+```
+O espectro do phishing. À medida que o volume cai e a personalização sobe, o controle técnico perde tração e o controle de processo passa a ser o que resta.
+:::
+
+## O que o atacante falsifica, e como
+
+Antes de falar de defesa, é preciso ver o que exatamente está sendo forjado. Um e-mail tem várias "identidades", e quase todas são texto livre.
+
+**O nome de exibição.** O campo mais explorado, porque é o único que a maioria dos clientes móveis mostra. `Financeiro Diretoria <qualquer@coisa.com>` aparece no celular apenas como "Financeiro Diretoria". Não requer nenhuma técnica: é digitar.
+
+**O domínio parecido.** Registrar `empresa-sa.com.br` quando o legítimo é `empresasa.com.br`; trocar `rn` por `m`; usar um TLD diferente; ou empregar caracteres de outros alfabetos visualmente idênticos aos latinos (homoglifos), produzindo um domínio que é indistinguível a olho nu e completamente distinto para o resolvedor. Contra o olho humano, esses truques funcionam sempre — a defesa é técnica (marcação de domínio recém-registrado, lista de domínios sósias monitorados), nunca perceptiva.
+
+**O envelope contra o cabeçalho.** O remetente do envelope SMTP (`MAIL FROM`) e o `From:` que o usuário vê são campos diferentes e podem divergir legitimamente — é assim que listas de discussão e sistemas de encaminhamento funcionam. O atacante explora exatamente essa folga.
+
+**A conversa sequestrada.** O nível seguinte: em vez de criar uma mensagem, responder a uma existente. Com acesso à caixa comprometida, o atacante responde a uma negociação em andamento, com o histórico completo abaixo. Não há gatilho de suspeita disponível — o contexto é verdadeiro.
+
+**A regra de encaminhamento silenciosa.** Depois de comprometer a caixa, o atacante cria uma regra que move mensagens contendo "fatura", "boleto" ou "pagamento" para uma pasta que a vítima não abre, e encaminha cópias para fora. A vítima segue usando a conta normalmente por semanas sem notar que uma parte da própria correspondência foi desviada. **Regra de encaminhamento externo criada em caixa de usuário é um dos sinais de comprometimento mais confiáveis que existem**, e um dos menos monitorados.
+
+## SPF, DKIM e DMARC: o que resolvem e o que não
+
+O trio de autenticação de e-mail é indispensável e sistematicamente mal compreendido. Cada peça responde uma pergunta estreita.
+
+**SPF** publica em DNS quais servidores podem enviar em nome do domínio, e o receptor confere contra o remetente do **envelope** [@rfc7208]. Não olha o `From:` que o usuário vê, e quebra em encaminhamento.
+
+**DKIM** assina criptograficamente cabeçalhos e corpo com uma chave cujo par público está no DNS do domínio [@rfc6376]. Prova que a mensagem passou por um servidor autorizado daquele domínio e não foi alterada — mas, sozinha, não exige que o domínio assinante seja o do `From:`.
+
+**DMARC** é a peça que amarra: exige **alinhamento** entre o domínio do `From:` visível e o domínio validado por SPF ou por DKIM, publica a política para o receptor aplicar quando falhar (`none`, `quarantine`, `reject`) e habilita relatórios de volume [@rfc7489]. É o DMARC — e só ele — que impede alguém de enviar mensagens como `@suaempresa.com.br` a partir de qualquer lugar.
+
+E aqui está o ponto que a maior parte das organizações não internaliza: **DMARC protege o seu domínio contra falsificação; não protege a sua caixa de entrada contra fraude**. As três fraudes mais caras passam por ele intactas.
+
+- Mensagem de **domínio sósia** (`empresa-sa.com.br`): autentica perfeitamente, porque é um domínio de verdade, sob controle do atacante, com SPF e DKIM corretos.
+- Mensagem de **conta legítima comprometida**: passa em tudo, porque não há nada de falso nela.
+- Mensagem de **domínio gratuito** com nome de exibição forjado: autentica pelo provedor gratuito, e o nome de exibição não é coberto por nenhum dos três.
+
+::: {#fig-spf-dkim-dmarc}
+```{.tikz}
+%%| filename: spf-dkim-dmarc
+%%| alt: Cobertura de SPF, DKIM e DMARC contra os vetores de fraude por e-mail, mostrando que domínio sósia e conta comprometida passam intactos
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cab/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                inner sep=3pt, text width=2.05cm, minimum height=0.75cm},
+    cel/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                inner sep=3pt, text width=2.05cm, minimum height=0.75cm},
+    vet/.style={draw, thick, rounded corners=2pt, align=left, font=\tiny,
+                inner sep=4pt, text width=4.1cm, minimum height=0.75cm,
+                draw=manualgray, fill=manualgray!8}}
+
+  \node[cab, draw=manualblue, fill=manualblue!15] at (0.35,2.5) {\textbf{SPF}};
+  \node[cab, draw=manualblue, fill=manualblue!15] at (2.6,2.5) {\textbf{DKIM}};
+  \node[cab, draw=manualblue, fill=manualblue!15] at (4.85,2.5) {\textbf{DMARC}};
+  \node[font=\tiny\itshape, text width=4.1cm, align=left] at (-3.5,2.5)
+    {Vetor de fraude por e-mail};
+
+  \foreach \idx/\vetor/\resspf/\resdkim/\resdmarc/\corspf/\cordkim/\cordmarc in {
+    0/{Falsificação direta do\\seu domínio no \texttt{From:}}/{parcial}/{parcial}/{\textbf{bloqueia}}/manualyellow/manualyellow/manualgreen,
+    1/{Nome de exibição forjado,\\endereço de domínio livre}/{passa}/{passa}/{passa}/manualred/manualred/manualred,
+    2/{Domínio sósia\\(\texttt{empresa-sa.com.br})}/{passa}/{passa}/{passa}/manualred/manualred/manualred,
+    3/{Conta legítima\\comprometida (BEC)}/{passa}/{passa}/{passa}/manualred/manualred/manualred}
+    {
+      \node[vet, anchor=center] at (-3.5, 1.75-\idx*0.9) {\vetor};
+      \node[cel, draw=\corspf, fill=\corspf!14] at (0.35, 1.75-\idx*0.9) {\resspf};
+      \node[cel, draw=\cordkim, fill=\cordkim!14] at (2.6, 1.75-\idx*0.9) {\resdkim};
+      \node[cel, draw=\cordmarc, fill=\cordmarc!14] at (4.85, 1.75-\idx*0.9) {\resdmarc};
+    }
+
+  \node[draw=manualred, fill=manualred!10, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=11.6cm, anchor=north] at (0.4,-1.9)
+    {\textbf{DMARC protege o seu domínio contra falsificação; não protege a sua caixa
+     de entrada contra fraude.} As três linhas vermelhas exigem controles de outra
+     natureza --- marcação de domínio novo e externo, detecção de anomalia na conta e,
+     acima de tudo, processo financeiro com verificação fora de banda.};
+\end{tikzpicture}
+```
+Cobertura real do trio de autenticação. A parte que ele resolve é essencial; a parte que ele não resolve é onde está o prejuízo.
+:::
+
+Nada disso desqualifica o trio — publicar SPF, assinar com DKIM e chegar a `p=reject` no DMARC é obrigação básica, porque impede que **o seu** domínio seja usado para fraudar seus clientes e parceiros, o que é dano reputacional e legal direto. Só é preciso saber o que se comprou.
+
+## Roubo de credenciais e a derrota do segundo fator
+
+O phishing de credenciais evoluiu junto com a autenticação multifator, e hoje o segundo fator baseado em código é rotineiramente contornado. Três técnicas dominam.
+
+**Proxy reverso em tempo real.** A página falsa não simula o serviço: ela o **retransmite**. A vítima digita usuário e senha na página do atacante, que os repassa ao serviço real; o serviço pede o código; a página falsa pede o código; a vítima entrega; o atacante conclui a autenticação e captura o **cookie de sessão** já autenticado. Como o que é roubado é a sessão, e não a credencial, trocar a senha depois não expulsa o invasor — é preciso invalidar as sessões (a lição do @sec-cap046).
+
+**Fadiga de notificação.** O atacante que já tem a senha dispara dezenas de solicitações de aprovação por push, às três da manhã, até que a vítima aprove para conseguir dormir. A contramedida é a correspondência de número, em que o usuário precisa digitar o número exibido na tela de login em vez de apenas tocar em "aprovar".
+
+**Phishing de consentimento.** Em vez de pedir a senha, o atacante pede uma **autorização OAuth**: uma aplicação de aparência legítima solicita permissão permanente para ler e-mails e arquivos. A vítima clica em "permitir" numa tela verdadeira do provedor de identidade. Não há senha roubada, não há segundo fator envolvido, e o acesso persiste até que o consentimento seja revogado — inclusive depois de troca de senha e de reset de MFA.
+
+Contra as três, o controle decisivo é o mesmo: **autenticação resistente a phishing** — passkeys ou chaves FIDO2, cuja assinatura é vinculada à origem real do site e simplesmente não é produzida para um domínio de atacante (@sec-cap024) [@fidopasskeys; @webauthn2021]. É a diferença entre um segundo fator que a vítima *pode* entregar e um que ela *não consegue* entregar. Some-se a isso o acesso condicional por dispositivo gerenciado e o consentimento de aplicações restrito a administradores.
+
+## BEC: quando o controle não é técnico
+
+O comprometimento de e-mail corporativo merece tratamento à parte porque quebra a intuição do defensor técnico. Não há artefato para bloquear, não há indicador para caçar, não há assinatura para escrever. Os cenários recorrentes:
+
+- **Fraude da fatura.** O da abertura: fornecedor real, conta de recebimento trocada.
+- **Fraude do executivo.** Pedido urgente de transferência partindo, aparentemente, da direção, com sigilo justificado por "negociação em andamento".
+- **Comprometimento de conta de fornecedor.** A fraude entra pela cadeia, não pela porta da frente — o elo mais fraco não é você.
+- **Desvio de folha.** Pedido de alteração de conta de depósito de salário, feito em nome de um funcionário, para o RH.
+- **Fraude do advogado ou do despachante.** Autoridade profissional somada a urgência e confidencialidade.
+
+O padrão comum é evidente: em todos, o pedido é **alterar para onde o dinheiro vai** ou **mandar dinheiro agora**. E isso sugere onde o controle precisa morar.
+
+O controle eficaz contra BEC é um procedimento financeiro, não um produto de segurança:
+
+1. **Alteração de dados bancários de fornecedor exige retorno de ligação** para o telefone que já constava no cadastro **antes** do pedido — nunca para um número informado na mensagem.
+2. **Segunda pessoa aprova** pagamentos e alterações cadastrais acima de um limite, com aprovação independente e não sequencial.
+3. **Sigilo e urgência simultâneos são gatilho de escalonamento**, não de obediência. A combinação é a assinatura da fraude.
+4. **A alçada não é suspensa por hierarquia.** Nenhuma autoridade dispensa o procedimento — e isso precisa estar escrito e ser sustentado pela direção.
+5. **Período de espera para primeira transação** em conta recém-cadastrada.
+
+Nenhum desses cinco itens é comprável. Todos são decisões de processo, e é por isso que o BEC continua sendo a fraude mais cara: ele ataca uma superfície que a área de segurança frequentemente não considera sua.
+
+## Outros vetores da mesma família
+
+**Smishing (SMS) e mensageria.** O canal onde a URL é curta e ilegível por natureza, o remetente é um número qualquer e não existe filtro corporativo. É o vetor dominante no Brasil, e o @sec-cap066 se dedica a ele.
+
+**Quishing (QR code).** O código embutido na imagem atravessa filtros que analisam texto e links, e leva o usuário do dispositivo gerenciado para o celular pessoal, fora de todo controle corporativo. QR code em e-mail pedindo autenticação não tem caso de uso legítimo — pode ser tratado como suspeito por padrão.
+
+**Anexos.** O malware por anexo perdeu espaço com o bloqueio de macros por padrão, mas persiste em formatos de contêiner (ISO, arquivos compactados protegidos por senha para escapar da análise) e em documentos que só carregam um link. O tratamento é o do @sec-cap038 e do @sec-cap042: bloqueio por tipo, abertura protegida, e a lógica de execução restrita.
+
+**Vishing como segundo ato.** A combinação mais eficaz atualmente: um e-mail que não pede nada, apenas informa uma "cobrança" e oferece um telefone de suporte. A vítima liga — por iniciativa própria, o que derruba a desconfiança — e a fraude acontece por voz, fora do alcance de qualquer filtro.
+
+## Defesa em profundidade, e simulação feita direito
+
+A pilha defensiva se organiza em camadas com funções distintas: **antes** (autenticação de domínio, filtro, bloqueio de recém-registrados, marcação visível de mensagem externa, remoção retroativa de mensagens já entregues), **durante** (autenticação resistente a phishing, acesso condicional, navegador isolado, restrição de consentimento OAuth) e **depois** (detecção de regra de encaminhamento externo, de acesso de origem improvável, de token anômalo; invalidação de sessão; playbook de resposta). A capacidade de **remover uma mensagem de todas as caixas depois de entregue** merece destaque: quando o primeiro usuário reporta, ela transforma um incidente de mil pessoas num incidente de uma.
+
+Sobre simulação de phishing, vale uma advertência, porque é a prática mais mal executada da área. Simulação existe para **medir e melhorar o sistema**, não para pegar gente. Feita errado — com isca cruel, punição para quem clica, ranking de vergonha —, ela produz ressentimento, destrói a confiança na equipe de segurança e, o pior, ensina o funcionário a não reportar. Feita direito:
+
+- A métrica primária é a **taxa de reporte**, não a taxa de clique. Reportar é a ação defensiva; não clicar é apenas ausência de ação.
+- A **dificuldade da isca é declarada e controlada** — o Phish Scale do NIST existe para isso, e comparar taxas de campanhas de dificuldades diferentes não significa nada [@nistphishscale].
+- **Quem clica recebe orientação imediata, curta e sem constrangimento**, e nunca sanção de primeira instância.
+- Quem reporta recebe **agradecimento**.
+- A campanha mede também o **tempo até o primeiro reporte** e o **tempo até a contenção**, que são as variáveis que determinam o custo de um incidente real.
+- Iscas que exploram tema de folha de pagamento, demissão, benefício ou saúde geram dano de confiança desproporcional ao aprendizado. Existem temas suficientes sem recorrer a eles.
+
+## ⚖️ Brasil em Foco
+
+**A fraude por e-mail corporativo é estelionato qualificado com competência definida.** O art. 171, §2º-A e §4º do Código Penal, na redação da Lei 14.155/2021, alcança a fraude eletrônica e fixa a competência pelo domicílio da vítima quando o crime é praticado mediante transferência de valores — o que resolve o antigo problema de a vítima ter de acionar a comarca do fraudador. Para a empresa lesada, isso significa registro de ocorrência viável na própria localidade [@lei14155].
+
+**Pagamento a conta fraudada não extingue a dívida com o fornecedor real.** Do ponto de vista civil, o pagamento feito a quem não é o credor não libera o devedor, salvo circunstâncias específicas. Na prática, a empresa fraudada tende a permanecer devedora do fornecedor e credora do fraudador — e o litígio subsequente costuma girar em torno de qual das partes tinha o dever de cuidado sobre a conta comprometida. **É por isso que o procedimento de retorno de ligação para alteração de dados bancários é, além de controle de segurança, proteção jurídica documentada.**
+
+**Comprometimento de caixa corporativa é quase sempre incidente com dados pessoais.** Uma caixa de e-mail de trabalho contém dados de clientes, candidatos, funcionários e parceiros. Acesso indevido a ela dispara a avaliação de risco da LGPD e, havendo risco relevante, a comunicação à ANPD e aos titulares no prazo de três dias úteis da Resolução CD/ANPD nº 15/2024. Tratar o caso apenas como "conta invadida" e reiniciar a senha sem avaliação de incidente é erro comum e caro [@lgpd2018; @anpd2024res15].
+
+**O acesso indevido à conta configura crime autônomo.** Independentemente do prejuízo financeiro, invadir dispositivo ou conta alheia para obter comunicações é conduta tipificada pela Lei 12.737/2012, com agravamento se houver obtenção de conteúdo de comunicações privadas ou segredos comerciais [@lei12737].
+
+**A instituição financeira tem deveres próprios de prevenção.** A Resolução CMN nº 4.893/2021 e a Resolução BCB nº 85/2021 exigem controles de prevenção a fraude e comunicação de incidentes relevantes ao Banco Central. Além disso, a Súmula 479 do STJ firmou a responsabilidade objetiva das instituições financeiras por danos decorrentes de fraudes de terceiros no âmbito de operações bancárias — o que não transfere automaticamente ao banco o prejuízo de um BEC, em que a ordem partiu validamente do cliente, mas define o terreno da discussão [@bcb4893; @bcb85; @stjsumula479].
+
+**Domínio sósia registrado sob o `.br` tem caminho de contestação.** O Registro.br mantém procedimento próprio e o Sistema Administrativo de Conflitos de Internet relativos a Nomes de Domínio (SACI-Adm) permite disputar registros abusivos que reproduzam marca alheia. Monitorar registros parecidos com o próprio domínio e agir cedo é mais barato do que litigar depois da fraude consumada [@nicbr2024registro].
+
+**Notificação e contenção contam com estrutura nacional.** O CERT.br recebe notificações de incidentes e de páginas fraudulentas hospedadas no Brasil, e o encaminhamento ao CSIRT do provedor responsável costuma ser o caminho mais rápido para derrubada de página de phishing. Para o setor público federal, o CTIR Gov concentra a coordenação [@certbrfraudes].
+
+**Simulação de phishing com empregados exige cuidado trabalhista e de privacidade.** O exercício trata dados pessoais de empregados e produz registros de comportamento individual. É preciso base legal, transparência na política interna, finalidade limitada à melhoria do programa, retenção mínima e — importante — **vedação explícita de uso do resultado individual para fins disciplinares ou de avaliação de desempenho**. Usar resultado de simulação como fundamento de punição é convite a litígio e destrói a única coisa que o programa precisa produzir: relatos [@lgpd2018].
+
+## 🛠️ No Campo
+
+**1. Chegue a `p=reject` no DMARC.** Comece em `p=none` com relatórios, inventarie os remetentes legítimos (marketing, ERP, faturamento, sistemas de chamado), corrija o alinhamento e endureça. Parar em `p=none` por anos é o padrão mais comum e não protege ninguém.
+
+**2. Assine tudo com DKIM e mantenha o SPF enxuto.** Cuidado com o limite de consultas de DNS do SPF; ele falha em silêncio quando estourado.
+
+**3. Marque visualmente toda mensagem externa.** Uma tarja no corpo, não um prefixo no assunto que o usuário aprende a ignorar em duas semanas.
+
+**4. Quarentene domínios registrados nos últimos 30 dias.** É um dos filtros de melhor relação sinal-ruído contra spear phishing e domínio sósia.
+
+**5. Monitore registros de domínios parecidos com o seu.** Combinações de erro de digitação, hífen, TLD alternativo e homoglifos. Descobrir o sósia antes da campanha vale o custo.
+
+**6. Implante autenticação resistente a phishing.** Passkey ou FIDO2, começando por administradores, financeiro e direção. É o único controle que derrota proxy reverso em tempo real.
+
+**7. Ative correspondência de número no MFA por push.** E elimine SMS como segundo fator para contas privilegiadas.
+
+**8. Restrinja o consentimento de aplicações OAuth a administradores.** Phishing de consentimento não rouba senha e sobrevive a reset de credencial — só revogação resolve.
+
+**9. Alerte sobre criação de regra de encaminhamento externo.** É um dos indicadores mais confiáveis de caixa comprometida, e um dos menos configurados.
+
+**10. Tenha capacidade de remoção retroativa de mensagens.** Quando o primeiro usuário reporta, você tira a mensagem de todas as caixas. Isso transforma mil incidentes em um.
+
+**11. Invalide sessões, não só senhas.** Roubo de cookie de sessão sobrevive à troca de senha. O procedimento de conta comprometida termina em revogação de tokens e de sessões ativas.
+
+**12. Escreva o procedimento de alteração de dados bancários e não abra exceção.** Retorno de ligação ao número do cadastro anterior, segunda aprovação, período de espera para a primeira transação. Este item, sozinho, vale mais que a maior parte do orçamento de ferramenta contra BEC.
+
+**13. Trate sigilo + urgência como gatilho de escalonamento.** A combinação é a assinatura da fraude do executivo. Escalar nunca é ofensa.
+
+**14. Instale um botão de reportar de um clique e responda rápido.** Meça taxa e tempo de reporte como métrica primária. Agradeça o falso positivo em público.
+
+**15. Faça simulação para medir o sistema, não para pegar gente.** Dificuldade declarada, orientação imediata sem constrangimento, zero punição individual, e nada de iscas sobre folha, demissão ou saúde.
+
+## Resumo
+
+- Phishing é um espectro: quanto menor o volume e maior a personalização, **menos o filtro tem o que ver** — até o BEC, em que não há link, anexo nem falsificação e o controle precisa ser de processo.
+- O atacante forja o **nome de exibição**, registra **domínios sósias**, explora a folga entre envelope e cabeçalho e, no nível mais alto, **sequestra conversas reais** a partir de uma caixa comprometida.
+- **SPF, DKIM e DMARC protegem o seu domínio contra falsificação; não protegem a sua caixa de entrada contra fraude.** Domínio sósia, conta comprometida e nome de exibição forjado passam pelos três intactos. Chegar a `p=reject` continua sendo obrigação — só é preciso saber o que se comprou.
+- O segundo fator por código é contornado por **proxy reverso em tempo real** (que rouba a sessão, não a senha), **fadiga de notificação** e **phishing de consentimento OAuth**. A resposta é autenticação resistente a phishing, em que não existe segredo que a vítima possa entregar.
+- O BEC ataca **para onde o dinheiro vai**. Os cinco controles que funcionam — retorno de ligação ao cadastro anterior, segunda aprovação independente, escalonamento diante de sigilo com urgência, alçada que não se suspende por hierarquia e espera para conta nova — são decisões de processo, não produtos.
+- Roubo de cookie de sessão **sobrevive à troca de senha**: o procedimento de conta comprometida termina em invalidação de sessões e revogação de consentimentos, não em reset.
+- Simulação de phishing serve para medir o sistema: **taxa e tempo de reporte** como métrica primária, dificuldade declarada pelo Phish Scale, orientação sem constrangimento e nenhuma punição individual — sob pena de comprar silêncio, que é o que encarece o incidente real.
+- No Brasil, a fraude eletrônica é estelionato qualificado com competência no domicílio da vítima (Lei 14.155/2021), o pagamento a conta fraudada não costuma liberar o devedor perante o fornecedor real, o comprometimento de caixa corporativa é quase sempre incidente com dados pessoais sob a LGPD, e a simulação com empregados precisa de base legal e de vedação expressa ao uso disciplinar do resultado.

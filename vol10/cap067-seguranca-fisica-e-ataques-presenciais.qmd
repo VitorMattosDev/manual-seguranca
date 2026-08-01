@@ -1,3 +1,185 @@
 # Segurança física e ataques presenciais {#sec-cap067}
 
-*(em elaboracao)*
+O rapaz chegou às 8h15 com uma camisa polo do fornecedor de ar-condicionado, uma caixa de ferramentas e uma ordem de serviço impressa. Na recepção, disse que vinha para a manutenção preventiva do sistema da sala técnica — a que estava programada, segundo a ordem, para aquela semana. A recepcionista ligou para a manutenção predial, ninguém atendeu, e ele já estava atrasado para o próximo cliente. Ela anotou o nome, entregou um crachá de visitante e apontou o caminho.
+
+Duas horas depois ele saiu, cumprimentando quem passava. Havia conectado um dispositivo do tamanho de um carregador atrás de um rack, numa tomada de rede sem uso. O dispositivo abriu um túnel para fora e ficou lá por onze semanas.
+
+Onze capítulos de defesa técnica — segmentação, hardening, EDR, gestão de identidade, cifragem — foram construídos sobre uma premissa que a camisa polo desfez: **a de que o atacante está do outro lado da rede**. Este capítulo trata do que acontece quando ele está do outro lado da mesa.
+
+## Acesso físico é acesso privilegiado
+
+Há uma máxima antiga na área: se o atacante tem acesso físico irrestrito e tempo, o equipamento não é mais seu. Ela permanece essencialmente verdadeira, com nuances que os controles modernos introduziram.
+
+O acesso físico dá ao atacante o que a rede nega: **contato direto com o barramento, com a memória, com a mídia e com as portas**. Ele pode ligar um dispositivo à rede interna, contornando todo o perímetro do @sec-cap028; retirar um disco e lê-lo em outra máquina, contornando todo o controle de acesso do sistema operacional; conectar-se a uma porta de manutenção; adulterar o firmware antes do sistema carregar; ou simplesmente levar o equipamento embora.
+
+As contramedidas do Volume 6 mudaram o quadro sem eliminá-lo. Cifragem de disco completa (@sec-cap041) transforma o roubo de máquina em perda de hardware em vez de vazamento de dados. Inicialização segura e raiz de confiança em hardware (@sec-cap011) dificultam a adulteração de firmware e o ataque de "camareira maligna" — em que o adversário com acesso momentâneo ao equipamento deixado no quarto de hotel modifica o carregador de inicialização para capturar a senha na próxima vez. Mas todas dependem de estarem **efetivamente habilitadas e configuradas**, e é aqui que a prática costuma divergir da política: disco cifrado sem senha de pré-inicialização, TPM sem PIN, porta de depuração aberta, BIOS sem senha.
+
+E há o que nenhuma criptografia cobre: o dispositivo plantado na rede, o cabo de rede numa sala de reunião vazia, a impressora multifuncional com credenciais de digitalização para a rede, a máquina desbloqueada de alguém que foi almoçar, o papel na impressora, a conversa no elevador.
+
+## O modelo das quatro funções
+
+Segurança física se organiza em quatro funções encadeadas, e a confusão entre elas é a origem da maioria dos projetos ruins: **dissuadir, detectar, retardar e responder**.
+
+**Dissuadir** aumenta o custo percebido antes da tentativa: iluminação, visibilidade, sinalização, presença humana. É a camada mais barata e a que atua sobre o oportunista — mas não sobre o adversário determinado, que a lê como informação.
+
+**Detectar** produz conhecimento de que algo está acontecendo: sensores, CFTV monitorado, alarme de porta mantida aberta, controle de acesso que registra. Detecção sem monitoramento é gravação para uso post-mortem, não detecção.
+
+**Retardar** compra tempo: portas, fechaduras, eclusas, grades, cofres. Barreira nenhuma é intransponível; toda barreira é medida em **tempo de resistência**.
+
+**Responder** é a chegada de alguém com capacidade de interromper.
+
+A relação entre as três últimas é o que define se o sistema funciona: **o tempo de retardo precisa ser maior que o tempo de detecção somado ao tempo de resposta**. Uma porta que resiste dois minutos, com detecção que leva um minuto e resposta que leva quinze, é uma porta decorativa. Essa é a aritmética que separa segurança física de teatro de segurança, e ela quase nunca é feita.
+
+::: {#fig-camadas-fisicas}
+```{.tikz}
+%%| filename: camadas-fisicas
+%%| alt: As quatro funções da segurança física em camadas concêntricas e a desigualdade entre tempo de retardo, detecção e resposta
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    anel/.style={draw, thick, rounded corners=6pt},
+    rot/.style={font=\tiny, align=center}}
+
+  \node[anel, draw=manualgray, fill=manualgray!7, minimum width=7.4cm,
+        minimum height=4.4cm] at (-3.2,0.6) {};
+  \node[anel, draw=manualyellow, fill=manualyellow!13, minimum width=5.6cm,
+        minimum height=3.3cm] at (-3.2,0.4) {};
+  \node[anel, draw=manualgreen, fill=manualgreen!14, minimum width=3.8cm,
+        minimum height=2.2cm] at (-3.2,0.2) {};
+  \node[anel, draw=manualred, fill=manualred!13, minimum width=2.1cm,
+        minimum height=1.1cm] at (-3.2,0.1) {\tiny\textbf{Ativo}};
+
+  \node[rot, anchor=north] at (-3.2,2.7) {\textbf{Perímetro} --- dissuadir};
+  \node[rot, anchor=north] at (-3.2,1.95) {\textbf{Edifício} --- detectar e retardar};
+  \node[rot, anchor=north] at (-3.2,1.25) {\textbf{Sala técnica}};
+
+  \node[draw=manualblue, fill=manualblue!12, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\tiny, text width=5.5cm] at (2.9,1.35)
+    {\textbf{A aritmética que define o projeto}\\[4pt]
+     $t_{\text{retardo}} > t_{\text{detecção}} + t_{\text{resposta}}$\\[4pt]
+     Se a porta resiste 2 min, a detecção leva 1 min e a resposta leva 15 min,
+     a porta é \textbf{decorativa} --- e nenhum investimento adicional em
+     barreira resolve, porque o gargalo está na resposta.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\tiny, text width=5.5cm] at (2.9,-1.15)
+    {\textbf{Erros recorrentes}\\[3pt]
+     $\bullet$ CFTV que grava e ninguém assiste --- é perícia, não detecção\\
+     $\bullet$ Crachá que abre tudo --- perímetro sem compartimentação\\
+     $\bullet$ Porta forte ao lado de divisória de gesso\\
+     $\bullet$ Resposta terceirizada sem tempo contratado};
+\end{tikzpicture}
+```
+As quatro funções em camadas e a desigualdade que determina se o conjunto funciona. Reforçar barreira sem medir detecção e resposta é gastar no lugar errado.
+:::
+
+Vale acrescentar duas ideias de projeto. A primeira é a **compartimentação**: o crachá que abre a porta da rua não deve abrir a sala técnica, pelo mesmo motivo que o usuário comum não é administrador de domínio — é menor privilégio aplicado ao espaço. A segunda é o **desenho do ambiente** (CPTED): visibilidade natural, controle de acesso implícito pelo traçado, delimitação clara entre público e restrito, e manutenção — ambiente cuidado sinaliza ambiente vigiado [@crowe2013].
+
+## O repertório dos ataques presenciais
+
+**Carona (tailgating e piggybacking).** Entrar atrás de quem tem acesso legítimo. Na variante consentida, alguém segura a porta por educação; na não consentida, o atacante simplesmente passa junto. É o vetor de entrada mais usado, porque explora a prestatividade do @sec-cap064 e porque **recusar a porta a alguém que parece pertencer ao lugar tem custo social real**. Mãos ocupadas — caixas, bandeja de café, notebook aberto — aumentam drasticamente a taxa de sucesso, e a razão é que ninguém consegue exigir que a pessoa carregada volte e passe o crachá.
+
+**Pretexto com uniforme.** Manutenção, limpeza, entrega, bombeiro, técnico da operadora, auditor. O uniforme e a prancheta funcionam como o crachá funciona: são sinais de autoridade que dispensam a verificação. A abertura deste capítulo é o caso típico.
+
+**Crachá clonado ou copiado.** Sistemas de proximidade antigos, de 125 kHz, transmitem um identificador fixo sem qualquer criptografia e podem ser copiados por leitores comerciais a poucos centímetros do bolso — inclusive em elevador ou fila de café. Cartões modernos com criptografia mútua e chaves diversificadas resistem a isso, mas apenas se o sistema estiver de fato usando a criptografia, e não o número de série em claro — a orientação de uso de credenciais fortes em controle de acesso predial é a mesma que vale para credenciais lógicas [@nistsp800116]. **Um parque de crachás nunca migrado é um controle de acesso que se acredita ter.** Fotografar um crachá de visitante e reimprimi-lo é ainda mais simples, e resolve o problema de "parecer pertencer".
+
+**Observação e coleta.** Olhar por cima do ombro numa senha digitada, fotografar uma tela, ler o quadro branco de uma sala de reunião envidraçada, recolher papel de lixeira e de impressora, catalogar equipamentos e fornecedores pelas caixas no descarte. É reconhecimento presencial, o análogo direto do @sec-cap057.
+
+**Mídia deixada para ser encontrada.** Pendrives no estacionamento, no lobby, na copa — rotulados de forma a provocar curiosidade ("Demissões 2026", "Fotos confraternização"). O risco não é só o arquivo: um dispositivo pode se apresentar ao sistema como teclado e digitar comandos em segundos. A defesa é técnica — bloqueio de dispositivos de interface humana não autorizados e controle de armazenamento removível pelo endpoint (@sec-cap038) — e não perceptiva.
+
+**Conexão à rede interna.** Tomada de rede em sala de reunião, recepção, sala de treinamento ou consultório sem controle de porta é conexão direta ao segmento interno. Autenticação de porta com 802.1X e VLAN de quarentena por padrão (@sec-cap028) é o que fecha isso, e é dos controles com melhor relação custo-benefício que existem.
+
+**Ponto de acesso sem fio clandestino.** Um equipamento barato conectado numa tomada de rede esquecida cria uma porta de entrada que dispensa a presença física continuada. Varredura periódica de dispositivos não autorizados é a contramedida (@sec-cap034).
+
+**Estação desbloqueada.** O ataque mais banal e mais eficaz de todos. Bloqueio automático curto por política, e cultura de bloquear ao levantar.
+
+**Adulteração de equipamento.** Substituir um cabo, acrescentar um dispositivo entre teclado e máquina, trocar o carregador, deixar um implante atrás do rack. Lacres invioláveis e inspeção periódica de racks são a resposta proporcional — desde que alguém realmente confira os lacres.
+
+## Salas técnicas, data centers e descarte
+
+**Compartimentação e registro.** A sala técnica é o ativo mais denso da organização: um armário aberto ali vale mais que um andar inteiro de mesas. Merece controle de acesso próprio, lista curta de autorizados, registro individualizado de entrada e saída, acompanhamento obrigatório de terceiros e câmera cobrindo a porta e os corredores de rack. Em ambiente compartilhado, gaiola própria e fechada.
+
+**Infraestrutura de sustentação.** Energia com redundância e proteção, refrigeração dimensionada, detecção precoce de fumaça, supressão adequada a ambiente com equipamento eletrônico e sem pessoas presas dentro, controle de umidade, detecção de alagamento. Aqui a norma técnica orienta o projeto e a classificação de disponibilidade [@tia942]. **Disponibilidade é um dos três pilares do @sec-cap002**, e a maior parte das indisponibilidades reais de infraestrutura própria começa em energia ou refrigeração, não em ataque.
+
+**Descarte e sanitização.** Equipamento que sai da organização carrega dados. Disco, fita, celular, multifuncional com disco interno, roteador com configuração e chaves, e o papel. O procedimento é definido: inventário do que sai, sanitização adequada ao tipo de mídia — sobrescrita, apagamento criptográfico ou destruição física, conforme o caso —, evidência do que foi feito e contrato com certificado de destruição quando terceirizado [@nistsp80088]. Doação de equipamento sem sanitização documentada é uma das formas mais comuns e mais evitáveis de vazamento.
+
+## Trabalho remoto, viagem e o perímetro que se desfez
+
+O perímetro físico da organização hoje inclui a mesa da sala de casa, o coworking, o saguão do aeroporto e o carro estacionado. Isso muda o que "segurança física" significa.
+
+Em casa e em espaço compartilhado, o risco não é invasão: é a tela visível, a chamada ouvida, o equipamento acessível a terceiros e o roubo comum. Em viagem, acrescenta-se o furto de oportunidade, o equipamento deixado no quarto, a inspeção em fronteira e a rede pública. E há o roubo de rua — no Brasil, o vetor mais provável de perda de dispositivo, com o agravante de que o aparelho frequentemente é levado **desbloqueado**, arrancado da mão de quem o estava usando.
+
+Essa última observação tem consequência direta de projeto: **em um celular arrancado desbloqueado, a cifragem de disco não protege nada**. O que protege é o tempo de bloqueio curto, a exigência de biometria ou PIN para abrir aplicativos financeiros e corporativos, o bloqueio remoto acionado rapidamente, a separação entre perfil pessoal e corporativo, e — para a organização — o apagamento remoto seletivo do perfil de trabalho (@sec-cap040).
+
+## Testes físicos autorizados
+
+O red team físico avalia o que o teste de rede não alcança: se a recepção verifica, se a carona funciona, se a sala técnica está trancada, se o crachá clonado abre. Vale tudo o que o @sec-cap056 estabeleceu sobre escopo, com agravantes próprios.
+
+**A carta de autorização é indispensável e precisa estar com o testador, no corpo, o tempo todo.** Ela nomeia o cliente, o escopo, o período, os locais, o que é permitido, e traz o contato de quem confirma a autorização a qualquer hora — porque a terminação normal de um teste físico bem-sucedido é a abordagem por um segurança ou pela polícia. Sem esse documento, a conduta pode configurar crime.
+
+**O escopo precisa ser cirúrgico:** endereços exatos, andares, horários, se há permissão para arrombamento (normalmente não), se há permissão para interagir com pessoas, se há limite de esforço, e o que acontece se um funcionário reagir fisicamente. Segurança de terceiros é a prioridade absoluta, acima de qualquer objetivo do teste.
+
+**Autorização precisa vir de quem pode dar.** Prédio locado, condomínio, portaria terceirizada e vizinhos de andar podem exigir autorizações adicionais. Testar o que não é seu é ilícito, ainda que o contratante tenha assinado.
+
+E, como sempre, **o achado vira mudança de processo, não repreensão da recepcionista**. Se a recepcionista liberou o falso técnico, o defeito é do procedimento que não lhe deu como verificar e do ambiente que a pune por atrasar visitantes — exatamente a lógica do @sec-cap064.
+
+## ⚖️ Brasil em Foco
+
+**CFTV e biometria são tratamento de dados pessoais, e biometria é dado sensível.** A LGPD classifica dado biométrico como sensível (art. 5º, II), o que restringe as bases legais aplicáveis e eleva o dever de segurança. Implantar reconhecimento facial ou digital no controle de acesso exige base legal adequada, avaliação de necessidade e proporcionalidade, e — na prática — a oferta de alternativa não biométrica é o caminho que reduz risco jurídico. Para CFTV, valem transparência (sinalização visível), finalidade determinada, minimização (câmera não aponta para banheiro, vestiário ou área de descanso), prazo de retenção definido e controle de acesso às imagens [@lgpd2018; @anpd2023guia].
+
+**Monitoramento de empregado tem limites.** O poder diretivo do empregador admite monitoramento de ambiente e de recursos corporativos, mas não é ilimitado: exige finalidade legítima, proporcionalidade, ciência prévia por política interna clara e respeito à intimidade. Monitoramento oculto, vigilância de áreas de intimidade e uso de imagens para finalidade diversa da declarada geram passivo trabalhista e de proteção de dados. A política de uso e monitoramento precisa ser escrita, comunicada e assinada [@lgpd2018].
+
+**Registro de acesso físico é registro pessoal com prazo.** Livro de portaria, catraca, crachá e imagens formam um histórico detalhado de movimentação de pessoas identificadas. É tratamento de dado pessoal com necessidade de prazo de retenção definido, controle de quem consulta e finalidade limitada à segurança — não a controle de jornada disfarçado ou a gestão de desempenho.
+
+**O acesso físico indevido é crime, com ou sem dano.** Entrar em recinto alheio sem autorização caracteriza violação de domicílio (art. 150 do CP, que alcança dependências fechadas não abertas ao público); subtrair equipamento é furto, com qualificadora quando há fraude ou concurso; e a instalação de dispositivo para obter dados alcança o art. 154-A do Código Penal na redação da Lei 12.737/2012. O teste físico sem carta de autorização válida não tem excludente [@lei12737].
+
+**Descarte tem regime próprio e ambiental.** A Política Nacional de Resíduos Sólidos impõe destinação adequada e logística reversa para eletroeletrônicos, e a contratação de empresa de descarte precisa cobrir simultaneamente a obrigação ambiental e a de proteção de dados — com certificado de destruição, cadeia de custódia documentada e cláusula de responsabilidade. Doar computador sem sanitização comprovada é, ao mesmo tempo, risco de vazamento e falha de conformidade [@lei12305; @nistsp80088; @lgpd2018].
+
+**Proteção contra incêndio segue norma trabalhista e legislação estadual.** A NR-23 estabelece requisitos de proteção contra incêndios nos ambientes de trabalho, e o Corpo de Bombeiros de cada estado impõe exigências específicas de projeto e de vistoria — que se aplicam também a salas técnicas e data centers. Sistema de supressão em sala fechada exige atenção adicional à segurança das pessoas, e a solução escolhida precisa ser compatível com ocupação humana [@nr23].
+
+**Provedores de internet têm exposição física distribuída.** Torres, POPs, armários de rua, caixas de emenda e equipamentos em imóveis de terceiros formam um perímetro que não cabe em recepção com catraca. Furto de cabo e de equipamento, acesso não autorizado a armário e adulteração em ponto remoto são riscos operacionais reais, com reflexo direto nas obrigações de qualidade e continuidade do serviço perante a Anatel e nos deveres de guarda de registros do Marco Civil [@anatel717; @marcocivil2014].
+
+**Norma de gestão trata os controles físicos explicitamente.** A ISO/IEC 27002:2022 dedica um conjunto próprio de controles a perímetro, entrada, salas seguras, mesa e tela limpas, equipamento fora das instalações, descarte seguro e utilidades de suporte. Para quem busca certificação — assunto do Volume 15 —, esses controles são auditados com evidência documental, e o registro de acesso é a evidência mais pedida [@iso27002].
+
+## 🛠️ No Campo
+
+**1. Faça a aritmética antes de comprar barreira.** Meça tempo de retardo, de detecção e de resposta. Se a resposta demora quinze minutos, reforçar a porta não muda nada — o gargalo é outro.
+
+**2. Compartimente o crachá.** Rua, andar, sala técnica e almoxarifado são níveis diferentes. Crachá que abre tudo é conta de administrador para todo mundo.
+
+**3. Verifique a tecnologia dos seus cartões.** Sistema de 125 kHz sem criptografia é copiável em segundos, no bolso, no elevador. Se é o seu caso, o plano de migração é prioridade, não item de desejo.
+
+**4. Dê à recepção um procedimento que ela consiga executar.** Toda visita de manutenção é agendada e confirmada com o solicitante interno **antes** da liberação, por contato que a recepção mesma inicia. Sem confirmação, o visitante espera — e esperar não pode gerar reclamação contra quem cumpriu a regra.
+
+**5. Acompanhe terceiros o tempo todo em área técnica.** Acompanhamento nominal, registrado, do início ao fim. "Deixei ele lá e voltei depois" é o cenário da abertura deste capítulo.
+
+**6. Ative 802.1X com quarentena por padrão.** Tomada de rede em sala de reunião, recepção e treinamento é porta aberta para o segmento interno. É o controle físico-lógico de melhor custo-benefício que existe.
+
+**7. Varra periodicamente por pontos de acesso e dispositivos não autorizados.** O implante plantado numa visita só se paga se ninguém procurar.
+
+**8. Bloqueie dispositivos de interface humana não autorizados no endpoint.** Pendrive achado no estacionamento não deve poder se apresentar como teclado. Controle técnico, não cartaz.
+
+**9. Reduza o tempo de bloqueio automático de tela e trate isso como política.** É o ataque mais banal e mais eficaz do repertório.
+
+**10. Adote mesa e tela limpas em áreas com visitantes.** Quadro branco apagado, papel guardado, impressão com liberação por crachá, monitor não visível da recepção nem da janela.
+
+**11. Lacre e inspecione racks.** Lacre não conferido é enfeite. Inclua conferência no roteiro de manutenção periódica, com registro.
+
+**12. Documente o descarte de ponta a ponta.** Inventário do que sai, método de sanitização por tipo de mídia, evidência, certificado do prestador. Vale para multifuncional e roteador, não só para disco.
+
+**13. Trate o celular arrancado desbloqueado como o cenário provável.** Bloqueio curto, exigência de segundo fator para abrir aplicativos financeiros e corporativos, perfil de trabalho separado, apagamento remoto testado.
+
+**14. Escreva o procedimento de perda ou roubo e ensaie-o.** Quem se aciona, em que ordem, quanto tempo leva. A janela entre o roubo e o bloqueio é onde o dano acontece.
+
+**15. Se contratar teste físico, exija carta de autorização e escopo cirúrgico.** Endereços, horários, limites, contato de confirmação 24 horas, segurança de terceiros acima do objetivo — e o achado vira mudança de procedimento, nunca punição de quem estava na recepção.
+
+## Resumo
+
+- **Acesso físico é acesso privilegiado**: contorna perímetro, controle de acesso do sistema operacional e boa parte da pilha defensiva. Cifragem de disco e inicialização segura reduzem o dano, mas só quando estão de fato habilitadas e configuradas.
+- Segurança física se organiza em quatro funções — dissuadir, detectar, retardar e responder — e o projeto só funciona se **o tempo de retardo superar a soma dos tempos de detecção e resposta**. Reforçar barreira sem medir os outros dois é gastar no lugar errado.
+- **CFTV que ninguém assiste é perícia, não detecção.** Compartimentação de crachá é menor privilégio aplicado ao espaço.
+- O repertório presencial é conhecido: carona, uniforme com pretexto, crachá clonado, observação e coleta, mídia deixada para ser achada, tomada de rede sem controle, ponto de acesso clandestino, estação desbloqueada e adulteração de equipamento. **Contra a carona, o defeito nunca é a educação da pessoa: é o procedimento que a obriga a escolher entre segurança e cortesia.**
+- Sala técnica exige controle próprio, registro individualizado e acompanhamento de terceiros do início ao fim; e boa parte da indisponibilidade real começa em energia e refrigeração, não em ataque.
+- Descarte é vazamento evitável: inventário, sanitização adequada ao tipo de mídia, evidência e certificado — inclusive para multifuncional e equipamento de rede.
+- O perímetro se desfez: casa, coworking, viagem e rua. No Brasil, o cenário provável é o **celular arrancado desbloqueado**, contra o qual a cifragem não faz nada — o que protege é bloqueio curto, segundo fator por aplicativo e apagamento remoto testado.
+- Teste físico autorizado exige carta de autorização em posse do testador, escopo cirúrgico, autorização de quem realmente pode dar, e segurança de terceiros acima do objetivo.
+- No Brasil, biometria é dado sensível sob a LGPD, CFTV e registros de acesso são tratamento com finalidade e prazo, monitoramento de empregado exige política prévia e proporcionalidade, descarte responde simultaneamente à PNRS e à LGPD, e o acesso físico indevido é crime independentemente do dano.

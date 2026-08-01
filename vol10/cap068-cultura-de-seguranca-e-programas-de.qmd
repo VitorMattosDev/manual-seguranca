@@ -1,3 +1,247 @@
 # Cultura de segurança e programas de conscientização {#sec-cap068}
 
-*(em elaboracao)*
+Duas empresas do mesmo setor, mesmo porte, contrataram a mesma plataforma de treinamento em segurança. Ambas aplicaram os mesmos módulos anuais, com a mesma trilha de vídeos e o mesmo questionário final. Ambas atingiram 98% de conclusão.
+
+Na primeira, quando um analista do financeiro recebeu o pedido de alteração de conta bancária de um fornecedor, ele executou o retorno de ligação — não porque desconfiou, mas porque é o que se faz ali. Quando um gerente clicou num link e percebeu tarde demais, avisou a equipe de segurança em quatro minutos, e a resposta chegou antes de qualquer dano. Quando o diretor comercial pediu uma exceção no processo de acesso, ouviu "não" da analista de TI e não achou aquilo estranho.
+
+Na segunda, o pedido de alteração de conta foi executado no mesmo dia. O gerente que clicou não contou a ninguém por seis dias, com medo de virar exemplo na próxima campanha. A exceção do diretor foi concedida em vinte minutos, sem registro.
+
+Mesmo treinamento, mesma taxa de conclusão, resultados opostos. **A diferença não estava no que as pessoas sabiam. Estava no que era normal fazer.** Esse é o objeto deste capítulo — e o motivo pelo qual "conscientização" é a palavra errada para o que precisamos.
+
+## Três coisas diferentes com o mesmo nome
+
+Conhecimento, comportamento e cultura são degraus distintos, e confundi-los é o erro estrutural da maior parte dos programas.
+
+**Conhecimento** é saber. É o que o treinamento entrega e o que o questionário mede. É necessário e é o degrau mais fácil — e é onde 90% do orçamento costuma parar.
+
+**Comportamento** é fazer. Depende de saber, mas também de conseguir, de lembrar no momento certo e de o caminho seguro não ser mais caro que o inseguro. Uma pessoa pode saber perfeitamente que deve usar gerenciador de senhas e não usar, porque a organização nunca forneceu um.
+
+**Cultura** é o que o grupo faz sem precisar decidir. É a resposta à pergunta "como as coisas são feitas aqui" quando ninguém está olhando e quando a política não cobre o caso. Cultura é o que aparece nas exceções, na pressa e no conflito — não no questionário.
+
+A escada tem um sentido: conhecimento sozinho não produz comportamento, e comportamento imposto sem apoio não vira cultura. Mas ela também tem um atalho pouco explorado: **mudar o ambiente muda o comportamento diretamente, sem passar pelo convencimento**. Habilitar passkeys elimina a necessidade de ensinar a não entregar códigos. Bloquear macros por padrão elimina a necessidade de ensinar a não habilitá-las. Fornecer um gerenciador de senhas corporativo faz mais pela higiene de credenciais que qualquer palestra.
+
+::: {#fig-escada-cultura}
+```{.tikz}
+%%| filename: escada-cultura
+%%| alt: Escada de conhecimento a comportamento e cultura, com o que move cada degrau e o atalho pelo desenho do ambiente
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    deg/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+                inner sep=5pt, text width=7.3cm}}
+
+  \node[deg, draw=manualgray, fill=manualgray!8] at (-1.9,-1.35)
+    {\textbf{1. Conhecimento} --- \emph{saber}\\
+     Move com: treinamento, comunicação, exemplo concreto.\\
+     Mede com: --- (o questionário mede só isto, e por isso engana)};
+  \node[deg, draw=manualyellow, fill=manualyellow!16] at (-1.9,0.15)
+    {\textbf{2. Comportamento} --- \emph{fazer}\\
+     Move com: caminho seguro mais fácil que o inseguro, gatilho no momento
+     certo, reforço curto e frequente, remoção de atrito.\\
+     Mede com: taxa e tempo de reporte, adoção de passkey, uso do cofre};
+  \node[deg, draw=manualgreen, fill=manualgreen!14] at (-1.9,1.75)
+    {\textbf{3. Cultura} --- \emph{o que é normal aqui}\\
+     Move com: liderança que se submete primeiro, ausência de punição por
+     relatar, exceção registrada, histórias internas que circulam.\\
+     Mede com: o que acontece na pressa, na exceção e no conflito};
+
+  \draw[->, >=stealth, very thick, manualgray] (-5.65,-0.75) -- (-5.65,2.35);
+
+  \node[draw=manualred, fill=manualred!11, thick, rounded corners=3pt, align=left,
+        inner sep=6pt, font=\tiny, text width=3.5cm] at (4.4,0.5)
+    {\textbf{O atalho}\\[4pt]
+     Mudar o \emph{ambiente} muda o comportamento sem passar pelo convencimento:\\[3pt]
+     $\bullet$ passkey no lugar de código\\
+     $\bullet$ macro bloqueada por padrão\\
+     $\bullet$ cofre de senhas fornecido\\
+     $\bullet$ botão de reportar de um clique\\[4pt]
+     \textbf{Design vence exortação.}};
+\end{tikzpicture}
+```
+Os três degraus, o que move cada um e o atalho que a maioria dos programas ignora. Medir só o primeiro é o que produz 98% de conclusão com zero mudança.
+:::
+
+## Por que o treinamento anual falha
+
+Não é preguiça de quem assiste. São razões estruturais.
+
+**Ele foi projetado para conformidade, não para mudança.** O objetivo real — frequentemente não declarado — é ter evidência de que o treinamento ocorreu. A métrica é conclusão, o formato é o que escala mais barato, e o conteúdo cobre tudo genericamente para servir a todos. Um artefato desenhado para produzir registro produz registro.
+
+**A carga é concentrada e o esquecimento é rápido.** Quarenta minutos uma vez por ano competem com a curva de esquecimento e perdem. Reforço curto e distribuído bate sessão longa e rara, sempre.
+
+**Falta o gatilho no momento da decisão.** O conhecimento precisa estar disponível quando a decisão acontece, não onze meses antes. Um aviso contextual no cliente de e-mail quando chega uma mensagem externa pedindo dados bancários vale mais que o módulo inteiro.
+
+**O conteúdo é genérico e o risco não é.** O desenvolvedor precisa do Volume 7; o financeiro precisa do procedimento de alteração de conta; o suporte precisa do roteiro de verificação; a direção precisa entender por que não pode pedir exceção. Um único curso para todos serve mal a todos.
+
+**E, o pior de tudo: o programa frequentemente pede o impossível.** Exige senha longa, única e memorizada, sem fornecer gerenciador. Exige desconfiar de e-mails, sem dar botão de reportar. Exige seguir o processo, num ambiente onde seguir o processo faz a pessoa ser cobrada por lentidão. **Quando a política e o incentivo apontam para lados opostos, o incentivo ganha — sempre.** E a organização conclui, erradamente, que o problema é o usuário.
+
+## O que efetivamente muda comportamento
+
+Modelos de mudança de comportamento convergem em três condições simultâneas: a pessoa precisa **conseguir**, precisa ter **motivo** e precisa receber um **gatilho** no momento certo [@michie2011; @fogg2019]. Se qualquer uma faltar, o comportamento não acontece — e a maioria dos programas investe apenas na segunda.
+
+**Reduza o atrito do caminho seguro.** Este é o item de maior retorno e o menos usado. Passkey em vez de código; cofre de senhas corporativo com preenchimento automático; acesso solicitado por autoatendimento com aprovação rápida; botão de reportar de um clique; VPN que conecta sozinha. **Cada segundo de atrito no caminho seguro é um argumento a favor do inseguro.**
+
+**Torne o caminho inseguro difícil ou impossível.** Macro bloqueada, execução restrita, dispositivo removível controlado, consentimento OAuth restrito a administradores. O controle técnico que remove a decisão é sempre superior à orientação que a delega.
+
+**Dê gatilhos contextuais.** Marcação visível de mensagem externa, aviso ao inserir dados em domínio recém-registrado, confirmação reforçada em alteração de dados bancários, lembrete no momento de conceder permissão. Aprendizado no ponto da decisão é o que sobrevive.
+
+**Reforce em ciclos curtos e específicos.** Dois minutos por mês, sobre uma coisa, para o público a que ela interessa, bate quarenta minutos anuais sobre tudo para todos.
+
+**Use histórias reais e locais.** O incidente que aconteceu aqui — anonimizado, contado sem humilhação, com o que se aprendeu — circula e é lembrado. Estatística global não.
+
+**Construa uma rede de campeões de segurança.** Pessoas das próprias áreas, com algum tempo alocado, que respondem dúvidas localmente e trazem o contexto real para a equipe de segurança. Descentraliza o conhecimento e — mais importante — cria um caminho de baixo custo social para perguntar.
+
+**Comece no primeiro dia.** Integração de novo funcionário é o momento de maior receptividade e o mais desperdiçado. É ali que se estabelece o que é normal.
+
+**Segmente por risco real.** Financeiro, suporte, desenvolvimento, direção, administradores de sistema e atendimento ao cliente têm exposições diferentes e precisam de conteúdos diferentes.
+
+## Medir o que importa
+
+Métricas erradas não são apenas inúteis: elas direcionam o programa para o lugar errado, porque as pessoas otimizam o que é medido.
+
+**Métricas de vaidade.** Percentual de conclusão do treinamento. Horas de capacitação. Número de campanhas realizadas. Nota no questionário. Todas medem atividade da equipe de segurança, nenhuma mede risco.
+
+**Métricas de comportamento.** Taxa de reporte de mensagens suspeitas (a métrica primária). **Tempo até o primeiro reporte** — a variável que mais determina o custo de um incidente real. Adoção de autenticação resistente a phishing. Uso efetivo do cofre de senhas. Proporção de acessos privilegiados dentro do fluxo aprovado. Número de exceções abertas e tempo médio até fecharem. Tempo entre desligamento e revogação de acesso. Percentual de alterações de dados bancários com verificação registrada.
+
+**Sinais de cultura.** Estes não são números, e são os mais informativos. Modelos de maturidade de programa descrevem exatamente essa progressão — de "não existe" a "conformidade", depois a "mudança de comportamento sustentada" e, por fim, a "cultura" —, e o salto difícil é sempre o segundo [@sansmaturity2024]. Alguém reporta o próprio erro? Uma pessoa júnior consegue barrar um pedido de um diretor? A exceção fica registrada? A equipe de segurança é chamada no início de um projeto ou no fim? Quando alguém pergunta "isso é seguro?", a resposta chega ou a pergunta some?
+
+**A métrica de clique em simulação merece uma advertência específica.** Ela é fácil de manipular — basta escolher iscas fáceis — e é o principal motor de programas punitivos. A taxa de reporte é mais difícil de falsear e mede a ação que realmente contém o incidente. Se for para acompanhar clique, que seja com a dificuldade da isca declarada, pelo Phish Scale ou equivalente, para que a comparação entre campanhas signifique alguma coisa [@nistphishscale; @nistsp80050].
+
+::: {#fig-metricas-cultura}
+```{.tikz}
+%%| filename: metricas-cultura
+%%| alt: Comparação entre métricas de vaidade, métricas de comportamento e sinais de cultura em um programa de segurança
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    col/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+                inner sep=5pt, text width=3.65cm, minimum height=3.9cm, anchor=north}}
+
+  \node[col, draw=manualred, fill=manualred!10] at (-4.05,1.9)
+    {\textbf{Vaidade}\\\emph{mede a atividade da equipe}\\[4pt]
+     $\bullet$ \% de conclusão do treinamento\\
+     $\bullet$ horas de capacitação\\
+     $\bullet$ nº de campanhas\\
+     $\bullet$ nota no questionário\\
+     $\bullet$ taxa de clique com isca não calibrada\\[4pt]
+     \textbf{Risco:} 98\% de conclusão com zero mudança.};
+
+  \node[col, draw=manualyellow, fill=manualyellow!16] at (0,1.9)
+    {\textbf{Comportamento}\\\emph{mede o que as pessoas fazem}\\[4pt]
+     $\bullet$ \textbf{taxa de reporte}\\
+     $\bullet$ \textbf{tempo até o 1º reporte}\\
+     $\bullet$ adoção de passkey\\
+     $\bullet$ uso real do cofre\\
+     $\bullet$ exceções abertas e tempo até fechar\\
+     $\bullet$ desligamento $\rightarrow$ revogação};
+
+  \node[col, draw=manualgreen, fill=manualgreen!14] at (4.05,1.9)
+    {\textbf{Sinais de cultura}\\\emph{não são números}\\[4pt]
+     $\bullet$ alguém reporta o \emph{próprio} erro?\\
+     $\bullet$ júnior consegue barrar diretor?\\
+     $\bullet$ a exceção fica registrada?\\
+     $\bullet$ segurança é chamada no início ou no fim do projeto?\\
+     $\bullet$ a pergunta "isso é seguro?" recebe resposta?};
+
+  \node[draw=manualblue, fill=manualblue!12, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=11.8cm, anchor=north] at (0,-2.35)
+    {As pessoas otimizam o que é medido. Medir conclusão produz conclusão;
+     medir \textbf{reporte e tempo de reporte} produz a única coisa que
+     efetivamente reduz o custo de um incidente real.};
+\end{tikzpicture}
+```
+Os três níveis de métrica. O programa se torna aquilo que ele mede — e é por isso que a escolha da métrica primária é a decisão mais importante do desenho.
+:::
+
+## A cultura justa: por que punir custa caro
+
+Nenhum elemento cultural pesa mais do que este: **o que acontece com quem erra e conta**.
+
+O custo de um incidente é dominado pelo tempo entre o comprometimento e a descoberta. Movimentação lateral, escalonamento, exfiltração e cifragem levam horas ou dias; a resposta iniciada em minutos contém, a iniciada em dias remedia. E a variável que mais afeta esse tempo, em incidentes iniciados por engenharia social, é **quanto tempo a pessoa leva para contar**.
+
+Punir quem clica compra silêncio. E silêncio é a coisa mais cara que uma organização pode comprar em segurança — vale mais para o atacante que qualquer vulnerabilidade não corrigida.
+
+Cultura justa não significa ausência de responsabilização. Significa distinguir com clareza:
+
+- **Erro humano** dentro de um processo mal desenhado: a resposta é corrigir o processo, e a pessoa que relatou é agradecida.
+- **Comportamento de risco** — contornar um controle porque o caminho oficial era inviável: a resposta é remover o atrito que produziu o desvio, e entender por que o caminho oficial não servia.
+- **Violação deliberada e consciente** de política, sabendo do risco: aqui há espaço para sanção, e ela precisa existir para que as duas categorias anteriores sejam críveis.
+
+O erro comum é aplicar o tratamento da terceira categoria à primeira. Isso não só é injusto — é operacionalmente contraproducente, porque o incentivo criado é esconder.
+
+Na prática, três compromissos sustentam isso: **quem relata o próprio erro nunca é sancionado por tê-lo relatado**; **resultado de simulação não vira insumo de avaliação de desempenho nem de processo disciplinar**; e **a equipe de segurança agradece publicamente os relatos, inclusive os falsos positivos**.
+
+## Liderança, orçamento e o que sustenta o programa
+
+Cultura de segurança é definida por comportamento observado da liderança, não por mensagem institucional. Três testes revelam se ela é real:
+
+**A liderança se submete ao mesmo processo?** O executivo que exige exceção "porque sou eu" ensina, num único ato, que o processo é opcional para quem tem poder — e todo o resto da organização aprende junto.
+
+**A segurança tem voz antes da decisão?** Ser chamada no início de um projeto, e não na véspera do lançamento para "dar o aval", é o sinal mais confiável de maturidade.
+
+**O que acontece quando segurança e prazo colidem?** É nesse conflito, e não na política escrita, que a cultura real se manifesta. Se segurança sempre cede, a organização já respondeu.
+
+Do lado prático: o programa precisa de dono, de orçamento próprio (incluindo o tempo das pessoas, que é o maior custo), de conteúdo em português brasileiro com contexto local — o Volume 10 inteiro mostra por que material traduzido não cobre a realidade daqui — e de acessibilidade real para quem tem menos familiaridade com tecnologia. E precisa alcançar quem não é empregado: terceiros, estagiários, temporários e prestadores frequentemente têm acesso equivalente e recebem uma fração do preparo.
+
+Por fim, o programa de conscientização é um controle entre outros, e a maturidade se mede em conjunto — assunto que o Volume 15 retoma sob a ótica de governança. O que este capítulo sustenta é mais simples: **o programa não existe para produzir pessoas vigilantes; existe para produzir uma organização em que a vigilância individual não seja a última linha de defesa.**
+
+## ⚖️ Brasil em Foco
+
+**A LGPD trata capacitação como parte da segurança e da governança.** O art. 46 exige medidas técnicas e administrativas de proteção, e o art. 50 prevê o programa de governança em privacidade, que a lei associa expressamente a treinamento, cultura interna e canais de comunicação. Programa de conscientização documentado é, portanto, evidência de boas práticas — e sua ausência pesa na dosimetria de sanção do art. 52, que considera a adoção de política de boas práticas e a cooperação do agente [@lgpd2018].
+
+**O setor financeiro tem exigência explícita.** A Resolução CMN nº 4.893/2021 e a Resolução BCB nº 85/2021 determinam que a política de segurança cibernética contemple disseminação da cultura de segurança, incluindo programas de capacitação e de avaliação periódica de pessoal, além de treinamento para prestadores relevantes. Aqui o programa não é boa prática opcional: é item auditado [@bcb4893; @bcb85].
+
+**Certificação exige evidência de conscientização.** A ISO/IEC 27001 traz requisitos de competência, conscientização e comunicação, e a ISO/IEC 27002:2022 detalha os controles correspondentes. Em auditoria, o que se pede é evidência: registro de participação, conteúdo aplicado, datas, público e — cada vez mais — indicação de eficácia, o que reforça a necessidade de métricas de comportamento e não só de conclusão [@iso27001; @iso27002].
+
+**Política de uso e monitoramento precisa ser escrita, comunicada e comprovadamente ciente.** O poder diretivo do empregador permite estabelecer regras de uso de recursos corporativos e monitoramento proporcional, mas depende de política clara, previamente comunicada e com ciência formal registrada. Sem isso, tanto a exigência de conduta quanto eventual sanção ficam frágeis — e o tratamento dos dados de monitoramento fica sem base sólida [@lgpd2018].
+
+**Resultado individual de simulação é dado pessoal com finalidade limitada.** Registrar quem clicou é tratamento de dado pessoal referente a comportamento. Precisa de base legal, transparência, minimização, prazo de retenção e finalidade restrita à melhoria do programa. **Usar esse resultado em avaliação de desempenho ou em processo disciplinar é desvio de finalidade, além de destruir o efeito pretendido.** A política do programa deve declarar essa vedação por escrito [@lgpd2018].
+
+**O programa precisa alcançar terceiros, e o contrato é o instrumento.** Prestadores, terceirizados e parceiros com acesso a sistemas ou a dados pessoais atuam como operadores ou como parte da cadeia, e a LGPD atribui responsabilidade ao controlador pela escolha e supervisão. Cláusula contratual de treinamento, sigilo e comunicação de incidente é o que torna essa supervisão executável [@lgpd2018].
+
+**Órgãos públicos têm obrigação adicional.** A administração pública federal está sujeita à Política Nacional de Segurança da Informação e às normas complementares do GSI/CTIR Gov, que preveem programas permanentes de conscientização e de capacitação em segurança da informação, além do regime de transparência da LAI e das obrigações da LGPD aplicáveis ao poder público [@decreto10222; @lai2011; @lgpd2018].
+
+**Material precisa ser local.** Golpe de Pix, sequestro de conta de mensageria, clonagem de chip, mão fantasma e boleto fraudado não aparecem em conteúdo traduzido — e são exatamente os vetores que a pessoa vai encontrar. Material do CERT.br e da FEBRABAN oferece base em português com o contexto correto, e vale mais do que a tradução de curso estrangeiro [@certbrfraudes; @febraban2024].
+
+## 🛠️ No Campo
+
+**1. Pare de medir conclusão como resultado.** Registre-a como obrigação de conformidade, mas escolha **taxa de reporte** e **tempo até o primeiro reporte** como métricas primárias do programa.
+
+**2. Invista primeiro no atrito, depois no conteúdo.** Cofre de senhas fornecido, passkey habilitado, acesso por autoatendimento, botão de reportar de um clique. Cada segundo de atrito no caminho seguro é um argumento a favor do inseguro.
+
+**3. Remova a decisão sempre que possível.** Macro bloqueada, consentimento OAuth restrito, dispositivo removível controlado. Controle técnico vence orientação, todas as vezes.
+
+**4. Troque a sessão anual por ciclos curtos e segmentados.** Dois minutos por mês, um tema, para quem aquele tema interessa.
+
+**5. Ponha o aprendizado no ponto da decisão.** Marcação de mensagem externa, aviso em domínio recém-registrado, confirmação reforçada na alteração de dados bancários.
+
+**6. Escreva a política de "sem punição por relatar" e publique-a.** Assinada pela direção. Sem ela, nada mais neste capítulo funciona.
+
+**7. Proíba formalmente o uso de resultado de simulação em avaliação ou disciplina.** Além de ser desvio de finalidade sob a LGPD, é o que transforma o programa em máquina de silêncio.
+
+**8. Agradeça o falso positivo em público.** Toda vez. É barato e é o que sustenta o fluxo de relatos.
+
+**9. Conte os incidentes internos, anonimizados e sem humilhação.** A história local circula e é lembrada; a estatística global, não.
+
+**10. Comece na integração do novo funcionário.** É o momento de maior receptividade do vínculo inteiro, e é onde se define o que é normal.
+
+**11. Monte uma rede de campeões de segurança com tempo alocado de verdade.** Sem horas reservadas, o papel vira título honorífico e morre em três meses.
+
+**12. Segmente por risco real.** Financeiro, suporte, desenvolvimento, administradores, atendimento e direção precisam de programas diferentes.
+
+**13. Inclua terceiros e prestadores.** Acesso equivalente exige preparo equivalente, e o instrumento é a cláusula contratual.
+
+**14. Faça a liderança ir primeiro.** Direção usando passkey, direção submetida à alçada, direção esperando a verificação. Um ato vale mais que uma campanha.
+
+**15. Observe os sinais de cultura, não só o painel.** Alguém relata o próprio erro? Uma pessoa júnior consegue barrar um diretor? A exceção fica registrada? É ali que está a resposta que a métrica não dá.
+
+## Resumo
+
+- **Conhecimento, comportamento e cultura são degraus diferentes.** Medir só o primeiro produz 98% de conclusão com zero mudança — que é o estado da maior parte dos programas.
+- O treinamento anual falha por projeto: foi desenhado para produzir evidência de conformidade, concentra carga, não dá gatilho no momento da decisão, é genérico e frequentemente **pede o impossível**. Quando política e incentivo apontam para lados opostos, o incentivo ganha.
+- **Design vence exortação.** Reduzir o atrito do caminho seguro e tornar o inseguro difícil muda comportamento sem passar pelo convencimento: passkey, cofre fornecido, macro bloqueada, botão de reportar de um clique.
+- Comportamento exige três condições simultâneas — conseguir, ter motivo e receber gatilho no momento certo. A maioria dos programas investe só na segunda.
+- Métricas de vaidade medem a atividade da equipe de segurança; **taxa de reporte e tempo até o primeiro reporte** medem o que reduz o custo de um incidente real. As pessoas otimizam o que é medido, e o programa se torna sua métrica primária.
+- Os sinais mais informativos não são números: alguém relata o próprio erro, uma pessoa júnior consegue barrar um diretor, a exceção fica registrada, a segurança é chamada no início do projeto.
+- **Punir quem cai compra silêncio, e silêncio é a coisa mais cara em segurança.** Cultura justa distingue erro humano, comportamento de risco e violação deliberada — e só a terceira comporta sanção.
+- Cultura é definida pelo comportamento observado da liderança. Executivo que exige exceção ensina, num ato, que o processo é opcional para quem tem poder.
+- No Brasil, o programa é evidência de boas práticas sob a LGPD (arts. 46, 50 e 52), exigência auditada no setor financeiro (Resoluções CMN 4.893 e BCB 85), requisito de certificação na ISO/IEC 27001, e precisa ser local — golpe de Pix, clonagem de chip e mão fantasma não aparecem em material traduzido.
+- **O programa não existe para produzir pessoas vigilantes; existe para produzir uma organização em que a vigilância individual não seja a última linha de defesa.**

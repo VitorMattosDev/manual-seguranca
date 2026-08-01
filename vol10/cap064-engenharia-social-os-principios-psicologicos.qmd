@@ -1,3 +1,234 @@
 # Engenharia social: os princípios psicológicos da persuasão {#sec-cap064}
 
-*(em elaboracao)*
+Às 17h40 de uma sexta-feira, o analista de suporte recebe uma ligação. Do outro lado, uma voz apressada se identifica como o gerente regional — nome correto, cargo correto, cita o nome do diretor e o número do chamado aberto na semana anterior. Está no aeroporto, o embarque é em vinte minutos, o notebook travou depois de uma atualização e ele precisa entrar no portal financeiro pelo celular para aprovar um pagamento antes do fechamento do dia. A senha não funciona. Ao fundo, anúncios de voo. "Cara, eu sei que tem um procedimento, mas eu tenho literalmente quinze minutos. Você consegue resetar pra mim? Depois eu abro o chamado direitinho, prometo."
+
+Nenhuma linha de código foi escrita. Nenhuma vulnerabilidade foi explorada. Nenhum firewall foi atravessado. E, se o reset acontecer, o atacante terá conseguido em três minutos o que nove capítulos de técnica ofensiva levariam semanas para obter — porque atacou a única parte do sistema que não recebe patch.
+
+Este capítulo é sobre **por que aquele analista quase sempre cede**, e sobre o que a organização precisa mudar para que ceder deixe de ser possível. A resposta, adiantando: não é "treinar as pessoas a desconfiar".
+
+## O humano não é o elo fraco — é a superfície mais barata
+
+A frase "o humano é o elo mais fraco da segurança" é confortável e errada. Ela transfere a culpa da organização para o indivíduo, sugere que o problema é caráter ou atenção, e leva a programas de conscientização que existem para apontar dedos quando algo dá errado.
+
+A leitura correta é econômica. O atacante escolhe o caminho de **menor custo, menor risco e maior confiabilidade**. Depois de tudo que os Volumes 5 a 8 instalaram — segmentação, hardening, gestão de vulnerabilidades, cifragem, controle de identidade —, explorar uma falha técnica ficou caro: exige encontrar a falha antes do defensor, desenvolver o acesso, escapar do EDR, mover-se sem disparar detecção. Convencer alguém a abrir a porta custa uma ligação. E, ao contrário de um exploit, **funciona em qualquer versão, em qualquer plataforma, e não é corrigido por atualização**.
+
+Há uma segunda razão, mais incômoda: a engenharia social não explora um defeito da mente humana. Ela explora aquilo que a mente humana faz de **certo** na maior parte do tempo. Confiar em quem se identifica com credenciais plausíveis, ajudar um colega em apuros, obedecer a quem tem autoridade legítima, agir rápido quando a situação parece urgente — são heurísticas que funcionam bem o suficiente para que a vida em sociedade seja possível. O atacante não quebra a heurística; ele constrói um cenário em que a heurística aponta para a direção errada.
+
+Isso tem uma consequência direta de projeto: **um processo que só funciona se todos estiverem desconfiados o tempo todo é um processo quebrado**. A defesa contra engenharia social não é vigilância permanente; é desenho de processo que torna a confiança desnecessária no ponto crítico. Voltaremos a isso ao fim.
+
+## Os princípios da persuasão
+
+Robert Cialdini catalogou os atalhos de decisão que sustentam a influência social [@cialdini2021]. Não foram escritos para segurança da informação, mas descrevem com precisão desconfortável a caixa de ferramentas do engenheiro social — e a literatura da área, de Mitnick a Hadnagy, é em boa medida a aplicação sistemática desse catálogo ao contexto corporativo [@mitnick2002; @hadnagy2018]. Vale conhecê-los pelo nome, porque nomear é o primeiro passo para reconhecer sob pressão.
+
+**Autoridade.** Obedecemos a quem parece ter o direito de mandar. Uniforme, crachá, jargão interno, título, o nome do diretor citado casualmente. O atacante raramente afirma ser autoridade — ele **exibe os sinais** dela e deixa a vítima concluir sozinha. É o princípio mais usado no ataque corporativo, e o mais eficaz contra funções de suporte, que existem justamente para atender quem pede.
+
+**Urgência e escassez.** O tempo curto degrada a decisão. Sob pressão temporal, o raciocínio deliberado cede lugar ao reconhecimento de padrão — que é exatamente o que o pretexto foi construído para satisfazer. "Antes do fechamento do dia", "sua conta será bloqueada em 24 horas", "só consegui esse desconto até hoje". A urgência não é enfeite do pretexto: é o mecanismo que impede a verificação.
+
+**Prestatividade e reciprocidade.** Queremos ajudar, e queremos retribuir. Um pequeno favor prévio — um elogio, uma informação útil, segurar a porta — cria dívida social. Contra profissionais de atendimento, cujo trabalho e cuja avaliação de desempenho consistem em resolver o problema de quem liga, a prestatividade não é fraqueza: é o cargo.
+
+**Compromisso e coerência.** Quem disse "sim" a algo pequeno tende a manter o "sim" no que vem depois, para não parecer inconsistente. O atacante começa pedindo o trivial — confirmar o nome do gestor, o horário do plantão, o nome do sistema de chamados — e escala em degraus. Cada resposta obtida vira alavanca para a próxima, e recuar no quinto degrau exige admitir que os quatro anteriores foram um erro.
+
+**Prova social.** Fazemos o que os pares fazem. "Todo mundo do time comercial já assinou", "o pessoal do financeiro sempre libera por aqui". Se a norma aparente do grupo é contornar o processo, contornar o processo deixa de parecer transgressão.
+
+**Afeição e afinidade.** Dizemos sim a quem gostamos e a quem se parece conosco. Simpatia, humor, sotaque em comum, time de futebol, um filho da mesma idade. Cinco minutos de conversa amigável antes do pedido mudam materialmente a taxa de sucesso — e é por isso que o pretexto competente quase nunca vai direto ao ponto.
+
+**Unidade.** O princípio mais recente do catálogo: pertencer ao mesmo "nós". Não é gostar do outro, é ser do mesmo grupo — mesma empresa, mesma profissão, mesma trincheira contra a burocracia. "A gente aqui do suporte sabe como é, né? A diretoria pede o impossível e a culpa sobra pra gente." A cumplicidade contra um terceiro comum é o vínculo mais rápido que existe.
+
+::: {#fig-principios-persuasao}
+```{.tikz}
+%%| filename: principios-persuasao
+%%| alt: Os sete princípios de persuasão mapeados ao gancho que cada um usa e ao controle organizacional que o neutraliza
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    linha/.style={draw, thick, rounded corners=2pt, align=left, font=\tiny,
+                  inner sep=4pt}}
+
+  \node[font=\scriptsize\bfseries] at (-4.3,3.25) {Princípio};
+  \node[font=\scriptsize\bfseries] at (-0.4,3.25) {Como aparece no pretexto};
+  \node[font=\scriptsize\bfseries] at (4.4,3.25) {O que o neutraliza};
+
+  \foreach \idx/\pri/\gan/\ctr in {
+    0/Autoridade/{Crachá, título, nome do diretor,\\jargão interno}/{Verificação fora de banda\\independente do canal},
+    1/Urgência/{Prazo curto, ameaça de bloqueio,\\"antes do fechamento"}/{Prazo mínimo obrigatório\\para pedidos sensíveis},
+    2/{Prestatividade}/{Pedido de socorro, favor prévio,\\pequena gentileza}/{Roteiro do atendimento\\define o que não se faz},
+    3/{Compromisso}/{Escalada em degraus a partir\\do pedido trivial}/{Autorização por papel,\\não por conversa},
+    4/{Prova social}/{"Todo mundo do time\\já faz assim"}/{Exceção registrada\\e auditável},
+    5/{Afinidade}/{Conversa amigável antes do\\pedido; interesses em comum}/{Controle não depende\\de quem está falando},
+    6/{Unidade}/{"A gente aqui do suporte\\sabe como é"}/{Segunda pessoa aprova\\o que é irreversível}}
+    {
+      \node[linha, draw=manualred, fill=manualred!10, text width=2.2cm, anchor=north]
+        at (-4.3, 2.9-\idx*0.8) {\pri};
+      \node[linha, draw=manualgray, fill=manualgray!8, text width=3.9cm, anchor=north]
+        at (-0.4, 2.9-\idx*0.8) {\gan};
+      \node[linha, draw=manualgreen, fill=manualgreen!12, text width=3.5cm, anchor=north]
+        at (4.4, 2.9-\idx*0.8) {\ctr};
+    }
+
+  \node[draw=manualblue, fill=manualblue!12, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=11.6cm, anchor=north] at (0,-2.85)
+    {Nenhum controle da coluna da direita exige que a pessoa \emph{desconfie}.
+     Todos funcionam mesmo com a vítima inteiramente convencida --- que é a única
+     premissa realista.};
+\end{tikzpicture}
+```
+Os princípios de persuasão, o gancho de cada um e o controle organizacional correspondente. A defesa eficaz não pede vigilância: remove a decisão do calor do momento.
+:::
+
+## A anatomia do pretexto
+
+Pretexto é a história que justifica o pedido. Um pretexto competente não é uma mentira improvisada: é um artefato construído, e sua construção segue as mesmas fases do teste de invasão que o @sec-cap057 descreveu — só que o alvo é uma pessoa.
+
+**Reconhecimento.** A matéria-prima é pública. Organograma em rede social profissional, nomes e cargos em notícias e apresentações, o formato do e-mail corporativo deduzido de um único endereço conhecido, o fornecedor de folha de pagamento revelado numa vaga de emprego, o sistema de chamados citado num relato de conferência, o padrão de crachá visível numa foto de confraternização. Some-se a isso o material de vazamentos anteriores — e-mails, telefones, CPFs — e o pretexto ganha os detalhes que produzem credibilidade instantânea. **A precisão do detalhe é o que compra a confiança**: quem sabe o nome do seu gestor e o número do seu último chamado não parece um estranho.
+
+**Persona e gancho.** A persona é quem o atacante diz ser; o gancho é a razão pela qual essa pessoa estaria falando com essa vítima agora. As personas que mais funcionam são as que a organização é treinada para atender sem atrito: suporte de TI, auditoria, fornecedor, cliente importante, novo funcionário perdido, alguém da matriz. O gancho mais eficaz não é dramático — é rotineiro. Um chamado, uma pendência, uma confirmação cadastral.
+
+**Engajamento.** A conversa que constrói afinidade e obtém os "sins" pequenos. É aqui que o atacante calibra: se a vítima hesita, ele recua, valida a hesitação ("você tá certíssimo em perguntar"), e volta por outro caminho. Se a vítima resiste com firmeza, ele encerra sem queimar o pretexto — e liga para outro ramal amanhã.
+
+**Exploração.** O pedido real, feito quando o custo social de negar já é alto. Raramente é "me dê a senha". É "reseta pra mim", "confirma esse código que chegou no seu celular", "aprova essa alteração de conta", "me deixa entrar que eu esqueci o crachá", "roda esse comando aí pra eu ver o erro".
+
+**Saída.** O bom atacante sai deixando a vítima satisfeita e sem motivo para reportar. Agradece, resolve o problema fictício, encerra com naturalidade. **Ataque de engenharia social bem executado não é percebido como ataque** — o que significa que a métrica "número de tentativas reportadas" mede quase sempre a incompetência do atacante, não a vigilância da organização.
+
+::: {#fig-cadeia-engenharia-social}
+```{.tikz}
+%%| filename: cadeia-engenharia-social
+%%| alt: Cadeia do ataque de engenharia social em cinco fases, com os controles organizacionais que interrompem cada fase
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fase/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                 inner sep=4pt, text width=2.05cm, minimum height=1.55cm,
+                 draw=manualred, fill=manualred!10},
+    corte/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                  inner sep=3pt, text width=2.05cm, minimum height=1.2cm,
+                  draw=manualgreen, fill=manualgreen!12}}
+
+  \foreach \idx/\tit/\des in {
+    0/{Reconhecimento}/{Organograma, e-mails,\\fornecedores,\\vazamentos anteriores},
+    1/{Persona e gancho}/{Suporte, auditoria,\\fornecedor.\\Motivo rotineiro},
+    2/{Engajamento}/{Afinidade,\\"sins" pequenos,\\calibragem},
+    3/{Exploração}/{Reset, código do SMS,\\troca de conta,\\acesso físico},
+    4/{Saída}/{Encerra satisfeito.\\Vítima não\\percebe o ataque}}
+    {
+      \node[fase] (f\idx) at (\idx*2.45-4.9, 1.7) {\textbf{\tit}\\[2pt]\des};
+    }
+  \foreach \idx/\prox in {0/1, 1/2, 2/3, 3/4}
+     {\draw[->, >=stealth, thick, manualgray] (f\idx) -- (f\prox);}
+
+  \foreach \idx/\ctr in {
+    0/{Reduzir exposição\\pública desnecessária},
+    1/{Canal único e\\publicado para\\pedidos de TI},
+    2/{Roteiro: o que o\\atendimento nunca\\faz por telefone},
+    3/{Verificação fora de\\banda + segunda\\pessoa aprova},
+    4/{Reportar sem culpa;\\detecção independe\\do relato}}
+    {
+      \node[corte] (c\idx) at (\idx*2.45-4.9, -0.75) {\ctr};
+      \draw[->, >=stealth, thick, manualgreen] (c\idx) -- (f\idx);
+    }
+
+  \node[draw=manualblue, fill=manualblue!12, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=11.8cm] at (0,-2.35)
+    {A cadeia se rompe em qualquer elo --- mas só o quarto corte é confiável, porque
+     é o único que não depende de a vítima ter percebido alguma coisa.};
+\end{tikzpicture}
+```
+As cinco fases do ataque de engenharia social e os controles que interrompem cada uma. Quanto mais à direita o corte, menos ele depende da percepção da vítima.
+:::
+
+## Os canais
+
+O princípio é o mesmo; muda o meio, e com ele o que a vítima consegue verificar.
+
+**Telefone (vishing).** O canal mais perigoso, porque combina pressão em tempo real com ausência de rastro verificável. O identificador de chamadas é trivialmente forjável e não prova nada. A vítima não tem tempo de consultar ninguém, e o silêncio de quem pensa soa como grosseria. Com síntese de voz treinada em poucos segundos de áudio público, a checagem "eu reconheci a voz dele" deixou de valer como controle — é uma mudança recente e ainda pouco absorvida pelos processos das organizações.
+
+**Mensagem escrita (phishing, smishing).** Assíncrono, escalável, barato. É o assunto do @sec-cap065.
+
+**Presencial.** O mais caro e o mais eficaz. Um uniforme de manutenção e uma prancheta atravessam controles que resistiriam a qualquer e-mail. É o assunto do @sec-cap067.
+
+**Redes sociais e recrutamento.** O contato longo, construído em semanas. A vaga de emprego atraente que exige "executar este desafio técnico"; o perfil de recrutador que puxa conversa e mapeia a stack tecnológica; a solicitação de conexão que dá acesso ao organograma completo. O engajamento aqui não tem urgência — tem paciência.
+
+**Terceiros e cadeia de fornecimento.** O ataque não precisa mirar a organização diretamente. O escritório de contabilidade, a agência de marketing, o prestador de TI e o fornecedor de folha têm acesso, credenciais e menos controles. Convencer o elo mais exposto da cadeia a intermediar é frequentemente mais barato do que atacar o alvo — e o pedido chega revestido de uma relação de confiança real.
+
+## Por que "treinar as pessoas a desconfiar" não basta
+
+Programas de conscientização mal desenhados partem do pressuposto de que o problema é ignorância: se a pessoa soubesse identificar o golpe, não cairia. A evidência não sustenta isso.
+
+Primeiro, porque **saber não é o mesmo que perceber sob carga**. O analista da abertura deste capítulo já assistiu ao vídeo de treinamento. Ele reconhece um pretexto quando lhe mostram um, calmamente, numa tela, sabendo que é um teste. O que ele não faz é reconhecê-lo às 17h40 de sexta, no meio de quatro chamados abertos, com uma pessoa aflita ao telefone — porque nesse contexto a informação disponível não é "isto pode ser um golpe", é "um gestor está com um problema real e eu resolvo problemas".
+
+Segundo, porque **a taxa de sucesso do atacante não precisa ser alta**. O defensor precisa acertar sempre; o atacante, uma vez. Um programa que reduz a taxa de sucesso de 20% para 3% é um bom programa — e continua entregando o acesso, porque três em cem, num alvo de mil pessoas, é acesso garantido.
+
+Terceiro, porque **a exortação isolada produz o efeito perverso do silêncio**. Se a mensagem transmitida é "quem cai é descuidado", quem cai esconde. E o custo real de um incidente de engenharia social é quase todo função do tempo entre o comprometimento e a descoberta — tempo que o medo de punição multiplica.
+
+A conclusão não é que treinamento é inútil. É que treinamento é **uma camada, e não a principal**. O trabalho pesado tem de estar no processo, e o @sec-cap068 mostra como transformar essa camada em algo que muda comportamento em vez de registrar presença.
+
+## A defesa que funciona: tirar a decisão do calor do momento
+
+Todo controle eficaz contra engenharia social tem a mesma propriedade: **funciona mesmo que a vítima esteja inteiramente convencida**. Essa é a premissa de projeto, e é a mesma lógica do Zero Trust do @sec-cap027 — a confiança na origem aparente da solicitação não é o que autoriza a ação.
+
+**Verificação fora de banda, sempre iniciada pelo verificador.** Quem recebe o pedido interrompe e retorna por um canal que ele mesmo escolhe, a partir de uma fonte que o solicitante não controla: o ramal do diretório interno, não o número que apareceu no visor; o e-mail do cadastro, não o que veio no rodapé da mensagem. O detalhe do "iniciado pelo verificador" é tudo: retornar para o número que o próprio atacante forneceu é teatro de segurança.
+
+**Segunda pessoa para o que é irreversível.** Transferência acima de um valor, alteração de dados bancários de fornecedor, reset de credencial privilegiada, criação de acesso administrativo. Não porque a primeira pessoa seja incompetente, mas porque a persuasão é dirigida a **um** alvo, e persuadir dois independentemente é ordem de magnitude mais caro. O controle não é conhecimento, é aritmética — a mesma segregação de funções que o @sec-cap022 tratou como princípio de acesso.
+
+**Roteiros explícitos de "o que nunca fazemos".** O atendimento precisa de uma lista curta, memorizável e sem exceções: nunca resetamos senha por telefone fora do fluxo padrão; nunca pedimos nem recebemos código de segundo fator; nunca alteramos conta de recebimento sem retorno de ligação ao contato cadastrado. A força da lista está na ausência de exceção — porque "exceto em caso de urgência" é literalmente o pretexto.
+
+**Permissão institucional para dizer não.** O atacante vence pelo custo social da recusa. Se a cultura pune quem faz o gestor esperar, o processo já perdeu. É preciso que negar seja explicitamente respaldado, publicamente, pela liderança — e que a liderança seja a primeira a se submeter ao procedimento. Executivo que exige exceção "porque sou eu" é o maior fator de risco de engenharia social de uma organização.
+
+**Controles técnicos que tornam o pedido inútil.** A defesa mais robusta é aquela em que ceder não produz nada de valor. Autenticação resistente a phishing (@sec-cap024) faz com que não exista código para a vítima entregar. Menor privilégio (@sec-cap022) limita o que a conta cedida alcança. Segmentação (@sec-cap028) limita onde o acesso obtido chega. Registro e detecção (@sec-cap031) encurtam o tempo até a descoberta quando tudo o mais falhar.
+
+**Um canal de reporte de baixíssimo atrito e sem punição.** Um botão, um ramal, um grupo — e resposta rápida, com agradecimento, inclusive quando o alarme era falso. O objetivo é maximizar o número de relatos, não a precisão deles. Alarme falso custa minutos; silêncio custa semanas.
+
+## ⚖️ Brasil em Foco
+
+**A engenharia social com finalidade patrimonial é estelionato qualificado.** A Lei 14.155/2021 inseriu o §2º-A no art. 171 do Código Penal, criando a modalidade de fraude eletrônica — pena de reclusão de 4 a 8 anos quando o estelionato é cometido com o uso de informação fornecida pela vítima por meio de rede social, contato telefônico ou envio de mensagem fraudulenta, com aumento quando praticado contra pessoa idosa ou vulnerável. É a descrição exata do vishing e do golpe por mensageria, e encerrou a antiga discussão sobre enquadramento [@lei14155].
+
+**Obter acesso a dispositivo por indução da vítima também é invasão.** A Lei 12.737/2012 (art. 154-A do CP) pune a invasão de dispositivo informático, e a redação dada pela Lei 14.155 alcança o acesso obtido mediante violação indevida de mecanismo de segurança — o que inclui o acesso conseguido convencendo a vítima a instalar um aplicativo de acesso remoto ou a fornecer o código de verificação. Consentimento arrancado por fraude não é consentimento [@lei12737; @lei14155].
+
+**Os dados que alimentam o pretexto são dados pessoais, e sua exposição tem dono.** A LGPD trata como relevante o incidente que gere risco aos titulares, e o pretexto convincente é construído justamente com o que vazou antes. Isso significa que um vazamento aparentemente inócuo — uma lista de nomes, cargos, telefones corporativos e e-mails — é matéria-prima de fraude e deve ser avaliado como tal na análise de risco, não descartado como "dado meramente cadastral" [@lgpd2018; @anpd2024res15].
+
+**Divulgação institucional excessiva amplia a superfície.** Organogramas detalhados no portal, listas telefônicas completas e notícias internas com nomes e alçadas de aprovação são publicações legítimas que reduzem o custo do reconhecimento. Órgãos públicos vivem a tensão real entre a Lei de Acesso à Informação e a proteção de dados: a LAI garante transparência da atividade administrativa, não a exposição de dados pessoais de servidores além do necessário, e o equilíbrio precisa ser deliberado, não acidental [@lai2011; @lgpd2018].
+
+**O setor financeiro tem obrigação regulatória de tratar o risco humano.** A Resolução CMN nº 4.893/2021 e a Resolução BCB nº 85/2021 exigem política de segurança cibernética com programa de capacitação e disseminação da cultura de segurança, além de controles de prevenção e tratamento de incidentes. Fraude por engenharia social não é acidente do usuário: é risco operacional cuja gestão a norma atribui à instituição [@bcb4893; @bcb85].
+
+**Provedores de conexão e de aplicação recebem pedidos sob pretexto de autoridade.** Solicitações de dados cadastrais, de registros de conexão ou de bloqueio chegam por telefone e por e-mail se dizendo "da delegacia" ou "do juízo". O Marco Civil da Internet condiciona a entrega de registros a requisição judicial nas hipóteses que especifica, e a Lei 9.296/1996 rege a interceptação. O procedimento de atendimento a autoridades precisa ser escrito, com validação da origem do ofício por canal oficial — atender ao pretexto revestido de autoridade estatal é, ao mesmo tempo, incidente de segurança e violação legal [@marcocivil2014; @lei9296].
+
+**A vítima tem canais formais, e a organização precisa conhecê-los antes.** Registro de boletim de ocorrência — inclusive pelas delegacias eletrônicas estaduais e pelas delegacias especializadas em crimes cibernéticos —, notificação ao CERT.br quando houver infraestrutura envolvida, e comunicação à ANPD e aos titulares quando houver dados pessoais com risco relevante, no prazo da Resolução CD/ANPD nº 15/2024. Esse caminho entra no playbook de incidente antes de ser necessário [@certbrfraudes; @anpd2024res15].
+
+## 🛠️ No Campo
+
+**1. Pare de chamar o usuário de elo fraco.** A frase produz punição e silêncio. Trate engenharia social como risco de processo, com dono, controle e métrica — igual a qualquer outro.
+
+**2. Escreva a lista curta do "nunca fazemos".** Três a cinco itens, sem exceção, afixados no atendimento: senha, segundo fator, dados bancários de fornecedor, acesso privilegiado, entrada sem crachá.
+
+**3. Remova a exceção de urgência.** "Salvo em caso de urgência" é a porta por onde todo pretexto entra. Se existe um caminho legítimo para a urgência, ele precisa ser um procedimento próprio, com verificação — e não a suspensão do procedimento.
+
+**4. Faça a verificação ser sempre iniciada por quem verifica.** Retorne pelo ramal do diretório, nunca pelo número informado. Encerre a ligação antes de retornar. Esse único hábito derruba a maior parte do vishing.
+
+**5. Exija segunda pessoa para o irreversível.** Pagamento acima do limite, troca de conta de fornecedor, reset de credencial privilegiada, criação de administrador. Persuadir dois independentemente é caro demais para o atacante típico.
+
+**6. Trate reconhecimento de voz como não-controle.** Voz sintética a partir de áudio público já é trivial. Nenhum processo pode ter "eu reconheci a voz" como etapa de autenticação.
+
+**7. Estabeleça um desafio combinado para os cargos mais visados.** Diretoria, financeiro e TI. Simples, rotacionado, jamais trafegado pelo mesmo canal do pedido.
+
+**8. Publique um canal único para pedidos de TI e repita-o à exaustão.** Se a organização só age por um caminho conhecido, o pedido que chega por fora já nasce suspeito, sem exigir perspicácia de ninguém.
+
+**9. Reduza a exposição pública desnecessária.** Organograma detalhado, lista telefônica completa e formato de e-mail em página aberta são presentes para o reconhecimento. Publique o necessário, não o disponível.
+
+**10. Implante autenticação resistente a phishing onde o dano é maior.** Passkey ou chave FIDO2 não gera código para ser entregue. É o controle que faz o pedido do atacante perder o sentido.
+
+**11. Estenda o processo aos terceiros.** Contabilidade, folha, prestador de TI e agência têm acesso e controles próprios. Verificação fora de banda vale igualmente para pedidos vindos deles.
+
+**12. Instale um botão de reportar com resposta rápida e sem culpa.** Agradeça o alarme falso publicamente. A métrica que interessa é volume e tempo de relato, não acurácia.
+
+**13. Faça a liderança se submeter primeiro.** Executivo que exige exceção porque é executivo é o maior fator de risco da organização. O processo só é real quando vale para quem tem poder de rompê-lo.
+
+**14. Teste o processo, não as pessoas.** Um exercício de vishing autorizado, com escopo escrito nos termos do @sec-cap056, deve medir se o roteiro do atendimento resistiu — e o achado vira mudança de procedimento, nunca repreensão individual.
+
+**15. Instrumente a detecção para depois do "sim".** Assuma que alguém vai ceder. Alerta de reset fora do padrão, de acesso de origem improvável, de criação de regra de encaminhamento em caixa de e-mail: são eles que encurtam o intervalo entre a cedência e a descoberta.
+
+## Resumo
+
+- A engenharia social é o caminho de **menor custo e maior confiabilidade** depois que os controles técnicos ficaram caros. Não explora um defeito da mente humana: explora as heurísticas que funcionam bem no resto da vida.
+- Os princípios de persuasão — autoridade, urgência, prestatividade, compromisso, prova social, afinidade e unidade — são a caixa de ferramentas do atacante, e a urgência é a peça que **impede a verificação**.
+- O pretexto é artefato construído em cinco fases: reconhecimento, persona e gancho, engajamento, exploração e saída. **A precisão do detalhe compra a confiança**, e o detalhe vem de fonte pública e de vazamentos anteriores.
+- O ataque bem executado **não é percebido como ataque**. Por isso "tentativas reportadas" mede a incompetência do atacante, não a vigilância da organização.
+- Treinar a desconfiar é camada, não defesa principal: saber não é perceber sob carga, o atacante só precisa acertar uma vez, e a exortação punitiva compra silêncio — que é o que torna o incidente caro.
+- **O critério de um bom controle é funcionar mesmo com a vítima inteiramente convencida**: verificação fora de banda iniciada pelo verificador, segunda pessoa para o irreversível, roteiros sem exceção de urgência, autenticação resistente a phishing e permissão institucional para dizer não.
+- No Brasil, a fraude eletrônica por engenharia social é estelionato qualificado (Lei 14.155/2021), o acesso obtido por indução configura invasão de dispositivo (Lei 12.737/2012), os dados que alimentam o pretexto são dados pessoais sob a LGPD, e o setor financeiro tem obrigação regulatória de manter programa de cultura de segurança.

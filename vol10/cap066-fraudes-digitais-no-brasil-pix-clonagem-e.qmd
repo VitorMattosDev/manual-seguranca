@@ -1,3 +1,237 @@
 # Fraudes digitais no Brasil: Pix, clonagem e golpes por mensageria {#sec-cap066}
 
-*(em elaboracao)*
+A mensagem chega no grupo da família às nove da noite: "Oi mãe, quebrei o celular e tô com número novo, salva aí". A foto do perfil é a da filha. O tom é o dela. Nos vinte minutos seguintes, a conversa passa por um problema com o cartão, um pagamento que precisa sair hoje e a chave Pix de "uma amiga que vai receber pra mim". Às 21h40, R$ 4.200 saem da conta da mãe e chegam à conta do fraudador. Às 21h41, o dinheiro já foi movimentado para outras três contas.
+
+Não houve invasão. Não houve malware. Não houve exploração de vulnerabilidade em sistema nenhum. Houve o encontro entre a engenharia social do @sec-cap064 e uma infraestrutura de pagamentos que liquida em segundos, vinte e quatro horas por dia, de forma irrevogável.
+
+Este capítulo trata do que torna o cenário brasileiro específico. Não porque brasileiros sejam mais ingênuos — não são —, mas porque a combinação de fatores locais produz uma economia de fraude com dinâmica própria, e defender aqui exige entender **esta** dinâmica, não a traduzida de material estrangeiro.
+
+## Por que o Brasil é diferente
+
+Quatro fatores se somam, e é a soma que importa.
+
+**Liquidação instantânea e irrevogável.** O Pix transfere em segundos, a qualquer hora, sem o intervalo que existia em TED, DOC e boleto. Aquele intervalo era, na prática, uma janela de contenção: dava tempo de perceber, ligar para o banco, cancelar. Ela não existe mais. **A velocidade que é benefício para o uso legítimo é benefício idêntico para a fraude** — e o dinheiro entra numa cadeia de contas-laranja em minutos.
+
+**Mensageria como canal universal.** O aplicativo de mensagens é, no Brasil, o canal padrão de comunicação com família, com o trabalho, com o síndico, com o dentista e com o fornecedor. Isso torna qualquer pedido por mensagem contextualmente normal — e um canal em que a organização não tem filtro, não tem gateway e não tem visibilidade nenhuma.
+
+**Abundância de dados pessoais em circulação.** Uma sucessão de vazamentos de grande escala colocou nome, CPF, data de nascimento, telefone, endereço e nome da mãe em bases negociadas livremente. Isso alimenta diretamente a fase de reconhecimento do @sec-cap064: o golpista que abre a ligação recitando seus dados corretos não é um estranho — parece o banco.
+
+**Autenticação por SMS ainda predominante.** Grande parte do ecossistema — bancos, aplicativos, mensageria, serviços públicos — ainda usa código por SMS como segundo fator ou como mecanismo de recuperação de conta. É o fator mais fraco disponível (@sec-cap024), e é justamente o que a clonagem de chip ataca.
+
+## Sequestro de conta de mensageria
+
+O ataque mais massificado do país tem duas variantes, e vale distingui-las porque a defesa difere.
+
+**Variante 1 — o código entregue pela vítima.** O atacante inicia o registro do número da vítima em outro aparelho. O aplicativo envia o código de seis dígitos por SMS para o número real. O atacante então liga ou manda mensagem se passando por suporte, por operadora, por sorteio, por "recadastramento do condomínio", e pede que a vítima confirme "o código que acabou de chegar". Entregue o código, a conta migra de aparelho — com a lista de contatos e, dependendo da configuração, o histórico.
+
+**Variante 2 — clonagem de chip (SIM swap).** O atacante não precisa da vítima: convence a operadora a portar o número ou emitir um novo chip. Consegue isso com os dados pessoais que já circulam, com documento falsificado ou com colaboração interna em ponto de atendimento. A partir daí, **todo SMS da vítima chega ao atacante** — incluindo os códigos de recuperação de banco, de e-mail e da mensageria. É o ataque mais grave dos dois, porque não depende de nenhum erro da vítima.
+
+A defesa da variante 1 é o **PIN de duas etapas** do próprio aplicativo: mesmo com o código SMS, o registro em novo aparelho exige um segredo que nunca trafega por SMS. É o controle de maior retorno por esforço que existe para o usuário brasileiro, e continua desativado na maior parte das contas.
+
+A defesa da variante 2 é estrutural: **parar de usar SMS como fator de autenticação e como mecanismo de recuperação** onde há valor. Para o indivíduo, isso significa migrar segundo fator para aplicativo autenticador ou passkey, e configurar o e-mail de recuperação com um segundo fator que não seja SMS. Para a organização, significa que nenhum acesso privilegiado pode depender de SMS.
+
+::: {#fig-cadeia-simswap}
+```{.tikz}
+%%| filename: cadeia-simswap
+%%| alt: Cadeia da clonagem de chip até o esvaziamento da conta bancária, com os controles que cortam cada elo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    passo/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                  inner sep=4pt, text width=2.35cm, minimum height=1.5cm,
+                  draw=manualred, fill=manualred!10},
+    corte/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                  inner sep=3pt, text width=2.35cm, minimum height=1.25cm,
+                  draw=manualgreen, fill=manualgreen!12}}
+
+  \foreach \idx/\tit/\des in {
+    0/{Dados da vítima}/{Nome, CPF, mãe,\\endereço --- de\\vazamento anterior},
+    1/{Chip portado}/{Operadora emite\\novo chip ou\\porta o número},
+    2/{SMS desviado}/{Todo código de\\verificação passa\\a chegar ao atacante},
+    3/{Contas tomadas}/{Banco, e-mail e\\mensageria recuperados\\pelo "esqueci a senha"},
+    4/{Pix em cadeia}/{Valor sai em minutos\\e se pulveriza\\entre contas}}
+    {\node[passo] (p\idx) at (\idx*2.75-5.5, 1.7) {\textbf{\tit}\\[2pt]\des};}
+  \foreach \idx/\prox in {0/1, 1/2, 2/3, 3/4}
+    {\draw[->, >=stealth, thick, manualgray] (p\idx) -- (p\prox);}
+
+  \foreach \idx/\ctr in {
+    0/{Higiene de dados;\\assumir que já\\vazaram},
+    1/{Verificação forte\\na portabilidade\\pela operadora},
+    2/{\textbf{Não usar SMS}\\como fator nem\\como recuperação},
+    3/{PIN de duas etapas;\\passkey; alerta de\\novo dispositivo},
+    4/{MED, limites,\\período de espera\\para conta nova}}
+    {\node[corte] (c\idx) at (\idx*2.75-5.5, -0.8) {\ctr};
+     \draw[->, >=stealth, thick, manualgreen] (c\idx) -- (p\idx);}
+
+  \node[draw=manualblue, fill=manualblue!12, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=12cm] at (0,-2.45)
+    {O elo do meio é o decisivo: enquanto o SMS for fator de autenticação e via de
+     recuperação, a posse temporária de um número de telefone equivale à posse da
+     identidade digital inteira da vítima.};
+\end{tikzpicture}
+```
+Da clonagem de chip ao esvaziamento da conta, e o controle que corta cada elo. O terceiro corte é o único que torna os dois primeiros irrelevantes.
+:::
+
+## O catálogo dos golpes de Pix
+
+Os nomes populares variam por região e por época; os mecanismos são estáveis. Conhecê-los pelo mecanismo é o que permite reconhecer a variante nova.
+
+**Falso funcionário do banco (falsa central).** A ligação vem informando "movimentação suspeita na sua conta". O golpista já tem seus dados, o que estabelece credibilidade instantânea, e conduz a vítima a "transferir para uma conta segura em seu nome" ou a "cancelar a transação" instalando um aplicativo. Ponto fixo de reconhecimento: **banco nenhum pede transferência para conta segura, e conta segura não existe**.
+
+**Mão fantasma.** A vítima é induzida a instalar um aplicativo de acesso remoto — apresentado como "aplicativo de segurança do banco" ou "atualização do módulo antifraude". A partir daí, o golpista opera o celular da vítima como se fosse ela: abre o aplicativo do banco na sessão já autenticada, faz transferências, contrata empréstimo. Do lado do banco, tudo é legítimo — dispositivo conhecido, biometria já validada, sessão real. É a fraude que mais dificulta a contestação, exatamente por isso.
+
+**QR code adulterado.** O QR do Pix carrega dados do recebedor. Substituir a placa do estacionamento, o adesivo da máquina de café ou a imagem enviada por mensagem redireciona o pagamento sem alterar nada visível. **O nome do recebedor sempre aparece na tela de confirmação antes de o pagamento sair** — conferir esse nome é a única defesa, e é a etapa que a pressa faz pular.
+
+**Golpe do Pix errado.** O golpista transfere um valor "por engano" e pede a devolução. O dinheiro original é fruto de outra fraude ou de um estorno posterior; a devolução, feita por Pix comum, é definitiva. A vítima fica no prejuízo duas vezes. A regra: devolução de Pix recebido por engano se faz **pela função de devolução do próprio aplicativo do banco**, nunca por uma nova transferência.
+
+**Falso boleto e falsa quitação.** Boleto de aparência idêntica com o código de barras alterado, ou o e-mail do "financeiro" enviando o boleto substituído — a versão doméstica do BEC do @sec-cap065. Conferir o beneficiário na tela de pagamento é a checagem que o formato de boleto permite e o QR de Pix também.
+
+**Falsa venda e falso anúncio.** Produto anunciado abaixo do preço, comprovante de pagamento falsificado por edição de imagem, ou vendedor que some após o Pix. Comprovante enviado por mensagem não é prova de nada; a confirmação é o extrato da própria conta.
+
+**Falso emprego, falso investimento e falso benefício.** Taxa antecipada, "liberação de valores", rendimento garantido. Estrutura clássica de estelionato, com o Pix apenas acelerando a saída do dinheiro.
+
+**Falso sequestro e falso parente.** A abertura deste capítulo. Depende do desespero e da pressa, e a defesa é combinada com antecedência: uma palavra-código familiar, e o hábito de ligar para o número antigo antes de qualquer transferência.
+
+**Golpe do falso motoboy e do cartão.** Ligação do "banco" avisando de compra indevida, seguida do envio de um portador para "recolher o cartão para perícia". Nenhuma instituição recolhe cartão em domicílio.
+
+O denominador comum de todos, sem exceção: **urgência artificial, canal escolhido pelo golpista e uma ação irreversível pedida à vítima**. É o mesmo esqueleto do @sec-cap064, com o Pix no lugar da senha.
+
+## Malware bancário e o dispositivo comprometido
+
+Nem toda fraude passa por convencimento direto. O Brasil tem uma tradição própria de malware bancário — famílias que substituem a tela do aplicativo por uma sobreposição falsa, capturam credenciais, alteram o código de barras de boletos copiados para a área de transferência e, nas variantes mais recentes, operam a transferência a partir do próprio dispositivo infectado para preservar a legitimidade da sessão.
+
+O vetor de entrada quase nunca é sofisticado: aplicativo instalado fora da loja oficial, permissão de acessibilidade concedida a um aplicativo que não deveria precisar dela, ou o próprio aplicativo de acesso remoto da mão fantasma. A análise técnica dessas famílias é assunto do Volume 11; aqui interessa a consequência prática: **a permissão de acessibilidade no Android é, para efeito de risco, uma permissão de controle total do dispositivo**, e concedê-la a um aplicativo desconhecido equivale a entregar o aparelho. Para a organização, isso conecta diretamente com a gestão de dispositivos móveis do @sec-cap040 — dispositivo com acesso a recurso corporativo não pode instalar fora da loja oficial nem conceder acessibilidade livremente.
+
+## As defesas do ecossistema
+
+O arranjo brasileiro respondeu à fraude com mecanismos próprios, e conhecê-los é parte do trabalho de quem defende ou orienta usuários.
+
+**Mecanismo Especial de Devolução (MED).** Permite que a instituição da vítima solicite o bloqueio e a devolução de valores em caso de fraude ou falha operacional, dentro de prazo definido, atuando sobre o saldo ainda existente na conta destinatária. Não é garantia de recuperação — se o dinheiro já saiu, não há o que devolver —, o que reforça que **os minutos após a fraude são decisivos**. Registrar imediatamente pelo aplicativo do banco é a ação de maior valor que a vítima pode tomar [@bcbmed].
+
+**Limites e escalonamento por horário.** O ecossistema adotou limites diferenciados para transações noturnas e a possibilidade de o usuário ajustar limites para baixo. Reduzir limites é um controle gratuito, imediato e subutilizado: a maior parte das pessoas mantém limites muito acima do que efetivamente usa.
+
+**Compartilhamento de indícios de fraude entre instituições.** A Resolução Conjunta nº 6/2023 estruturou o compartilhamento de dados sobre indícios de fraude entre instituições autorizadas, permitindo que uma conta marcada em um banco seja conhecida pelas demais. É o que dá sustentação às listas de contas suspeitas e à recusa preventiva [@bcbresconj6].
+
+**Cadastro e rastreabilidade.** O regulamento do arranjo exige que toda chave Pix esteja vinculada a CPF ou CNPJ identificado, e toda transação é rastreável [@bcbpix]. Isso não impede a fraude, mas viabiliza a investigação — e é a razão pela qual a economia de fraude depende de contas-laranja, cuja abertura em nome de terceiros é, ela própria, um mercado.
+
+**Celular Seguro.** O programa federal permite ao cidadão registrar seus dispositivos e, em caso de furto ou roubo, acionar um bloqueio comunicado simultaneamente a operadoras e instituições financeiras aderentes, atacando a janela entre o roubo do aparelho e o uso das contas nele abertas [@celularseguro2023].
+
+**Autorregulação e prevenção setorial.** As instituições mantêm mecanismos próprios de análise comportamental, marcação de dispositivo, avaliação de risco por transação e materiais de orientação ao consumidor [@febraban2024].
+
+::: {#fig-camadas-fraude-br}
+```{.tikz}
+%%| filename: camadas-fraude-br
+%%| alt: Camadas de defesa contra fraude digital no Brasil, do dispositivo do usuário ao ecossistema, com o que cada camada realmente controla
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cam/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+                inner sep=5pt, text width=11.6cm}}
+
+  \node[cam, draw=manualblue, fill=manualblue!13] at (0,3.15)
+    {\textbf{Ecossistema} \hfill \textit{Banco Central, operadoras, governo}\\
+     MED para bloqueio e devolução; compartilhamento de indícios de fraude entre
+     instituições; rastreabilidade por CPF/CNPJ; Celular Seguro. \textbf{Atua depois},
+     e só enquanto o dinheiro ainda existe na conta destino.};
+
+  \node[cam, draw=manualgreen, fill=manualgreen!13] at (0,1.45)
+    {\textbf{Instituição} \hfill \textit{banco, meio de pagamento}\\
+     Limites por horário e por transação; marcação de dispositivo; análise
+     comportamental; período de espera para conta nova; recusa preventiva de conta
+     marcada.};
+
+  \node[cam, draw=manualyellow, fill=manualyellow!16] at (0,-0.15)
+    {\textbf{Dispositivo e conta} \hfill \textit{usuário e área de TI}\\
+     Segundo fator que não seja SMS; PIN de duas etapas na mensageria; nada de
+     instalação fora da loja oficial; \textbf{acessibilidade = controle total};
+     limites reduzidos ao uso real; alerta de novo dispositivo.};
+
+  \node[cam, draw=manualred, fill=manualred!12] at (0,-1.85)
+    {\textbf{Decisão da pessoa} \hfill \textit{onde o golpe acontece}\\
+     Conferir o nome do recebedor antes de confirmar; devolver Pix só pela função de
+     devolução; desligar e retornar por canal próprio; palavra-código familiar;
+     \textbf{urgência é o sinal, não o motivo}.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt, align=center,
+        inner sep=5pt, font=\scriptsize, text width=11.6cm] at (0,-3.25)
+    {As três camadas de cima existem porque a de baixo vai falhar. Programa de defesa
+     que só investe na camada de baixo está apostando na perfeição humana.};
+\end{tikzpicture}
+```
+As quatro camadas da defesa contra fraude digital no Brasil. As superiores são as que sobrevivem ao erro da pessoa — e por isso são as que precisam estar configuradas antes.
+:::
+
+## O que a organização faz com isso
+
+Fraude por Pix parece assunto de pessoa física, e essa leitura custa caro. Ela alcança a empresa por vários caminhos.
+
+**Pagamentos e contas a pagar.** É o BEC do @sec-cap065 com Pix no lugar da transferência bancária tradicional — mais rápido, mais irreversível e com chave que pode ser trocada sem alterar o cadastro visível. O procedimento de verificação de dados de recebimento vale integralmente para chave Pix.
+
+**Recebimentos e cobrança.** Empresa que emite QR de Pix precisa proteger o canal de emissão: QR trocado em fatura enviada por e-mail, em site comprometido ou em material impresso é fraude contra o cliente que responde contra a marca.
+
+**Suporte e atendimento ao cliente.** A área de atendimento é o alvo do pretexto que quer alterar cadastro, chave de recebimento ou dados de contato. Vale o roteiro de "o que nunca fazemos" do @sec-cap064.
+
+**Funcionários vítimas.** Colaborador com conta de mensageria sequestrada vira vetor de ataque contra colegas — as mensagens partem de um contato real e conhecido. O procedimento de resposta precisa incluir a comunicação rápida ao grupo afetado.
+
+**Dispositivos.** Aparelho pessoal com acesso a recurso corporativo e com aplicativo de acesso remoto instalado por golpe é comprometimento de endpoint, com todas as consequências do @sec-cap040.
+
+## ⚖️ Brasil em Foco
+
+**A tipificação está consolidada.** A Lei 14.155/2021 criou a fraude eletrônica no art. 171, §2º-A do Código Penal, com pena de reclusão de 4 a 8 anos, aumento de um terço a dois terços quando praticada contra pessoa idosa ou vulnerável, e fixou no §4º a competência pelo domicílio da vítima. A mesma lei agravou o furto mediante fraude por dispositivo eletrônico (art. 155, §4º-B), que é o enquadramento típico da mão fantasma, em que o valor sai sem que a vítima realize a transação [@lei14155].
+
+**A instalação induzida de aplicativo de acesso remoto é invasão de dispositivo.** O art. 154-A do Código Penal, com a redação da Lei 12.737/2012 e alterações posteriores, alcança a obtenção de acesso mediante violação indevida de mecanismo de segurança. Consentimento obtido por fraude não afasta a tipicidade [@lei12737].
+
+**A responsabilidade civil depende do vetor, e o divisor é a falha do serviço.** A Súmula 479 do STJ estabelece a responsabilidade objetiva das instituições financeiras por danos de fraudes praticadas por terceiros no âmbito de operações bancárias — o chamado fortuito interno. Na prática, quando a fraude explora falha do sistema, do processo de recadastramento ou da clonagem de chip viabilizada por terceiros, a responsabilidade da instituição tende a ser reconhecida; quando a vítima realiza voluntariamente a transferência sob engano, a discussão gira em torno de culpa exclusiva e do dever de aviso, com jurisprudência variável. Em qualquer hipótese, aplica-se o Código de Defesa do Consumidor, com inversão do ônus da prova quando presente a hipossuficiência [@stjsumula479; @cdc1990].
+
+**O MED tem prazo, e prazo perdido não volta.** O Mecanismo Especial de Devolução, instituído pela Resolução BCB nº 147/2021, opera sobre o saldo ainda existente na conta destinatária e depende de acionamento tempestivo pela instituição da vítima. Isso torna a orientação prática inequívoca: **acionar o banco pelo aplicativo imediatamente, antes de qualquer outra providência** — o boletim de ocorrência é necessário, mas não precede o bloqueio [@bcbmed].
+
+**Compartilhamento de indícios de fraude é autorizado, mas regulado.** A Resolução Conjunta nº 6/2023 disciplina o compartilhamento entre instituições autorizadas, e ele convive com a LGPD: há base legal, mas há também finalidade limitada, dever de exatidão e direito do titular de contestar marcação indevida. Marcar alguém como suspeito de fraude é tratamento de dado com efeito concreto sobre a vida da pessoa, e erro nesse tratamento gera responsabilidade [@bcbresconj6; @lgpd2018].
+
+**Vazamento que alimenta fraude é incidente com dever de comunicação.** As bases que sustentam a credibilidade do golpista vieram de algum tratamento mal protegido. A LGPD e a Resolução CD/ANPD nº 15/2024 impõem a comunicação à autoridade e aos titulares quando houver risco relevante, no prazo de três dias úteis — e a demonstração de risco, aqui, é direta: dado pessoal vazado é insumo comprovado de estelionato [@lgpd2018; @anpd2024res15].
+
+**Furto e roubo de aparelho têm canal específico.** O programa Celular Seguro permite bloqueio comunicado a operadoras e instituições financeiras aderentes, e o registro de boletim de ocorrência viabiliza o bloqueio de IMEI junto às operadoras. Orientar colaboradores a cadastrar o aparelho **antes** do incidente é medida de custo zero [@celularseguro2023].
+
+**Registro de ocorrência e notificação técnica são caminhos paralelos.** Delegacias eletrônicas estaduais e delegacias especializadas em crimes cibernéticos recebem o registro; o CERT.br recebe notificações de páginas e infraestrutura fraudulentas hospedadas no país, o que é relevante para provedores que precisam agir sobre conteúdo hospedado. Para o provedor, vale lembrar o regime do Marco Civil quanto à guarda de registros e à necessidade de ordem judicial para fornecimento de dados [@certbrfraudes; @marcocivil2014].
+
+## 🛠️ No Campo
+
+**1. Ative o PIN de duas etapas na mensageria — seu e da equipe.** É o controle de melhor retorno por esforço contra o sequestro de conta mais comum do país, e continua desativado na maioria das contas.
+
+**2. Tire o SMS do caminho onde há valor.** Aplicativo autenticador ou passkey para banco, e-mail e contas corporativas. Nenhum acesso privilegiado pode ter SMS como fator ou como recuperação.
+
+**3. Reduza limites de Pix para o uso real.** Limite diurno, noturno e por transação. Gratuito, imediato, e limita o dano quando tudo o mais falhar.
+
+**4. Ensine a conferir o nome do recebedor.** É a única defesa contra QR adulterado e chave trocada, e é a etapa que a pressa faz pular. Vale igualmente para o setor de contas a pagar.
+
+**5. Devolução de Pix só pela função de devolução do aplicativo.** Nunca por nova transferência. Esta única regra fecha o golpe do "Pix errado".
+
+**6. Combine palavra-código com a família e com a diretoria.** Simples, nunca enviada pelo mesmo canal do pedido. Resolve o falso parente e a fraude do executivo com o mesmo mecanismo.
+
+**7. Trate acessibilidade no Android como privilégio de administrador.** Nenhum aplicativo desconhecido a recebe. Em dispositivo com acesso corporativo, isso é política de MDM, não recomendação.
+
+**8. Proíba instalação fora da loja oficial em dispositivo com acesso corporativo.** É o vetor de entrada quase universal do malware bancário brasileiro.
+
+**9. Estenda o procedimento de alteração de dados bancários à chave Pix.** Retorno de ligação ao contato do cadastro anterior, segunda aprovação, espera para a primeira transação a novo destinatário.
+
+**10. Proteja o canal de emissão dos seus QR codes.** Fatura por e-mail, página de pagamento e material impresso. QR trocado é fraude contra seu cliente que respinga na sua marca.
+
+**11. Escreva o playbook dos primeiros dez minutos.** Acionar o banco pelo aplicativo para MED, bloquear cartões e chaves, registrar ocorrência, avisar contatos. Nessa ordem — bloqueio antes de burocracia.
+
+**12. Cadastre os aparelhos no Celular Seguro antes de precisar.** Custo zero, e encurta a janela entre o roubo do aparelho e o esvaziamento das contas.
+
+**13. Trate conta de mensageria de colaborador sequestrada como incidente corporativo.** As mensagens saem de um contato real e conhecido. Comunicação rápida ao grupo afetado é contenção.
+
+**14. Ensine o mecanismo, não a lista de golpes.** A lista envelhece a cada temporada; "urgência artificial + canal escolhido por quem pediu + ação irreversível" reconhece a variante que ainda não existe.
+
+**15. Oriente sobre a vida pessoal, não só a corporativa.** A pessoa que protege a própria família aprende de verdade — e leva o hábito para o trabalho. É o programa de conscientização com melhor adesão que existe.
+
+## Resumo
+
+- O cenário brasileiro é específico pela soma de quatro fatores: **liquidação instantânea e irrevogável**, mensageria como canal universal, abundância de dados pessoais vazados e **SMS ainda predominante** como fator de autenticação.
+- O sequestro de conta de mensageria tem duas variantes: o código entregue pela vítima — que o **PIN de duas etapas** resolve — e a **clonagem de chip**, que não depende de erro da vítima e só é neutralizada tirando o SMS do caminho.
+- Enquanto o SMS for fator e via de recuperação, **a posse temporária de um número de telefone equivale à posse da identidade digital inteira**.
+- Os golpes de Pix variam de nome, mas compartilham o mesmo esqueleto: **urgência artificial, canal escolhido pelo golpista e ação irreversível pedida à vítima**. Ensinar o mecanismo reconhece a variante que ainda não existe; decorar a lista, não.
+- Pontos fixos que fecham famílias inteiras de golpe: banco não pede transferência para "conta segura", devolução de Pix se faz pela função de devolução, e **o nome do recebedor aparece na tela antes da confirmação**.
+- A **mão fantasma** é a fraude mais difícil de contestar, porque tudo é legítimo do lado do banco — e a permissão de acessibilidade que a viabiliza é, na prática, controle total do dispositivo.
+- As defesas do ecossistema — **MED**, limites por horário, compartilhamento de indícios de fraude, rastreabilidade e Celular Seguro — atuam depois e só enquanto o dinheiro ainda existe. Por isso os primeiros minutos decidem, e o acionamento do banco vem antes da burocracia.
+- Para a organização, a fraude chega por contas a pagar, pelo QR de cobrança, pelo atendimento, pelo colaborador com conta sequestrada e pelo dispositivo comprometido — não é assunto exclusivo de pessoa física.
+- No Brasil, a fraude eletrônica é estelionato qualificado com competência no domicílio da vítima e a mão fantasma tende ao furto mediante fraude (Lei 14.155/2021); aplica-se o CDC com a Súmula 479 do STJ; o MED tem prazo; e o vazamento que alimentou o pretexto é, ele próprio, incidente com dever de comunicação à ANPD.

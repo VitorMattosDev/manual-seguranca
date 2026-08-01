@@ -106,11 +106,11 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 10 — Fator Humano
 
-- [ ] **cap 064** - Engenharia social: os princípios psicológicos da persuasão - `vol10/cap064-engenharia-social-os-principios-psicologicos.qmd`
-- [ ] **cap 065** - Phishing, spear phishing e fraude do e-mail corporativo - `vol10/cap065-phishing-spear-phishing-e-fraude-do-e-mail.qmd`
-- [ ] **cap 066** - Fraudes digitais no Brasil: Pix, clonagem e golpes por mensageria - `vol10/cap066-fraudes-digitais-no-brasil-pix-clonagem-e.qmd`
-- [ ] **cap 067** - Segurança física e ataques presenciais - `vol10/cap067-seguranca-fisica-e-ataques-presenciais.qmd`
-- [ ] **cap 068** - Cultura de segurança e programas de conscientização - `vol10/cap068-cultura-de-seguranca-e-programas-de.qmd`
+- [x] **cap 064** - Engenharia social: os princípios psicológicos da persuasão - `vol10/cap064-engenharia-social-os-principios-psicologicos.qmd`
+- [x] **cap 065** - Phishing, spear phishing e fraude do e-mail corporativo - `vol10/cap065-phishing-spear-phishing-e-fraude-do-e-mail.qmd`
+- [x] **cap 066** - Fraudes digitais no Brasil: Pix, clonagem e golpes por mensageria - `vol10/cap066-fraudes-digitais-no-brasil-pix-clonagem-e.qmd`
+- [x] **cap 067** - Segurança física e ataques presenciais - `vol10/cap067-seguranca-fisica-e-ataques-presenciais.qmd`
+- [x] **cap 068** - Cultura de segurança e programas de conscientização - `vol10/cap068-cultura-de-seguranca-e-programas-de.qmd`
 
 ### Volume 11 — Malware e Inteligência de Ameaças
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (63 concluidos).
+**Total:** 107 capitulos em 16 volumes (68 concluidos).
 
