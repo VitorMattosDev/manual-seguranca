@@ -1,3 +1,192 @@
 # Criptografia pós-quântica {#sec-cap103}
 
-*(em elaboracao)*
+Um adversário com paciência e capacidade de coleta grava hoje o tráfego cifrado que passa por um enlace que ele consegue observar — um trecho de fibra, um ponto de troca, um enlace de rádio. Não consegue ler nada. Guarda mesmo assim, porque armazenamento é barato e porque a chave que protege aquele tráfego foi acordada por um algoritmo que, na hipótese de existir um computador quântico suficientemente grande, deixa de proteger qualquer coisa — inclusive retroativamente.
+
+Essa é a estratégia conhecida como **colher agora, decifrar depois**, e é a única razão pela qual criptografia pós-quântica é assunto de hoje e não de 2035. Se o único risco fosse o de amanhã, bastaria trocar os algoritmos quando a ameaça se materializasse. Mas confidencialidade tem prazo: prontuário médico, contrato, dado pessoal sensível, segredo industrial e material coberto por sigilo legal precisam continuar protegidos por anos ou décadas. **O que é gravado hoje e precisa permanecer secreto até 2040 já está sob ataque hoje**, mesmo que a decifração só ocorra depois.
+
+Este capítulo trata do que muda, do que não muda e — principalmente — do que fazer nos próximos anos com o que já está em produção. É um capítulo de migração, não de física.
+
+## O que um computador quântico faz e o que não faz
+
+Duas descobertas explicam o problema inteiro, e nenhuma delas diz "computador quântico quebra criptografia".
+
+**O algoritmo de Shor** resolve fatoração de inteiros e logaritmo discreto em tempo polinomial em um computador quântico [@shor1994]. Isso não é uma aceleração incremental: é a diferença entre inviável e viável. E é exatamente sobre esses dois problemas que estão assentados o RSA, o Diffie-Hellman e a criptografia de curvas elípticas do @sec-cap018 — ou seja, praticamente toda a criptografia assimétrica em uso hoje. Não há tamanho de chave que salve: dobrar o tamanho da chave RSA aumenta o custo quântico de forma modesta, não exponencial.
+
+**O algoritmo de Grover** dá aceleração quadrática para busca não estruturada [@grover1996]. Aplicado a uma busca exaustiva de chave simétrica de $n$ bits, reduz o esforço de $2^{n}$ para aproximadamente $2^{n/2}$. Isso é significativo, mas administrável: uma chave AES de 256 bits fica com margem equivalente a 128 bits — que continua fora de alcance. A aceleração de Grover tampouco se paraleliza bem, o que corrói ainda mais o ganho prático.
+
+A consequência é assimétrica e vale fixar:
+
+**Cai por completo:** RSA (assinatura e encapsulamento), Diffie-Hellman em corpo finito e em curvas elípticas, ECDSA, EdDSA. Tudo que sustenta o handshake TLS do @sec-cap020, a PKI do @sec-cap019, o SSH, o IPsec e a assinatura de código.
+
+**Fica de pé, com ajuste de parâmetro:** criptografia simétrica (AES-256 permanece adequado) e funções hash (SHA-256 e SHA-3 permanecem adequados para integridade; a resistência a colisão é afetada menos do que se supunha).
+
+Sobre o prazo, a honestidade é a melhor postura. Não existe hoje computador quântico capaz de executar Shor contra chaves reais, e a distância entre os protótipos atuais e a máquina necessária — milhões de qubits físicos para alguns milhares de qubits lógicos com correção de erro — é grande. Também não existe consenso sobre quando essa distância será vencida, e quem afirma data com precisão está vendendo alguma coisa. **A decisão de migrar não depende dessa data**, e a próxima seção explica por quê.
+
+## A conta que decide, e ela não precisa da data
+
+Michele Mosca formulou a única aritmética de que se precisa. Sejam:
+
+- $X$ = por quantos anos este dado precisa permanecer confidencial;
+- $Y$ = quantos anos a organização levará para migrar seus sistemas;
+- $Z$ = quantos anos faltam para existir um computador quântico criptograficamente relevante.
+
+**Se $X + Y > Z$, já se está atrasado.**
+
+O que torna essa desigualdade útil é que ela põe o foco onde há controle. $Z$ é desconhecido e ninguém o influencia. $X$ é determinado pelo negócio e pela lei — prontuário, sigilo bancário, dado sensível, contrato de longo prazo. **$Y$ é a única variável sob gestão, e costuma ser muito maior do que as pessoas imaginam**: migrações criptográficas anteriores levaram de cinco a quinze anos em organizações grandes. A transição de SHA-1 para SHA-2 levou mais de uma década, e ainda há sistema com SHA-1 em produção.
+
+::: {#fig-mosca}
+```{.tikz}
+%%| filename: mosca
+%%| alt: Linha do tempo do teorema de Mosca comparando prazo de sigilo mais tempo de migracao contra a chegada do computador quantico
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    barra/.style={draw, thick, rounded corners=2pt, minimum height=0.62cm,
+                  align=center, font=\tiny, inner sep=2pt},
+    marca/.style={-{Stealth[length=2mm]}, thick, manualgray}}
+
+  % eixo
+  \draw[manualgray, thick, -{Stealth[length=2.4mm]}] (-0.3,0) -- (12.2,0);
+  \node[font=\tiny, manualgray, anchor=north] at (11.6,-0.15) {tempo};
+
+  % Z: chegada do computador quantico
+  \draw[manualred, very thick, dashed] (8.6,-0.25) -- (8.6,4.1);
+  \node[font=\tiny, manualred, anchor=south, align=center] at (8.6,4.15)
+    {$Z$ --- computador quântico\\criptograficamente relevante};
+
+  % cenario ruim
+  \node[font=\tiny, anchor=east, align=right] at (-0.45,3.1)
+    {\textbf{cenário}\\\textbf{comum}};
+  \node[barra, draw=manualblue, fill=manualblue!16, minimum width=5.4cm]
+    at (2.7,3.35) {$X$ --- prazo de sigilo do dado (10 anos)};
+  \node[barra, draw=manualyellow, fill=manualyellow!22, minimum width=4.6cm]
+    at (7.7,2.65) {$Y$ --- tempo de migração (8 anos)};
+  \node[font=\tiny, manualred, anchor=west, align=left] at (10.15,3.0)
+    {$X+Y > Z$\\\textbf{já atrasado}};
+
+  % cenario bom
+  \node[font=\tiny, anchor=east, align=right] at (-0.45,1.2)
+    {\textbf{cenário}\\\textbf{gerenciado}};
+  \node[barra, draw=manualblue, fill=manualblue!16, minimum width=5.4cm]
+    at (2.7,1.45) {$X$ --- prazo de sigilo do dado (10 anos)};
+  \node[barra, draw=manualgreen, fill=manualgreen!18, minimum width=1.6cm]
+    at (6.2,0.75) {$Y$ --- 3 anos};
+  \node[font=\tiny, manualgreen!60!black, anchor=west, align=left] at (8.85,1.1)
+    {$X+Y < Z$\\\textbf{margem}};
+
+  \node[draw=manualgray, fill=manualgray!10, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.9cm]
+    at (5.9,-1.5)
+    {$Z$ é desconhecido e ninguém o influencia. $X$ vem do negócio e da lei.
+     \textbf{$Y$ é a única variável sob gestão} --- e é a que as organizações
+     subestimam: a transição de SHA-1 para SHA-2 levou mais de uma década, e
+     ainda há sistema com SHA-1 em produção. Encurtar $Y$ começa por saber
+     onde a criptografia está, o que exige inventário.};
+\end{tikzpicture}
+```
+A desigualdade de Mosca. A decisão de migrar não depende de saber a data de $Z$.
+:::
+
+Repare no detalhe que muda a urgência: **para confidencialidade, o relógio de $X$ já está correndo** — o dado gravado hoje é decifrado no futuro. Para autenticidade e assinatura, não: uma assinatura só precisa resistir enquanto tiver de ser verificada, e um adversário não pode forjar retroativamente uma assinatura de 2026 se o algoritmo só cair em 2038 e a verificação já ocorreu. **Confidencialidade tem pressa; assinatura tem prazo.** Essa distinção é a que mais organiza a priorização da migração, e é a mais ignorada.
+
+## Os novos algoritmos
+
+O NIST conduziu um processo público de padronização de quase uma década, com rodadas de avaliação e criptanálise aberta, e publicou os primeiros padrões em 2024. Três importam agora:
+
+**FIPS 203 — ML-KEM**, derivado do CRYSTALS-Kyber. É um **mecanismo de encapsulamento de chave** baseado em reticulados. Substitui o papel do Diffie-Hellman e do RSA no estabelecimento de chave [@fips203].
+
+**FIPS 204 — ML-DSA**, derivado do CRYSTALS-Dilithium. Assinatura digital baseada em reticulados. É a assinatura de propósito geral recomendada [@fips204].
+
+**FIPS 205 — SLH-DSA**, derivado do SPHINCS+. Assinatura baseada apenas em funções hash. Assinaturas grandes e verificação mais lenta, mas com uma vantagem decisiva: **sua segurança depende só de hipóteses sobre funções hash**, que são as mais bem compreendidas da criptografia. É o seguro contra uma eventual quebra matemática das construções sobre reticulados, e a escolha natural para raiz de confiança e assinatura de firmware, onde o volume é baixo e a longevidade é alta [@fips205].
+
+Uma nota sobre nomenclatura que evita confusão em documentação: **KEM não é a mesma coisa que cifra assimétrica**. Um KEM produz um segredo compartilhado e um encapsulamento dele; não cifra uma mensagem arbitrária. Na prática isso não muda nada, porque o uso real do RSA e do DH em protocolos já era estabelecer chave para uma cifra simétrica — mas muda a interface, e é por isso que a migração não é uma troca de biblioteca com a mesma assinatura de função.
+
+O custo prático é o tamanho. Uma chave pública ML-KEM-768 tem cerca de 1,2 KB e o encapsulamento cerca de 1,1 KB, contra 32 bytes de uma chave X25519. Uma assinatura ML-DSA-65 tem cerca de 3,3 KB, contra 64 bytes de Ed25519. E uma assinatura SLH-DSA passa facilmente de 7 KB. **Isso tem consequência operacional real**: handshakes que antes cabiam em poucos pacotes passam a não caber, certificados incham, cadeias de certificados incham mais, e protocolos com restrição de tamanho de datagrama — DNSSEC, alguns perfis de IKEv2, dispositivos embarcados com pouca memória — sofrem primeiro.
+
+## Híbrido, e por que ele é a resposta certa agora
+
+A criptanálise dos esquemas baseados em reticulados é jovem. Foram anos de escrutínio público, o que é bom, mas não são as quatro décadas de ataque contínuo que o RSA sofreu. Um esquema como o SIKE, finalista de uma das rodadas do processo, foi quebrado em um laptop em poucas horas por um ataque publicado depois da seleção — lembrete útil de humildade.
+
+A resposta da comunidade foi o **modo híbrido**: combinar um algoritmo clássico e um pós-quântico no mesmo estabelecimento de chave, derivando o segredo final de ambos. O resultado é seguro se **pelo menos um** dos dois for seguro. Se os reticulados caírem por criptanálise clássica, resta o X25519; se o computador quântico chegar, resta o ML-KEM.
+
+Na prática, no TLS 1.3 isso aparece como grupos de troca de chave híbridos — o mais implantado combina X25519 com ML-KEM-768 —, negociados pelo mesmo mecanismo de extensão do @sec-cap020, sem mudança de protocolo [@tlshybrid]. Navegadores e grandes provedores já operam essa combinação por padrão em parte do tráfego, o que significa que **parte da internet já é pós-quântica em confidencialidade sem que ninguém tenha notado**. Para IPsec há caminho equivalente, incluindo o uso de chaves pré-compartilhadas adicionais como medida de transição em ambientes que ainda não suportam os novos grupos [@rfc8784].
+
+Para assinatura, o híbrido é mais problemático — certificados com duas assinaturas ficam grandes e a lógica de validação em cadeias mistas é fonte de erro. A tendência prática, para a maior parte das organizações, é aguardar a evolução da PKI pública e das cadeias de confiança, priorizando desde já o que é de longuíssimo prazo: raiz de confiança de fabricante, assinatura de firmware e ancoragem de atualização de dispositivo.
+
+## O que fazer nos próximos anos
+
+A recomendação convergente das agências é clara na sequência, e a primeira etapa é a que quase ninguém executa [@cisaquantum; @nistir8547; @nistsp180038].
+
+**1. Inventário criptográfico.** Onde está a criptografia? Não é uma pergunta retórica: a resposta honesta na maioria das organizações é "não sabemos". Serviços TLS e suas versões e grupos; VPNs e seus algoritmos; certificados internos, com validade e algoritmo; chaves de assinatura de código e de firmware; bibliotecas embutidas em aplicações próprias; criptografia dentro de bancos de dados e de sistemas de arquivos; módulos de hardware; e — o mais esquecido — criptografia em produtos de terceiros, cuja migração não depende de você. Sem esse inventário, $Y$ é indeterminado, e não há plano possível.
+
+**2. Classificar por prazo de sigilo.** Cruzar o inventário com $X$. O que precisa ficar secreto por mais de dez anos e trafega por rede não confiável é a fila de frente. O que é efêmero — sessão web, telemetria — pode esperar o ciclo natural de atualização.
+
+**3. Agilidade criptográfica.** Esta é a entrega mais valiosa do esforço, e vale mesmo que a ameaça quântica não se materialize nunca. Significa: algoritmo como configuração e não como constante compilada; nenhuma suposição de tamanho fixo de chave, de assinatura ou de bloco espalhada pelo código; negociação de algoritmo nos protocolos internos; capacidade de girar e revogar sem parada. Quem tem agilidade migra em meses; quem não tem descobre que "trocar o algoritmo" significa recompilar dezenas de sistemas e renegociar contratos.
+
+**4. Habilitar híbrido onde já é possível e barato.** Terminadores TLS modernos, VPNs, SSH em versões recentes. Custo baixo, ganho imediato contra colher agora e decifrar depois.
+
+**5. Exigir plano de fornecedores.** Entra na diligência do @sec-cap101 e na cláusula contratual: qual o roteiro pós-quântico do produto, qual a versão que suportará os novos algoritmos, qual o prazo. Para equipamento de rede e de infraestrutura, incluir a pergunta em toda aquisição a partir de agora — o equipamento comprado hoje ainda estará em operação quando a migração for obrigatória.
+
+**6. Não inventar criptografia, e desconfiar de quem vende solução mágica.** A regra do @sec-cap021 vale com força redobrada aqui. Produtos que prometem "segurança quântica" com criptografia proprietária não auditada, ou que confundem distribuição quântica de chaves — tecnologia de nicho, que exige enlace óptico dedicado e não resolve autenticação — com criptografia pós-quântica, são ruído caro. **O caminho é implementar os padrões publicados, em bibliotecas maduras, em modo híbrido.**
+
+## ⚖️ Brasil em Foco
+
+**A ICP-Brasil é o ponto de maior alavancagem nacional, e o mais lento de mover.** Certificados e-CPF e e-CNPJ, assinatura de documentos com validade jurídica pela MP 2.200-2, notas fiscais eletrônicas, prontuário eletrônico e processo judicial eletrônico dependem de uma cadeia de confiança inteiramente assentada em RSA e curvas elípticas. Migrar essa cadeia envolve raiz, autoridades certificadoras, autoridades de registro, mídias criptográficas de milhões de usuários e todo o parque de software que valida essas assinaturas. É migração de década, não de projeto — e acompanhar as deliberações do ITI sobre o tema deixa de ser curiosidade para virar planejamento [@mp2200; @iti2024].
+
+**Documento assinado hoje precisa ser verificável em 2045.** Escritura, contrato de longo prazo e documento arquivístico permanente colocam um problema que a assinatura pós-quântica sozinha não resolve: preservação de longo prazo. A resposta técnica existente é o carimbo de tempo e o reselo periódico, que reancoram a validade em algoritmos vigentes antes que os antigos enfraqueçam. **Organizações que dependem de assinatura de longa duração precisam ter política de reselo — e a maioria não tem** [@iti2024; @mp2200].
+
+**O Pix e o sistema financeiro têm superfície criptográfica crítica e regulador ativo.** As comunicações do arranjo usam certificados e TLS mútuo, e o Banco Central já trata gestão criptográfica dentro da política de segurança cibernética exigida das instituições. É o setor com maior probabilidade de receber orientação regulatória específica sobre transição pós-quântica primeiro, e onde a resposta "vamos ver" tem prazo mais curto [@bcbpix; @bcb4893].
+
+**O prazo de guarda regulatória cria $X$ por força de lei.** O Marco Civil obriga provedores a guardar registros de conexão por um ano e de acesso a aplicações por seis meses; regras setoriais e a legislação tributária estendem prazos de guarda de outros conjuntos por cinco anos ou mais; e há dados sob sigilo legal cuja proteção não tem prazo definido. Cada um desses prazos é um $X$ concreto, e o que está cifrado com algoritmo clássico e armazenado por longo período entra na mesma conta de risco do tráfego interceptado [@marcocivil2014; @lgpd2018].
+
+**A LGPD exige medidas de segurança compatíveis com o estado da arte.** O artigo 46 fala em medidas técnicas aptas a proteger os dados, e "estado da arte" é conceito móvel: o que era adequado em 2020 não define adequação em 2032. Uma organização que, tendo conhecimento público da transição e prazos de sigilo longos, não iniciou inventário nem planejamento, terá dificuldade de sustentar diligência perante a ANPD em um incidente futuro [@lgpd2018; @lei13709art46; @anpd2021agentes].
+
+**Provedores de telecomunicações têm obrigação regulatória de gestão de vulnerabilidades e de ciclo de vida.** O regulamento de segurança cibernética aplicável ao setor trata de requisitos para equipamentos e da atualização de infraestrutura; equipamento de rede adquirido hoje com criptografia não atualizável é dívida técnica com data de vencimento regulatória. A pergunta sobre roteiro pós-quântico pertence ao processo de aquisição [@anatel740; @anatel680].
+
+**CERT.br e NIC.br são a fonte de acompanhamento em português.** Recomendações de configuração TLS, materiais sobre boas práticas e comunicação de mudanças na infraestrutura de nomes e de roteamento passam por eles, e é por ali que a orientação prática de transição tende a circular primeiro no país [@cert2024praticas; @nicbr2024dnssec].
+
+## 🛠️ No Campo
+
+**1. Faça o inventário criptográfico antes de qualquer outra coisa.** Sem saber onde a criptografia está, não há como estimar o tempo de migração — e é justamente ele a variável sob seu controle.
+
+**2. Use a desigualdade de Mosca para priorizar, não para prever.** $X + Y > Z$ decide urgência sem exigir que se saiba a data de $Z$.
+
+**3. Separe confidencialidade de assinatura na priorização.** Confidencialidade tem pressa por causa do "colher agora, decifrar depois"; assinatura só precisa resistir enquanto for verificada.
+
+**4. Ligue o híbrido onde já é barato.** TLS e VPN modernos negociam X25519 com ML-KEM sem mudança de protocolo — ganho imediato, custo quase nulo.
+
+**5. Trate agilidade criptográfica como a entrega principal.** Algoritmo em configuração, nenhum tamanho de chave fixo espalhado no código, capacidade de girar sem parada. Vale mesmo que a ameaça nunca chegue.
+
+**6. Não aumente tamanho de chave RSA achando que ajuda.** Contra Shor, não ajuda. Só encarece o presente.
+
+**7. Mantenha AES-256 e SHA-256/SHA-3.** A criptografia simétrica e as funções hash seguem adequadas; a perda para Grover é administrável.
+
+**8. Planeje o crescimento de tamanho.** Chaves e assinaturas na casa dos kilobytes afetam handshake, MTU, cadeias de certificado e dispositivos com pouca memória — teste antes de descobrir em produção.
+
+**9. Reserve SLH-DSA para raiz de confiança e firmware.** Assinatura grande, mas apoiada apenas em funções hash — é o seguro contra quebra dos reticulados.
+
+**10. Pergunte o roteiro pós-quântico em toda aquisição.** O equipamento comprado hoje estará em operação quando a migração for obrigatória.
+
+**11. Ponha a exigência no contrato do fornecedor.** Entra na diligência de terceiros, junto das demais cláusulas de segurança.
+
+**12. Tenha política de reselo para assinatura de longa duração.** Documento que precisa valer em 2045 exige carimbo de tempo e reancoragem periódica.
+
+**13. Trate dados cifrados em repouso com guarda longa como tráfego interceptado.** Prazo regulatório de guarda é um $X$ concreto na conta de risco.
+
+**14. Não compre criptografia proprietária "quantum-safe".** Padrões publicados, bibliotecas maduras, modo híbrido — o resto é ruído caro.
+
+**15. Não confunda distribuição quântica de chaves com criptografia pós-quântica.** São coisas distintas; a primeira exige enlace óptico dedicado e não resolve autenticação.
+
+**16. Acompanhe ITI e Banco Central se você opera assinatura ou meios de pagamento.** É de lá que virá a orientação de transição que muda o seu cronograma.
+
+## Resumo
+
+- A urgência vem de **colher agora, decifrar depois**: o tráfego gravado hoje pode ser decifrado quando o computador quântico existir, o que põe sob ataque atual tudo que precisa permanecer secreto por muitos anos.
+- **Shor** derruba RSA, Diffie-Hellman e curvas elípticas — toda a criptografia assimétrica em uso. **Grover** apenas reduz pela metade a margem simétrica: AES-256, SHA-256 e SHA-3 permanecem adequados. Aumentar chave RSA não resolve nada.
+- A desigualdade de Mosca, $X + Y > Z$, decide a urgência sem exigir a data de chegada da máquina. **$Y$ — o tempo de migração — é a única variável sob gestão**, e é sistematicamente subestimada.
+- **Confidencialidade tem pressa; assinatura tem prazo.** Essa distinção organiza a priorização melhor do que qualquer outra, e é a mais ignorada.
+- Os padrões publicados são **ML-KEM** (FIPS 203) para encapsulamento de chave, **ML-DSA** (FIPS 204) para assinatura de propósito geral e **SLH-DSA** (FIPS 205), apoiada só em funções hash, para raiz de confiança e firmware.
+- **Modo híbrido é a resposta certa agora**: clássico mais pós-quântico, seguro se qualquer um dos dois resistir. Já em operação no TLS 1.3 com X25519 e ML-KEM-768, sem mudança de protocolo.
+- O custo prático é o tamanho: chaves e assinaturas de kilobytes afetam handshake, MTU, cadeias de certificado e dispositivos restritos. Isso precisa ser testado, não presumido.
+- A sequência de trabalho é inventário criptográfico, classificação por prazo de sigilo, **agilidade criptográfica** — a entrega mais valiosa, útil mesmo sem ameaça quântica —, híbrido onde é barato e exigência de roteiro dos fornecedores.
+- No Brasil, a **ICP-Brasil** é a migração mais pesada e mais lenta, com efeito sobre assinatura com validade jurídica, nota fiscal e processo eletrônico; documento de longa duração exige política de reselo; e prazos legais de guarda transformam $X$ em obrigação, não em estimativa.
+- Desconfie de criptografia proprietária vendida como "à prova de quântico" e não confunda distribuição quântica de chaves com criptografia pós-quântica: o caminho é padrão publicado, biblioteca madura e híbrido.

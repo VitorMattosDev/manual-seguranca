@@ -169,7 +169,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 ### Volume 16 — Fronteira e Carreira
 
 - [x] **cap 102** - Segurança de sistemas de IA e modelos de linguagem - `vol16/cap102-seguranca-de-sistemas-de-ia-e-modelos-de.qmd`
-- [ ] **cap 103** - Criptografia pós-quântica - `vol16/cap103-criptografia-pos-quantica.qmd`
+- [x] **cap 103** - Criptografia pós-quântica - `vol16/cap103-criptografia-pos-quantica.qmd`
 - [ ] **cap 104** - Segurança de OT, IoT e sistemas embarcados - `vol16/cap104-seguranca-de-ot-iot-e-sistemas-embarcados.qmd`
 - [ ] **cap 105** - Segurança da cadeia de suprimentos de software - `vol16/cap105-seguranca-da-cadeia-de-suprimentos-de-software.qmd`
 - [ ] **cap 106** - Privacidade, anonimato e vigilância - `vol16/cap106-privacidade-anonimato-e-vigilancia.qmd`
