@@ -1,3 +1,252 @@
 # Testes de continuidade e exercícios de mesa {#sec-cap091}
 
-*(em elaboracao)*
+O exercício durou noventa minutos e produziu um único achado que ninguém esperava. O cenário era banal: ransomware em três servidores de arquivos, descoberto às 6h de uma sexta-feira. A equipe técnica respondeu bem — isolamento, verificação do backup imutável, estimativa de restauração. O facilitador então leu a segunda injeção: *"Às 8h15, uma jornalista de um portal de tecnologia liga para a recepção dizendo que um grupo de ransomware publicou o nome da empresa no site de vazamentos e pergunta se a empresa confirma."*
+
+Silêncio de vinte segundos. Depois, três pessoas falando ao mesmo tempo, cada uma achando que outra tinha essa atribuição. O diretor jurídico perguntou quem era o porta-voz. Ninguém sabia. Alguém sugeriu "não comentar", e o diretor comercial respondeu que dois clientes grandes já teriam ligado até lá e que "não comentar" com eles não era uma opção contratual.
+
+Custo do achado: noventa minutos de nove pessoas em uma sala. Custo do mesmo achado descoberto durante um incidente real: incalculável, e pago em público.
+
+Este é o argumento inteiro do capítulo. O @sec-cap090 produziu um plano; o plano é uma **hipótese** até que alguém o submeta a um cenário. Exercitar é o processo que converte documento em capacidade — e o mecanismo mais barato de encontrar defeitos que nenhuma revisão de escrivaninha encontra.
+
+## Por que exercitar, e o que exercitar revela
+
+Planos falham em crise por razões que a leitura não expõe.
+
+**Pressupostos silenciosos.** O plano diz "restaurar do backup" e assume que a licença do software está disponível, que o hardware de destino existe, que alguém sabe a senha do console. Cenários forçam a explicitação.
+
+**Lacunas de atribuição.** As tarefas que ninguém reivindica só aparecem quando alguém precisa fazê-las. Falar com a imprensa, decidir sobre pagamento, autorizar gasto emergencial fora do orçamento, comunicar o cliente contratualmente crítico.
+
+**Distância entre o escrito e o executável.** Procedimento redigido por quem projetou o sistema, executado por quem está de plantão às três da manhã. A diferença entre os dois é medida em horas.
+
+**Comportamento sob pressão.** Sob estresse, equipes não seguem documentos: seguem o que praticaram. Um plano nunca exercitado tende a ser abandonado nos primeiros minutos em favor da improvisação — e é justamente aí que se destrói evidência, se comunica errado e se contamina o backup.
+
+**Interfaces entre grupos.** O ponto de falha mais comum não é dentro da equipe técnica nem dentro da diretoria: é entre elas. Exercícios que envolvem apenas TI validam a parte que costuma funcionar.
+
+## A escada de exercícios
+
+Exercícios formam uma progressão de custo, risco e realismo. Começar pelo topo é a forma mais eficiente de queimar o programa: um teste de interrupção total mal preparado derruba a produção, assusta a diretoria e enterra a iniciativa por dois anos.
+
+::: {#fig-escada-exercicios}
+```{.tikz}
+%%| filename: escada-exercicios
+%%| alt: Escada de tipos de exercicio de continuidade do mais simples ao mais realista com custo e risco crescentes
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    dg/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=6.4cm, minimum height=1.15cm}}
+
+  \node[dg, draw=manualgreen, fill=manualgreen!14] at (-1.6,3.3)
+    {\textbf{1. Revisão de mesa} --- leitura crítica do plano com os
+     responsáveis. Barata, rápida, encontra contato errado e
+     procedimento obsoleto.};
+  \node[dg, draw=manualgreen, fill=manualgreen!11] at (-0.7,1.9)
+    {\textbf{2. Exercício de mesa} --- cenário discutido em sala, sem
+     tocar em sistema. Encontra lacuna de decisão, de atribuição e de
+     comunicação.};
+  \node[dg, draw=manualyellow, fill=manualyellow!18] at (0.2,0.5)
+    {\textbf{3. Exercício funcional} --- executa procedimentos reais em
+     ambiente controlado: restauração, ativação de contato, acionamento
+     de fornecedor.};
+  \node[dg, draw=manualred, fill=manualred!11] at (1.1,-0.9)
+    {\textbf{4. Teste em paralelo} --- o sítio secundário assume a carga
+     sem desligar o primário. Mede RTO real com risco contido.};
+  \node[dg, draw=manualred, fill=manualred!15] at (2.0,-2.3)
+    {\textbf{5. Interrupção total} --- o primário é efetivamente desligado.
+     Única prova definitiva; exige maturidade e janela negociada.};
+
+  \draw[-{Stealth[length=2.8mm]}, very thick, manualgray]
+    (-5.6,-3.3) -- (-5.6,4.1);
+  \node[font=\tiny, manualgray, rotate=90, anchor=south]
+    at (-5.85,0.4) {custo, risco e realismo};
+\end{tikzpicture}
+```
+A escada de exercícios. Cada degrau valida o anterior; pular degraus produz exercícios que falham por preparação, não por capacidade.
+:::
+
+**Revisão de mesa.** Os responsáveis leem o plano juntos, procurando o que mudou. Encontra contato desatualizado, servidor desativado, procedimento que menciona sistema aposentado. Custa uma hora e deve acontecer trimestralmente.
+
+**Exercício de mesa.** Um cenário é apresentado e discutido; ninguém toca em sistema. É o degrau com melhor relação entre custo e achados, e o foco deste capítulo.
+
+**Exercício funcional.** Procedimentos reais executados em ambiente controlado: restaurar um servidor de verdade, acionar o fornecedor de verdade, ligar para o número do plano e ver quem atende.
+
+**Teste em paralelo.** O ambiente secundário assume a carga real enquanto o primário continua ligado. Mede o RTO efetivo sem apostar a produção.
+
+**Teste de interrupção total.** O primário é desligado. É a única prova definitiva e exige um programa maduro, janela negociada com o negócio e caminho de reversão testado.
+
+## Anatomia de um exercício de mesa
+
+Um exercício de mesa bem construído tem partes definidas, e improvisar qualquer uma delas degrada o resultado [@nistsp80084; @iso22398].
+
+**Objetivos, antes do cenário.** Três a cinco objetivos verificáveis: "validar que a decisão de declarar desastre é tomada em menos de 30 minutos", "verificar se existe porta-voz definido", "confirmar que o encarregado de dados é acionado a tempo do prazo regulatório". Sem objetivos, o exercício vira conversa interessante sem produto.
+
+**Escopo declarado.** Quais sistemas, quais processos, quais equipes, e o que está explicitamente **fora**. Escopo largo demais produz discussão superficial.
+
+**Cenário plausível e relevante.** Baseado nas ameaças reais àquela organização, não no que é dramático. Para um provedor regional brasileiro, ransomware entrando por acesso remoto de terceiro, rompimento de fibra em rota única e comprometimento da conta de nuvem são mais úteis que um ataque de Estado-nação.
+
+**Injeções que escalam.** O cenário não é entregue de uma vez. Ele avança em injeções — novos fatos liberados ao longo do tempo, que mudam o quadro e forçam decisões sob informação incompleta. É onde mora o valor do exercício.
+
+**Papéis definidos.** *Facilitador*, que conduz e libera injeções sem resolver o problema pelos participantes; *avaliadores*, que observam e anotam contra os objetivos, sem participar; *participantes*, que são as pessoas que fariam aquilo de verdade — não seus substitutos "porque o titular está ocupado".
+
+**Regras de convivência.** Três importam: **sem culpa** — o objetivo é encontrar defeito no processo, não em pessoas; **decisões valem** — quem decidiria na vida real decide ali, e o grupo segue a decisão; e **é proibido resolver com "a gente daria um jeito"**. Se o jeito não está no plano, o achado é que falta no plano.
+
+**Registro em tempo real.** Alguém anota decisões, horários, dúvidas e travamentos. Sem isso, o relatório vira memória seletiva.
+
+::: {#fig-linha-exercicio}
+```{.tikz}
+%%| filename: linha-exercicio
+%%| alt: Linha do tempo de um exercicio de mesa de noventa minutos com injecoes e pontos de decisao
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    inj/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                inner sep=3pt, text width=2.5cm}}
+
+  \draw[-{Stealth[length=2.4mm]}, very thick, manualgray] (-6.3,0) -- (6.5,0);
+  \foreach \pos/\rot in {-5.4/0, -2.9/15, -0.4/40, 2.1/60, 4.6/80} {
+    \draw[thick, manualgray] (\pos,-0.15) -- (\pos,0.15);
+    \node[font=\tiny, manualgray, anchor=north] at (\pos,-0.2) {\rot\,min};
+  }
+
+  \node[inj, draw=manualblue, fill=manualblue!13, anchor=south]
+    at (-5.4,0.4) {\textbf{cenário inicial}\\alerta às 6h, três servidores cifrados};
+  \node[inj, draw=manualyellow, fill=manualyellow!18, anchor=north]
+    at (-2.9,-0.75) {\textbf{injeção 1}\\o backup mais recente também está cifrado};
+  \node[inj, draw=manualred, fill=manualred!12, anchor=south]
+    at (-0.4,0.4) {\textbf{injeção 2}\\jornalista liga; nome da empresa em site de vazamento};
+  \node[inj, draw=manualyellow, fill=manualyellow!16, anchor=north]
+    at (2.1,-0.75) {\textbf{injeção 3}\\cliente contratual exige posição em 2 horas};
+  \node[inj, draw=manualgreen, fill=manualgreen!13, anchor=south]
+    at (4.6,0.4) {\textbf{fechamento}\\debriefing a quente, achados na lousa};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.4cm]
+    at (0.1,-2.9)
+    {\textbf{As injeções carregam o exercício.} Cada uma ataca um objetivo
+     diferente: a primeira testa a arquitetura de backup, a segunda o
+     porta-voz e a decisão de comunicação, a terceira a interface entre o
+     técnico, o jurídico e o comercial. Um cenário sem injeções vira
+     apresentação de slides.};
+\end{tikzpicture}
+```
+Um exercício de noventa minutos. O relógio do cenário corre mais rápido que o da sala — quatro horas de incidente cabem em uma hora e meia de discussão.
+:::
+
+## Escrevendo injeções que produzem achados
+
+A qualidade do exercício está quase inteiramente nas injeções. As que funcionam têm três propriedades: são **plausíveis**, **atacam um objetivo declarado** e **removem a saída fácil**.
+
+Um repertório que rende bem no contexto brasileiro:
+
+**A injeção que invalida a primeira resposta.** "O backup imutável está intacto, mas a restauração completa foi estimada em 26 horas e o RTO contratado é de 8." Força priorização real, e não a resposta de manual.
+
+**A injeção regulatória com relógio.** "Confirmou-se acesso à base de assinantes com CPF e endereço. São 14h de sexta-feira." O prazo de três dias úteis da ANPD começa a correr, e o exercício descobre se o encarregado foi acionado ou se ninguém pensou nisso.
+
+**A injeção de comunicação pública.** Jornalista, cliente, publicação em rede social por um funcionário, mensagem circulando em grupo de aplicativo. Testa porta-voz, alçada e a coordenação entre comunicação, jurídico e comercial.
+
+**A injeção de indisponibilidade de pessoa.** "O administrador do banco de dados está em voo por mais quatro horas." Testa substituição, documentação e custódia de credenciais.
+
+**A injeção financeira.** "O fornecedor de resposta a incidentes exige contrato assinado e sinal para começar hoje. Quem autoriza?" Alçada emergencial fora do fluxo normal é uma lacuna quase universal.
+
+**A injeção de extorsão.** "O grupo apresenta amostra de dados e prazo de 48 horas." Aqui a orientação deste manual é firme: a decisão sobre pagamento é do negócio, com jurídico e seguro à mesa, e o exercício serve para descobrir **quem** decide e com que informação — não para ensaiar a negociação (@sec-cap093).
+
+**A injeção de fornecedor.** "O provedor de nuvem confirma que a região está degradada e não dá previsão." Testa concentração e alternativas.
+
+Três erros de escrita a evitar. O cenário que testa apenas o que se sabe que funciona — confortável e inútil. A injeção-pegadinha, que existe para expor um participante e destrói a regra do "sem culpa". E o cenário fantástico, que permite à sala descartar tudo como irrealista e voltar ao celular.
+
+## Exercícios técnicos: da restauração ao ensaio completo
+
+O exercício de mesa encontra lacunas de decisão; ele não mede tempo real de recuperação. Isso exige tocar em sistemas.
+
+**Ensaio de restauração.** Recuperar um sistema de verdade a partir do backup, cronometrado, sem acesso ao ambiente original, feito por quem está de plantão e não por quem construiu o sistema. Mede o RTO real e valida o dígito zero do @sec-cap089. O achado mais comum é a diferença entre o tempo estimado e o tempo medido — frequentemente por um fator de três.
+
+**Teste de comutação.** Ativar o secundário e verificar que o serviço responde de fato, incluindo autenticação, DNS, certificados e integrações. Deve incluir o **retorno** — a comutação de volta, com reconciliação —, que é onde se perde dado e onde quase ninguém testa.
+
+**Injeção controlada de falha.** A prática que a engenharia de confiabilidade consolidou: introduzir falhas deliberadas em ambiente produtivo controlado — derrubar uma instância, aumentar latência, indisponibilizar uma dependência — para verificar se o sistema degrada como projetado. Começa em ambiente de homologação, com hipótese escrita, escopo mínimo e botão de parada, e só depois migra para produção [@basiri2016; @beyer2016].
+
+**Exercício de comunicação isolada.** Simular a queda do canal principal e verificar se a equipe consegue se organizar pelo canal alternativo. Custa quinze minutos e descobre que metade da lista de contatos está errada.
+
+Uma prática que amarra os dois mundos: rodar o exercício de mesa **antes** do teste técnico, usando o mesmo cenário. A mesa expõe as lacunas baratas; o teste técnico valida o que sobrou.
+
+## O que fazer com os achados
+
+Um exercício que não gera ações rastreadas foi teatro caro. O produto obrigatório é o **relatório pós-exercício**, e o padrão que funciona é curto.
+
+**Debriefing a quente**, nos quinze minutos finais, com todos ainda na sala: o que funcionou, o que travou, o que faltou. É quando a memória está viva e a franqueza é maior.
+
+**Relatório em até uma semana**, contendo: objetivos e se foram atingidos; linha do tempo das decisões com horários; achados classificados por severidade; e — a parte que importa — **ações corretivas com responsável nomeado e prazo**.
+
+**Rastreamento até o fechamento.** As ações entram no mesmo mecanismo de acompanhamento que qualquer outra pendência de risco. A verificação de que a ação anterior foi concluída é o primeiro item do exercício seguinte. Sem isso, a organização redescobre os mesmos três problemas todo ano, o que é o sintoma clássico de um programa de exercícios decorativo.
+
+Sobre **métricas**, quatro números contam a história ao longo do tempo: tempo até a declaração do desastre, tempo até a primeira comunicação externa correta, RTO medido contra RTO alvo, e proporção de ações corretivas fechadas no prazo. Vale a advertência do @sec-cap081 sobre métricas: assim que "número de exercícios realizados" vira meta, ele deixa de significar alguma coisa.
+
+## Cadência, participação e o erro de exercitar só a TI
+
+Uma cadência realista para uma organização de porte médio: revisão de mesa trimestral; exercício de mesa semestral, alternando cenários; ensaio de restauração de amostra mensal e ensaio completo anual; teste de comutação anual; e um exercício de comunicação de crise por ano, com a diretoria.
+
+Sobre **quem participa**, o erro mais caro do programa brasileiro típico é exercitar apenas a equipe técnica. As interfaces que quebram na crise real envolvem jurídico, comunicação, comercial, RH, financeiro e a alta direção. Um exercício anual com o comitê de crise completo encontra mais lacunas que quatro exercícios técnicos.
+
+**Fornecedores críticos** também precisam entrar. Testar se o suporte do provedor responde no prazo contratado, fora do horário comercial, é um exercício de dez minutos com achados frequentemente desconfortáveis.
+
+E há o formato mais barato de todos, que quase ninguém usa: o **exercício-relâmpago** — vinte minutos, uma injeção só, na reunião semanal de equipe. "Descobrimos agora que o controlador de domínio principal está inacessível. O que cada um faz nos próximos dez minutos?" Baixo custo, alta frequência, mantém o plano vivo entre os exercícios formais.
+
+## ⚖️ Brasil em Foco
+
+**Testar é exigência regulatória no setor financeiro.** A Resolução CMN 4.893/2021 requer que instituições financeiras mantenham programa de testes e validação da efetividade das medidas de segurança cibernética, incluindo os procedimentos de resposta a incidentes e de continuidade, com registro dos resultados. A Resolução Conjunta nº 1/2020 impõe requisitos equivalentes às instituições de pagamento. Na prática de supervisão, **evidência de exercício realizado, com relatório e ações fechadas, é o que se pede** — não a existência do plano [@bcb4893; @bcbresconj1].
+
+**O prazo da ANPD precisa ser exercitado, não apenas conhecido.** A comunicação de incidente com risco relevante deve ocorrer em até três dias úteis contados do conhecimento do fato. Nenhum exercício de continuidade está completo sem uma injeção que dispare essa contagem e verifique se o encarregado é acionado, se existe rascunho de comunicação preparado e se alguém sabe estimar o número de titulares afetados. O achado recorrente é que a equipe técnica não aciona o encarregado porque "ainda não tem certeza" — comportamento que a regulamentação não acolhe [@lgpd2018; @anpd2024res15].
+
+**Provedores e a exposição regulatória da indisponibilidade.** Prestadoras de telecomunicações têm indicadores de disponibilidade e de tempo de reparo apurados pela Anatel, com obrigações de registro e de atendimento ao consumidor durante a interrupção. Exercitar o cenário de indisponibilidade prolongada deve incluir o ramo regulatório e o de atendimento, não apenas o técnico [@anatel717].
+
+**Administração pública federal.** Órgãos e entidades da APF seguem as orientações do CTIR Gov para gestão de incidentes cibernéticos, com procedimentos de notificação e de coordenação. Fornecedores que atendem ao setor público precisam exercitar a interface com essa cadeia — inclusive o fluxo de notificação ao órgão contratante —, e a Lei 14.133/2021 reforçou a gestão de riscos e as exigências de continuidade nos contratos administrativos [@gtcsg2024; @lei14133].
+
+**Exercício é evidência de diligência.** Sob a LGPD, a adoção de medidas de segurança adequadas é elemento de avaliação da responsabilidade do agente de tratamento, e a demonstração de programa de testes com registro documental sustenta essa alegação. O relatório pós-exercício, datado, com achados e ações fechadas, tem valor probatório que a declaração posterior não tem — vale o mesmo raciocínio da cadeia de custódia (@sec-cap085) [@lgpd2018].
+
+**Comunicação de crise e a relação de consumo.** Para empresas com base de consumidores, a comunicação durante a indisponibilidade tem consequência sob o Código de Defesa do Consumidor: informação enganosa ou omissão sobre a extensão do problema agrava a exposição. O exercício precisa incluir o jurídico na formulação da mensagem pública, e não apenas na revisão posterior [@cdc1990].
+
+**Aproveite material público pronto.** Órgãos como a CISA publicam pacotes de exercícios de mesa com cenários, injeções e roteiros de facilitação livremente adaptáveis, e o CERT.br mantém material de referência sobre tratamento de incidentes. Para organizações que estão começando, adaptar um pacote existente ao contexto brasileiro é muito mais eficiente que escrever do zero [@cisatabletop; @cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Comece pelo degrau de baixo.** Revisão de mesa antes do exercício de mesa, exercício antes de teste técnico, paralelo antes de interrupção total. Pular degraus queima o programa.
+
+**2. Escreva três a cinco objetivos verificáveis antes do cenário.** Sem objetivos, o exercício vira conversa interessante sem produto.
+
+**3. Use ameaças reais da sua organização.** Ransomware por acesso remoto de terceiro, fibra rompida em rota única, conta de nuvem comprometida — não Estado-nação.
+
+**4. Construa o cenário em injeções, não em um bloco.** Fatos liberados ao longo do tempo forçam decisão sob informação incompleta, que é o ponto.
+
+**5. Inclua sempre uma injeção regulatória com relógio.** Ela descobre se o encarregado é acionado a tempo dos três dias úteis.
+
+**6. Inclua sempre uma injeção de comunicação pública.** Jornalista, cliente contratual, publicação de funcionário. É onde o silêncio de vinte segundos aparece.
+
+**7. Traga jurídico, comunicação, comercial e direção.** As interfaces entre grupos quebram mais que os grupos. Exercitar só a TI valida o que já funciona.
+
+**8. Estabeleça as regras: sem culpa, decisões valem, e "a gente daria um jeito" não conta.** Se o jeito não está no plano, esse é o achado.
+
+**9. Separe facilitador, avaliador e participante.** Facilitador que resolve o problema pelos participantes desperdiça o exercício.
+
+**10. Faça o debriefing a quente nos últimos quinze minutos.** É quando a memória está viva e a franqueza é maior.
+
+**11. Feche com ações corretivas nomeadas e com prazo.** Relatório sem responsável e sem data é ata de reunião.
+
+**12. Abra o exercício seguinte verificando as ações do anterior.** Redescobrir os mesmos três problemas todo ano é o sintoma do programa decorativo.
+
+**13. Cronometre o ensaio de restauração com quem está de plantão.** Não com quem construiu o sistema, e sem acesso ao ambiente original.
+
+**14. Teste a comutação de volta, não só a de ida.** O retorno é onde se perde dado, e é o que quase ninguém exercita.
+
+**15. Ligue de fato para os números do plano.** Metade da lista de contatos está errada, e isso custa quinze minutos para descobrir.
+
+**16. Teste o suporte do fornecedor fora do horário comercial.** Dez minutos, achados desconfortáveis, conversa contratual bem fundamentada depois.
+
+**17. Adote o exercício-relâmpago.** Vinte minutos, uma injeção, na reunião semanal. Mantém o plano vivo entre os exercícios formais.
+
+## Resumo
+
+- Um plano é uma **hipótese** até ser exercitado. Exercícios revelam pressupostos silenciosos, lacunas de atribuição, distância entre o escrito e o executável e — sobretudo — falhas nas **interfaces entre grupos**.
+- A escada vai de revisão de mesa a teste de interrupção total, com custo, risco e realismo crescentes. Pular degraus produz exercícios que falham por preparação, não por capacidade.
+- O exercício de mesa é o degrau com melhor relação custo-benefício. Suas partes: objetivos verificáveis, escopo declarado, cenário plausível, **injeções que escalam**, papéis separados, regra do "sem culpa" e registro em tempo real.
+- A qualidade está nas injeções. As que rendem invalidam a primeira resposta, disparam o relógio regulatório, forçam comunicação pública, removem uma pessoa-chave, exigem alçada financeira emergencial ou trazem o fornecedor para o problema.
+- Exercícios técnicos medem o que a mesa não mede: ensaio de restauração cronometrado, comutação **e o retorno**, injeção controlada de falha e teste do canal alternativo de comunicação.
+- O produto obrigatório é o relatório com **ações corretivas nomeadas e com prazo**, verificadas na abertura do exercício seguinte. Sem isso, é teatro caro.
+- Exercitar apenas a TI é o erro mais caro do programa típico. Jurídico, comunicação, comercial, direção e fornecedores críticos precisam entrar.
+- No Brasil, testar é exigência supervisionada no setor financeiro, o prazo de três dias úteis da ANPD precisa ser exercitado e não apenas conhecido, a indisponibilidade tem ramo regulatório em telecomunicações, e o relatório pós-exercício datado é evidência de diligência que a declaração posterior não substitui.
