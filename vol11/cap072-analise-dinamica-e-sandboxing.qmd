@@ -1,3 +1,242 @@
 # Análise dinâmica e sandboxing {#sec-cap072}
 
-*(em elaboracao)*
+A análise estática do arquivo não produziu nada. Trezentos kilobytes, uma única seção com entropia de 7,98, dezoito cadeias de texto — todas nomes de funções para carregar bibliotecas em tempo de execução — e uma tabela de importações com quatro entradas. Nenhum domínio, nenhum caminho, nenhum indicador. O binário estava cifrado inteiro, e o que estava em disco não era o que ia rodar.
+
+O analista fez a única coisa que restava: **executou**. Numa máquina virtual isolada, com instantâneo tomado, monitores ligados e um serviço falso respondendo a qualquer resolução de nome. Em noventa segundos o artefato havia se descompactado em memória, gravado uma cópia de si numa pasta de perfil, criado uma chave de execução automática, injetado código em um processo legítimo do sistema e tentado resolver quatro domínios — nenhum dos quais aparecia no arquivo original.
+
+**A análise dinâmica não descreve melhor o artefato. Ela responde a uma pergunta diferente: não o que ele pode fazer, mas o que ele faz.**
+
+## O que só a execução responde
+
+A divisão de trabalho entre as duas abordagens é limpa. A estática (@sec-cap071) mostra capacidades declaradas e é barata e segura. A dinâmica mostra **comportamento observado** e resolve exatamente aquilo em que a estática esbarra:
+
+- **Empacotamento.** O código real aparece descompactado em memória. Executar e capturar a memória é, na prática, a forma mais rápida de desempacotar.
+- **Configuração em tempo de execução.** Domínios, chaves e parâmetros decifrados só na execução.
+- **Sequência.** A ordem dos fatos — o que veio antes do quê — é o que permite reconstruir a cadeia e escrever detecção baseada em relação entre processos.
+- **Efeitos colaterais.** O que sobra: arquivos, chaves, tarefas, contas, serviços. É a lista do que procurar nas outras máquinas.
+- **Rede.** Com quem fala, como e com que padrão.
+
+E a limitação simétrica, que precisa ser dita com a mesma clareza: **a análise dinâmica só mostra o caminho que foi percorrido naquela execução**. Se o artefato exige um argumento de linha de comando, um horário, um domínio específico da vítima ou uma resposta do servidor que não veio, o comportamento interessante simplesmente não acontece — e o relatório dirá, honestamente e de forma enganosa, que "nada foi observado".
+
+## O laboratório dinâmico
+
+Tudo o que valia para o laboratório estático continua valendo, com um agravante: **agora o código roda**. As exigências sobem.
+
+**Instantâneo antes, reversão depois.** Sem exceção. A máquina de análise nunca é reutilizada suja.
+
+**Hospedeiro sem valor e sem confiança.** Sem credencial corporativa, sem pasta compartilhada, sem área de transferência comum, sem montagem de disco do hospedeiro. Escape de máquina virtual é raro, mas o custo de assumir que não existe é alto demais (@sec-cap014).
+
+**Rede que não é a sua rede.** Este é o ponto que merece decisão explícita, porque há dois modelos e ambos têm custo.
+
+::: {#fig-lab-dinamico}
+```{.tikz}
+%%| filename: lab-dinamico
+%%| alt: Arquitetura do laboratório de análise dinâmica com rede simulada e o contraste com a execução em rede real
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.5cm, minimum height=1.0cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray},
+    cx/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=6pt, text width=6.0cm}}
+
+  % --- lado esquerdo: laboratorio ---
+  \node[draw=manualgray, fill=manualgray!5, thick, rounded corners=5pt,
+        minimum width=6.6cm, minimum height=4.5cm] at (-3.7,0.9) {};
+  \node[font=\tiny\bfseries, manualgray, anchor=north west] at (-6.9,2.95)
+    {Segmento isolado --- sem rota para a produção};
+
+  \node[bx, draw=manualred, fill=manualred!12] (vm) at (-5.4,1.75)
+    {\textbf{VM de análise}\\amostra em execução};
+  \node[bx, draw=manualblue, fill=manualblue!12] (mon) at (-2.0,1.75)
+    {\textbf{Monitores}\\processo, arquivo, registro};
+  \node[bx, draw=manualgreen, fill=manualgreen!13] (sim) at (-5.4,-0.2)
+    {\textbf{Serviços falsos}\\DNS, HTTP, SMTP};
+  \node[bx, draw=manualgreen, fill=manualgreen!13] (cap) at (-2.0,-0.2)
+    {\textbf{Captura de rede}\\e de memória};
+
+  \draw[fx] (vm) -- (mon);
+  \draw[fx] (vm) -- (sim);
+  \draw[fx] (sim) -- (cap);
+  \draw[fx] (vm.south east) -- (cap.north west);
+
+  % --- lado direito: os dois modelos ---
+  \node[cx, draw=manualgreen, fill=manualgreen!11] at (3.7,2.05)
+    {\textbf{Rede simulada} --- padrão seguro\\[3pt]
+     $+$ não avisa o adversário, não propaga, reprodutível\\
+     $-$ o artefato pode parar cedo se a resposta do C2 não convence};
+
+  \node[cx, draw=manualyellow, fill=manualyellow!13] at (3.7,-0.15)
+    {\textbf{Internet real} --- exceção deliberada\\[3pt]
+     $+$ comportamento completo, carga útil da etapa seguinte\\
+     $-$ \textbf{avisa o adversário}, pode propagar e atacar terceiros};
+
+  \node[cx, draw=manualred, fill=manualred!11] at (3.7,-2.3)
+    {\textbf{Se usar internet real}: saída dedicada, nunca do bloco da
+     organização, sem identificação da vítima, e com a decisão registrada ---
+     o endereço de origem denuncia quem está analisando.};
+\end{tikzpicture}
+```
+Arquitetura do laboratório dinâmico. A escolha entre rede simulada e internet real é uma decisão de segurança operacional, não de conveniência técnica.
+:::
+
+Na **rede simulada**, serviços falsos respondem a qualquer resolução de nome e a qualquer conexão: o DNS responde tudo, um servidor HTTP devolve algo plausível, SMTP aceita mensagens. O artefato acredita ter internet, exibe boa parte do comportamento, e nada sai. É o padrão correto.
+
+Na **internet real**, o artefato busca de fato a próxima etapa e revela comportamento que a simulação não produz. O custo é grave e frequentemente subestimado: **o operador vê a conexão**. Um acesso à infraestrutura de C2 vindo do bloco de endereços da vítima, dias depois da intrusão, informa ao adversário que ele foi descoberto — e a reação típica é acelerar, trocar de infraestrutura, ou destruir. Em meio a uma resposta a incidente, isso pode custar o caso. Se a execução com rede real for necessária, ela sai por uma conexão dedicada, sem qualquer vínculo com a organização.
+
+**Ambiente realista.** Máquina virtual recém-instalada, sem documentos, sem histórico de navegador, com um único núcleo e 2 GB de memória, é reconhecível como laboratório. Ambiente com arquivos de usuário, histórico, aplicativos instalados, tamanho de disco plausível e tempo de atividade razoável produz comportamento mais fiel.
+
+**Um arquivo inofensivo para testar o próprio laboratório.** Existe uma cadeia de teste padronizada, reconhecida por todos os antivírus como se fosse malware e absolutamente inócua, criada exatamente para verificar se a detecção está ligada e se o caminho de coleta funciona [@eicar2024]. Antes da primeira amostra real, é com ela que se confirma que os monitores registram, que a captura de rede grava e que o relatório sai — testar a instrumentação com código vivo é aprender a operar a esteira no pior momento possível.
+
+## O que instrumentar
+
+**Processos.** Criação, encerramento, relação entre pai e filho, linha de comando completa, contexto de usuário, injeção em processo alheio. A **cadeia de processos** é o artefato analítico mais valioso da execução: documento abre interpretador de script que abre utilitário de rede é uma sequência que, por si só, já é regra de detecção.
+
+**Sistema de arquivos.** Criação, modificação, exclusão, com caminho e hash do que foi gravado. Interessam as pastas de perfil e temporárias, e a autocópia.
+
+**Registro e configuração.** Chaves de execução automática, serviços, componentes, e — em Linux — unidades, tarefas periódicas e arquivos de perfil.
+
+**Rede.** Captura completa do tráfego. Resoluções de nome (inclusive as que falharam, que revelam algoritmos de geração de domínio), destinos, portas, cabeçalhos, padrão temporal. O **intervalo regular de contato**, mesmo cifrado, é um dos sinais mais robustos que existem: máquina que fala com o mesmo destino a cada 300 segundos, dia e noite, não é usuário.
+
+**Chamadas de sistema.** O rastro de chamadas ao sistema operacional mostra o que o programa pediu — abrir processo, alocar memória em outro processo, criar thread remota, ler credencial, cifrar. É a camada em que se enxerga injeção e manipulação de memória.
+
+**Memória.** Capturar a memória do processo após a descompactação entrega o código real, com as cadeias em claro que o arquivo em disco não tinha. É o atalho de desempacotamento e, muitas vezes, o passo que devolve a análise à trilha estática [@volatility2024].
+
+## Caixas de areia automatizadas
+
+Uma caixa de areia (sandbox) automatiza esse ciclo: recebe o arquivo, executa em ambiente instrumentado por tempo determinado, coleta tudo e devolve relatório com comportamento, indicadores, capturas de tela e classificação [@cuckoo2024].
+
+**O que entrega bem:** volume — centenas de amostras por dia sem esforço humano —, consistência de relatório e extração automática de indicadores prontos para bloqueio.
+
+**O que não entrega:**
+
+- **Tempo limitado.** A execução dura poucos minutos. Malware que dorme, que espera reinício, ou que só age em determinado dia, não mostra nada.
+- **Um caminho só.** Sem interação, sem argumentos, sem o contexto do alvo.
+- **Detectabilidade.** Caixas de areia públicas são bem conhecidas dos autores.
+- **Confidencialidade.** Caixa de areia pública é publicação, com todas as consequências do @sec-cap071.
+- **"Nada malicioso detectado" não é veredito.** É o resultado mais perigoso do relatório automatizado, porque parece uma resposta. Significa apenas que naquele ambiente, naquele tempo, com aquele estímulo, nada aconteceu.
+
+Caixa de areia é primeira linha de triagem, não substituto do analista.
+
+## Anti-análise: por que o artefato às vezes não faz nada
+
+Os autores investem pesado em detectar o ambiente de análise, porque uma amostra que não revela comportamento demora muito mais a ser detectada. O repertório é conhecido, e conhecê-lo é o que evita concluir "é inofensivo" de um relatório vazio.
+
+**Detecção de virtualização e instrumentação.** Procura por artefatos do hipervisor — nomes de dispositivo, drivers, endereços de rede, identificadores de fabricante — e por ferramentas de monitoramento em execução.
+
+**Detecção de ambiente artificial.** Poucos núcleos, pouca memória, disco pequeno, ausência de documentos, sem histórico de navegação, tempo de atividade de minutos, nome de máquina padronizado, resolução de tela incomum, ausência de movimento de mouse.
+
+**Retardo e evasão temporal.** Dormir além do tempo da caixa de areia, executar apenas após reinício, esperar interação do usuário, ou realizar trabalho inútil para consumir o orçamento de tempo. Como muitas caixas de areia aceleram temporizadores, alguns artefatos medem o tempo por vias independentes e detectam a aceleração.
+
+**Condicionamento ao alvo.** O mais eficaz: só executar se o ambiente for o pretendido — idioma do sistema, fuso horário, domínio da máquina, geolocalização do endereço. Em campanha dirigida, a carga útil pode ser cifrada com uma chave derivada de propriedades do alvo, de modo que **fora dele o código simplesmente não decifra**. Contra isso não há caixa de areia que resolva; é preciso reconstruir o contexto.
+
+Há um subconjunto especificamente brasileiro dessa técnica: campanhas de fraude bancária que só prosseguem se o idioma for português do Brasil e o fuso for o nacional — o que faz uma caixa de areia configurada em inglês devolver, com toda a confiança, um relatório vazio.
+
+As contramedidas do analista são proporcionais e nunca definitivas: ambiente realista e "envelhecido", ajuste de idioma, fuso e domínio para o perfil da vítima, monitoramento fora do sistema convidado (por introspecção do hipervisor, que o convidado não enxerga), tempo de execução maior, e — quando nada disso funciona — voltar à estática e desmontar a rotina de verificação para descobrir a condição exigida.
+
+::: {#fig-anti-analise}
+```{.tikz}
+%%| filename: anti-analise
+%%| alt: Técnicas de anti-análise usadas pelo malware e as contramedidas correspondentes do analista
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    hd/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny\bfseries,
+               inner sep=4pt, minimum height=0.6cm},
+    cel/.style={align=left, font=\tiny, text width=5.6cm, anchor=north west},
+    lin/.style={manualgray, thin}}
+
+  \node[hd, draw=manualred, fill=manualred!14, text width=5.8cm] at (-3.5,2.85)
+    {O que o artefato faz para não ser analisado};
+  \node[hd, draw=manualgreen, fill=manualgreen!14, text width=5.8cm] at (3.5,2.85)
+    {O que o analista faz a respeito};
+
+  \foreach \py/\atq/\ctr in {%
+    2.1/{\textbf{Detecta virtualização}\\drivers, dispositivos, fabricante}/{Ambiente ajustado e monitoramento por \textbf{introspecção do hipervisor}},
+    1.0/{\textbf{Detecta ambiente artificial}\\sem documentos, disco pequeno, sem histórico}/{Máquina ``envelhecida'': arquivos, histórico, uso real},
+    -0.1/{\textbf{Dorme ou espera reinício}\\estoura o tempo da caixa de areia}/{Execução longa, reinício provocado, avanço de relógio},
+    -1.2/{\textbf{Exige interação}\\clique, rolagem, movimento de mouse}/{Simulação de atividade do usuário},
+    -2.3/{\textbf{Condiciona ao alvo}\\idioma, fuso, domínio, geolocalização}/{Reproduzir o perfil da vítima; se falhar, \textbf{desmontar a verificação}}}
+    {
+      \node[cel, manualgray] at (-6.4,\py+0.42) {\atq};
+      \node[cel, manualgray] at (0.6,\py+0.42) {\ctr};
+      \draw[lin] (-6.5,\py-0.42) -- (6.4,\py-0.42);
+    }
+  \draw[lin] (-6.5,2.52) -- (6.4,2.52);
+  \draw[lin, thick] (0.0,2.52) -- (0.0,-2.72);
+
+  \node[font=\tiny\bfseries, manualred, anchor=west] at (-6.5,-3.1)
+    {Relatório vazio nunca é veredito de benignidade --- é ausência de observação.};
+\end{tikzpicture}
+```
+Anti-análise e contramedidas. A última linha é a mais importante do capítulo: comportamento não observado não é comportamento inexistente.
+:::
+
+## Do comportamento ao produto
+
+A execução termina com uma pilha de eventos. O que a transforma em defesa:
+
+**Indicadores atômicos**, para bloqueio imediato: hashes, domínios, endereços, URLs, nomes de arquivo e caminhos, nomes de mutex e de tarefa. Valem muito e duram pouco — tratados no @sec-cap074.
+
+**Comportamentos**, para detecção durável: a relação entre processos, a linha de comando característica, a sequência de operações, o padrão de contato periódico. É o que sobrevive à troca de infraestrutura e à recompilação, e é o que se mapeia em técnicas no @sec-cap073.
+
+**Artefatos de comprometimento**, para a caça: o que ficou na máquina e serve de consulta na frota inteira.
+
+**Regras**, para durar: YARA sobre a memória capturada — que frequentemente casa quando a regra sobre o arquivo em disco não casava, porque a memória tem o código descompactado — e regras de detecção sobre eventos, tema do Volume 12.
+
+Uma disciplina que economiza retrabalho: **registre a análise enquanto ela acontece**, com hora, ação e observação. Reconstruir de memória o que aconteceu aos 47 segundos é impossível, e a linha do tempo é o que dá valor ao relatório.
+
+## ⚖️ Brasil em Foco
+
+**Executar amostra é lícito no laboratório; deixá-la alcançar terceiros não é.** Se a máquina de análise, com internet real, participa de uma varredura, de um ataque de negação de serviço ou da propagação para terceiros, a organização responde pelo dano causado — a intenção de pesquisa não é excludente. É a razão jurídica, além da técnica, para o padrão ser **rede simulada com bloqueio de saída** [@lei12737].
+
+**Rede real avisa o adversário e tem efeito sobre a investigação.** Conectar-se ao C2 a partir de endereço identificável da organização não é apenas erro de segurança operacional: pode comprometer investigação em curso, provocar destruição de evidência e agravar o incidente. Se houver ação policial ou perícia em andamento, a decisão de executar com rede real deve ser alinhada com quem conduz o caso.
+
+**Amostra e captura de tráfego contêm dados pessoais.** A captura da execução pode incluir credenciais, tokens, dados de clientes e conteúdo exfiltrado. Isso é tratamento de dados pessoais: acesso restrito, finalidade de resposta a incidente, retenção definida e descarte seguro. **Capturas de rede de laboratório guardadas indefinidamente em compartilhamento aberto são um incidente esperando data** [@lgpd2018].
+
+**Caixa de areia pública é publicação.** Enviar um documento de cliente, um instalador corporativo ou uma planilha exfiltrada a um serviço público expõe conteúdo que pode ser sigiloso — com implicações contratuais, de sigilo profissional e de proteção de dados. Organizações sujeitas a dever de sigilo precisam de caixa de areia própria ou contratada com cláusula de confidencialidade [@virustotal2024; @lgpd2018].
+
+**Malware brasileiro condiciona ao ambiente nacional.** Campanhas de fraude bancária e de boleto verificam idioma, fuso horário e presença de aplicativos de instituições nacionais antes de agir. **Caixa de areia configurada em inglês, com fuso estrangeiro, devolve relatório limpo para amostra plenamente funcional aqui** — o que torna a configuração regional do laboratório um requisito, não um detalhe [@certbrfraudes].
+
+**Cooperação e comunicação.** O resultado da análise dinâmica alimenta tanto a comunicação de incidente à ANPD quanto o compartilhamento com CSIRTs: a determinação de que houve exfiltração, e de qual categoria de dado, sai frequentemente da observação do tráfego. Compartilhe indicadores e comportamento; não compartilhe conteúdo de vítima [@anpd2024res15; @cert2024praticas].
+
+**Prova e cadeia de custódia.** Se a execução gera artefatos que serão usados em processo, valem as mesmas exigências do capítulo anterior: hash antes e depois, registro do ambiente e da hora, preservação da cópia original inalterada. Análise dinâmica **modifica** a amostra e o ambiente por definição — por isso a cópia probatória nunca é a que foi executada.
+
+## 🛠️ No Campo
+
+**1. Rede simulada por padrão; internet real só por decisão consciente e registrada.** E, nesse caso, por conexão dedicada sem vínculo com a organização.
+
+**2. Nunca execute a partir de endereço identificável da organização.** O acesso ao C2 conta ao adversário que ele foi descoberto.
+
+**3. Instantâneo antes, reversão depois — sempre.** E hospedeiro sem credencial, sem pasta compartilhada, sem área de transferência comum.
+
+**4. Configure o laboratório com perfil brasileiro.** Idioma, fuso e teclado. Sem isso, boa parte do malware nacional não roda e o relatório vem vazio.
+
+**5. Envelheça a máquina de análise.** Documentos, histórico, aplicativos, disco de tamanho plausível, tempo de atividade. Máquina recém-instalada é reconhecível como laboratório.
+
+**6. Capture memória depois da descompactação.** É o atalho para o código real e o que faz a regra YARA casar quando ela não casava em disco.
+
+**7. Trate "nada malicioso detectado" como ausência de observação.** Nunca como veredito. Investigue por que nada aconteceu.
+
+**8. Registre a linha do tempo enquanto executa.** Hora, ação, observação. Reconstruir depois não funciona.
+
+**9. Extraia dois produtos, não um.** Indicadores atômicos para bloqueio agora; comportamentos e relações entre processos para detecção durável.
+
+**10. Priorize o padrão de contato periódico.** Intervalo regular com o mesmo destino é dos sinais mais robustos, e sobrevive à cifragem do canal.
+
+**11. Não use caixa de areia pública para material sensível.** Instalador corporativo, documento de cliente e planilha exfiltrada ficam em ambiente próprio.
+
+**12. Defina retenção para capturas de tráfego e imagens de memória.** Elas contêm credenciais e dados pessoais. Prazo, acesso restrito, descarte.
+
+**13. Preserve a cópia probatória fora do ciclo de execução.** O que foi executado não é o que se apresenta como prova.
+
+## Resumo
+
+- A análise dinâmica responde à pergunta que a estática não alcança: **não o que o artefato pode fazer, mas o que ele faz** — resolvendo empacotamento, configuração decifrada em execução, sequência dos fatos e tráfego.
+- Sua limitação simétrica é dura: mostra **apenas o caminho percorrido naquela execução**. Comportamento não observado não é comportamento inexistente.
+- O laboratório exige instantâneo e reversão, hospedeiro sem valor e sem confiança, e uma decisão explícita sobre a rede: **simulada por padrão**, real apenas por escolha consciente — porque conectar ao C2 a partir de endereço da organização **avisa o adversário** e pode custar a investigação.
+- Instrumentação mínima: cadeia de processos com linha de comando, sistema de arquivos, chaves de persistência, captura completa de rede, chamadas de sistema e imagem de memória. **A captura de memória após a descompactação é o atalho de desempacotamento.**
+- Caixas de areia automatizadas entregam volume e consistência, mas têm tempo curto, caminho único, são conhecidas dos autores e — se públicas — publicam o que recebem. **"Nada malicioso detectado" é o resultado mais perigoso do relatório.**
+- Anti-análise vai de detecção de virtualização e de ambiente artificial a retardo, exigência de interação e **condicionamento ao alvo** — com carga útil que só decifra no ambiente pretendido. Contra isso, o caminho é ambiente realista e, no limite, desmontar a rotina de verificação.
+- Há um caso brasileiro específico: campanhas nacionais que verificam **idioma e fuso horário**, fazendo laboratórios configurados em inglês devolverem relatório limpo para amostra plenamente funcional aqui.
+- O produto da execução é duplo: **indicadores atômicos** de vida curta para bloqueio imediato e **comportamentos** duráveis para detecção — estes últimos mapeados em técnicas no capítulo seguinte.
+- No Brasil, deixar a amostra alcançar terceiros gera responsabilidade pelo dano; capturas de tráfego e memória contêm dados pessoais e exigem retenção e descarte definidos; e a cópia probatória nunca é a que foi executada.

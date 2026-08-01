@@ -1,3 +1,260 @@
 # Anatomia de um ataque de ransomware {#sec-cap070}
 
-*(em elaboracao)*
+O telefone do plantão tocou às 4h40 de um sábado. O supervisor do NOC de um provedor regional descrevia o que via: o sistema de gestão de clientes não abria, os arquivos do compartilhamento tinham extensão nova, e havia um arquivo de texto em todas as pastas com um endereço para negociação. A equipe de infraestrutura chegou às seis. Às oito, a resposta a que todos se agarravam — "restaura do backup" — encontrou o problema real: **o servidor de backup estava cifrado também**, e as fitas mais recentes eram de onze meses antes, quando o processo foi migrado e ninguém validou a restauração desde então.
+
+A investigação posterior mostrou que a cifragem foi o último ato de uma operação iniciada **vinte e três dias antes**, com uma credencial de VPN sem segundo fator comprada em um mercado. Entre uma coisa e outra houve reconhecimento, escalonamento, movimentação lateral, desligamento de proteções e a exfiltração de 340 GB — tudo em horário comercial, tudo com ferramentas administrativas legítimas, tudo dentro do alcance dos registros que a empresa já coletava e ninguém lia.
+
+**Ransomware não é um evento. É o momento em que uma intrusão que durou semanas fica visível.** Este capítulo trata das semanas.
+
+## A linha do tempo que ninguém vê
+
+A percepção comum — máquina infectada, arquivos cifrados, fim — descreve o ransomware de uma década atrás, que operava por infecção oportunista e cifrava uma estação. O modelo dominante hoje é diferente em natureza: é uma **intrusão conduzida por operador humano**, na qual a cifragem é a monetização final de um comprometimento já consumado.
+
+Essa diferença reorganiza toda a defesa. Se a cifragem fosse o ataque, a defesa seria antimalware. Como a cifragem é o **desfecho**, a defesa é tudo aquilo que o Volume 12 chama de detecção: existe uma janela de dias a semanas em que o adversário está dentro, fazendo coisas observáveis, antes de tocar em qualquer arquivo.
+
+O tempo entre o acesso inicial e a cifragem — o *dwell time* — encurtou nos últimos anos, mas continua sendo medido em dias, não em minutos [@verizondbir2024]. **Cada hora dessa janela é uma oportunidade de detecção que a organização já pagou para ter e normalmente não usa.**
+
+::: {#fig-linha-ransomware}
+```{.tikz}
+%%| filename: linha-ransomware
+%%| alt: Linha do tempo de um ataque de ransomware operado por humano, com os pontos de detecção de cada fase
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fase/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+                 inner sep=3pt, text width=1.8cm, minimum height=1.05cm},
+    det/.style={align=left, font=\tiny, text width=1.9cm, anchor=north}}
+
+  \draw[-{Stealth[length=3mm]}, very thick, manualgray] (-7.1,0) -- (7.2,0);
+  \node[font=\tiny\bfseries, manualgray, anchor=west] at (6.4,0.28) {tempo};
+
+  \foreach \px/\cor/\tit in {%
+    -6.2/manualblue/{Acesso\\inicial},
+    -4.2/manualblue/{Estabelece\\persistência},
+    -2.2/manualyellow/{Reconhece\\o ambiente},
+    -0.2/manualyellow/{Escala\\privilégio},
+    1.8/manualyellow/{Move-se\\lateralmente},
+    3.8/manualred/{Neutraliza\\backup e EDR},
+    5.8/manualred/{Exfiltra\\e cifra}}
+    \node[fase, draw=\cor, fill=\cor!12, anchor=south] at (\px,0.5) {\textbf{\tit}};
+
+  \foreach \px/\txt in {%
+    -6.2/{VPN sem MFA, login de origem incomum, credencial vazada},
+    -4.2/{tarefa agendada nova, serviço novo, conta criada},
+    -2.2/{enumeração do diretório, varredura interna de portas},
+    -0.2/{leitura de memória do processo de credenciais},
+    1.8/{execução remota, admin em servidor incomum},
+    3.8/{exclusão de cópias de sombra, proteção desligada},
+    5.8/{volume anômalo de saída, escrita massiva}}
+    \node[det, manualgray] at (\px,-0.3) {\txt};
+
+  \draw[decorate, decoration={brace, amplitude=5pt, mirror}, manualgreen, thick]
+    (-7.0,-2.5) -- (4.8,-2.5);
+  \node[font=\tiny\bfseries, manualgreen, anchor=north] at (-1.1,-2.75)
+    {Janela de detecção --- dias a semanas, tudo observável};
+
+  \draw[decorate, decoration={brace, amplitude=5pt, mirror}, manualred, thick]
+    (5.0,-2.5) -- (7.1,-2.5);
+  \node[font=\tiny\bfseries, manualred, anchor=north] at (6.05,-2.75) {Tarde demais};
+\end{tikzpicture}
+```
+As fases de uma operação de ransomware conduzida por humano e o que cada uma deixa observável. A cifragem é o último ato; a defesa acontece à esquerda dela.
+:::
+
+## Fase a fase
+
+### Acesso inicial
+
+Três vias dominam, e nenhuma é exótica.
+
+**Credencial válida em serviço exposto** — VPN, área de trabalho remota, portal de acesso, painel de administração — sem segundo fator. É a via mais comum e a mais barata: a credencial vem de vazamento anterior, de reuso, ou de um log de ladrão de informação (@sec-cap069) comprado por poucos dólares. Não há exploração, não há malware: há login bem-sucedido.
+
+**Phishing com anexo ou link** que entrega um carregador (@sec-cap065). Continua relevante, mas perdeu terreno para a via anterior justamente porque credencial válida não dispara nada.
+
+**Exploração de vulnerabilidade em ativo de borda** — concentrador de VPN, firewall, gateway de e-mail, servidor de transferência de arquivos, plataforma de virtualização. É a via que produz os incidentes de maior escala, porque o alvo é o próprio equipamento de perímetro e ele frequentemente não tem EDR. A janela entre a publicação da correção e a exploração em massa é hoje medida em dias, o que torna o @sec-cap039 — e especificamente a priorização por exploração conhecida — controle de primeira linha contra ransomware [@cisakev].
+
+### Estabelecimento e persistência
+
+O operador garante que não depende do acesso inicial: cria contas, instala ferramenta de acesso remoto comercial (escolhida justamente por passar por legítima), registra tarefas agendadas, adiciona chaves de acesso. É a fase que deixa **os artefatos mais fáceis de caçar** e que quase ninguém caça: conta nova em grupo privilegiado, ferramenta de acesso remoto fora do padrão da organização, tarefa agendada criada de madrugada.
+
+### Reconhecimento interno
+
+Aqui o adversário faz o que um administrador novo faria: mapeia o domínio, lista servidores, encontra os compartilhamentos, identifica onde estão os dados relevantes, descobre a solução de backup e a de virtualização. Ferramentas de enumeração de diretório e varredura interna são usadas em volume — e produzem um padrão de consulta que **não se parece em nada com o comportamento de um usuário**.
+
+Este é, na prática, o melhor ponto de detecção de todo o ciclo: é ruidoso, é anômalo e ainda está longe do dano.
+
+### Escalonamento e credenciais
+
+Extração de credenciais da memória, abuso de delegação, exploração de configurações fracas da autoridade certificadora do domínio, coleta de senhas em compartilhamentos e scripts. O objetivo é uma conta de administração de domínio ou equivalente — e a partir dela todo o resto é administração de rotina (@sec-cap037).
+
+### Movimentação lateral
+
+Execução remota com credenciais válidas, ferramentas administrativas nativas, área de trabalho remota entre servidores. **Nada disso é malware**, e é exatamente esse o ponto: da perspectiva do sistema, é um administrador trabalhando. A detecção depende de contexto — qual conta, vindo de onde, para onde, a que hora, com que frequência (@sec-cap061).
+
+### Neutralização das defesas e do backup
+
+A fase que separa um incidente recuperável de uma catástrofe, e a que a maioria das organizações descobre existir apenas depois.
+
+O operador desabilita proteção em tempo real, exclui as cópias de sombra do sistema de arquivos, apaga pontos de restauração, desinstala o agente de EDR (@sec-cap038) onde consegue e — o passo decisivo — **ataca o repositório de backup**: apaga os jobs, corrompe ou cifra os repositórios e usa as credenciais do próprio software de backup, que costumam ser altamente privilegiadas e raramente rotacionadas.
+
+Daí a regra que o Volume 14 desenvolve e que precisa ser dita aqui: **backup acessível com credencial de domínio não é backup, é mais um compartilhamento**. O que resiste a ransomware é a cópia isolada — offline, imutável, ou em conta separada com credencial independente. A regra clássica 3-2-1 ganhou dígitos adicionais exatamente por causa disso: uma cópia imutável ou offline, e zero erros na restauração testada.
+
+### Exfiltração
+
+Antes de cifrar, copiar. É o que sustenta a dupla extorsão: mesmo que a vítima restaure tudo, resta a ameaça de publicação. Volumes de dezenas a centenas de gigabytes saem por ferramentas de sincronização de nuvem, por transferência para armazenamento de objetos, ou pelo túnel do próprio C2.
+
+Este é o ponto em que o incidente deixa de ser sobre disponibilidade e passa a ser sobre **confidencialidade — com consequência regulatória direta**, porque dado pessoal exfiltrado aciona o dever de comunicação independentemente de a operação ter sido restaurada.
+
+### Cifragem
+
+Só então. Tipicamente disparada fora do horário comercial — noite de sexta, véspera de feriado — para maximizar o tempo até a descoberta, e distribuída por mecanismo de implantação de software ou por script para centenas de máquinas simultaneamente.
+
+## Por que a criptografia do ransomware não se quebra
+
+Uma pergunta recorrente e razoável: se a organização tem a máquina, o binário e os arquivos, por que não recuperar a chave?
+
+Porque o esquema é **híbrido e foi desenhado para isso** (@sec-cap016, @sec-cap018). Para cada arquivo, ou para cada máquina, gera-se uma chave simétrica aleatória, usada para cifrar os dados — rápida, adequada a volume. Essa chave é então cifrada com a **chave pública** do operador, embutida no binário, e o resultado é gravado junto ao arquivo. A chave simétrica é descartada da memória.
+
+O material necessário para decifrar existe, portanto, apenas em forma cifrada, e a chave privada correspondente nunca esteve na máquina da vítima. Ter o binário não ajuda: ele contém a chave pública, que é justamente a que não decifra nada.
+
+Recuperação sem pagamento acontece — mas por **erro de implementação, não por criptanálise**: gerador de números aleatórios previsível, chave deixada em memória ou gravada em disco, reuso de chave entre vítimas, falha na exclusão do arquivo original (@sec-cap021). Quando algum desses erros aparece, o decifrador costuma ser publicado gratuitamente em iniciativas mantidas por forças policiais e pela indústria [@nomoreransom]. **Consultar essas iniciativas é passo obrigatório antes de qualquer conversa sobre pagamento.**
+
+Duas otimizações modernas merecem nota, porque afetam a detecção. A **cifragem intermitente** — cifrar apenas blocos alternados de cada arquivo — reduz drasticamente o tempo total, tornando o dano completo em minutos em vez de horas, e reduz a assinatura de entrada e saída em disco que alguns detectores usam. E a cifragem de imagens de máquinas virtuais direto no hipervisor derruba dezenas de servidores a partir de um único alvo.
+
+::: {#fig-cripto-ransomware}
+```{.tikz}
+%%| filename: cripto-ransomware
+%%| alt: Esquema de criptografia híbrida do ransomware e por que a chave privada nunca esteve na máquina da vítima
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.6cm, minimum height=1.0cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[font=\scriptsize\bfseries, anchor=west] at (-7.0,2.8)
+    {Na máquina da vítima};
+  \draw[auxiliar] (-7.1,2.5) -- (7.1,2.5);
+
+  \node[bx, draw=manualgreen, fill=manualgreen!13] (arq) at (-5.4,1.55)
+    {\textbf{Arquivo}\\em claro};
+  \node[bx, draw=manualblue, fill=manualblue!12] (ks) at (-1.9,1.55)
+    {\textbf{Chave simétrica}\\aleatória, por arquivo};
+  \node[bx, draw=manualred, fill=manualred!12] (cif) at (1.6,1.55)
+    {\textbf{Arquivo cifrado}};
+  \node[bx, draw=manualred, fill=manualred!12] (env) at (5.1,1.55)
+    {\textbf{Chave envelopada}\\gravada junto};
+
+  \draw[fx] (arq) -- (cif);
+  \draw[fx] (ks) -- (cif);
+  \draw[fx] (ks) -- node[above, font=\tiny] {envelopa} (env);
+
+  \node[bx, draw=manualgray, fill=manualgray!10, text width=3.0cm] (pub) at (5.1,0.05)
+    {\textbf{Chave pública}\\do operador (no binário)};
+  \draw[fx] (pub) -- (env);
+
+  \node[font=\tiny, manualred, anchor=west, text width=6.0cm] at (-7.0,0.05)
+    {A chave simétrica é \textbf{descartada da memória} logo após o uso.};
+
+  \draw[auxiliar] (-7.1,-0.8) -- (7.1,-0.8);
+  \node[font=\scriptsize\bfseries, anchor=west] at (-7.0,-1.1)
+    {Com o operador --- e só com ele};
+
+  \node[bx, draw=manualred, fill=manualred!15, text width=3.2cm] (priv) at (-5.0,-2.0)
+    {\textbf{Chave privada}\\nunca esteve na vítima};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=8.2cm]
+    at (2.6,-2.0)
+    {Ter o binário \textbf{não ajuda}: ele carrega a chave pública, que não decifra nada.
+     Recuperação sem pagamento vem de \textbf{erro de implementação} --- aleatoriedade fraca,
+     chave deixada em memória, reuso entre vítimas --- e não de criptanálise.};
+\end{tikzpicture}
+```
+O esquema híbrido do ransomware. O material de decifragem existe apenas envelopado pela chave pública do operador, o que torna a recuperação um problema de erro de implementação, não de força bruta.
+:::
+
+## Extorsão: o que se compra ao pagar
+
+A extorsão moderna opera em camadas, e cada uma pede uma decisão diferente da vítima.
+
+**Cifragem** cobra pela disponibilidade. **Exfiltração** cobra pelo silêncio. **Pressão pública** — publicação parcial em site de vazamento, contato com clientes, parceiros e imprensa, denúncia à autoridade reguladora da própria vítima — cobra pela reputação. **Negação de serviço** contra o site da vítima, quando usada, cobra pela pressa (@sec-cap035).
+
+A decisão de pagar é de negócio, com assessoria jurídica, e este livro não a toma pelo leitor. Mas há fatos que precisam estar sobre a mesa antes da decisão, e que costumam faltar na hora:
+
+- **A ferramenta de decifragem entregue costuma ser lenta e imperfeita.** Restaurar de backup íntegro é normalmente mais rápido do que decifrar, quando o backup existe.
+- **Pagar não recupera o dado exfiltrado.** Compra-se a promessa de exclusão de quem acabou de extorquir. Não há verificação possível.
+- **Pagar não elimina o dever de comunicar** o incidente à autoridade e aos titulares.
+- **Pagar não remove o atacante da rede.** Sem erradicação da via de entrada, da persistência e das credenciais, a reincidência é comum — e há casos documentados de vítimas atacadas de novo pelo mesmo acesso.
+- **Há risco de sanção internacional** se o destinatário estiver em lista restritiva, com exposição para a vítima e para os intermediários.
+- **A negociação tem valor tático independentemente da intenção de pagar**: ganha tempo, revela o que o atacante afirma ter e produz amostra do decifrador.
+
+A orientação das autoridades é consistente — não pagar, porque o pagamento financia a operação e não garante nada [@cisaransomware2023]. A realidade das organizações sem backup íntegro é mais dura que a orientação, e é precisamente por isso que **a decisão real sobre pagar resgate é tomada meses antes, quando se decide como fazer backup**.
+
+## Onde detectar
+
+Cada fase deixa um sinal, e vale enumerá-los porque é isso que transforma este capítulo em trabalho:
+
+- **Autenticação**: acesso a serviço exposto sem MFA, de geolocalização ou horário incomum, com conta de serviço, ou muitas falhas seguidas de um sucesso.
+- **Persistência**: conta criada ou adicionada a grupo privilegiado, serviço ou tarefa agendada nova, ferramenta de acesso remoto instalada fora do padrão.
+- **Reconhecimento**: enumeração massiva do diretório, varredura interna de portas, consulta a compartilhamentos em sequência.
+- **Credenciais**: acesso ao processo que guarda credenciais em memória, uso de conta administrativa em máquina onde ela nunca aparecera, tíquetes anômalos.
+- **Movimentação lateral**: execução remota, sessões administrativas em cadeia entre servidores, uso de compartilhamento administrativo.
+- **Pré-cifragem** — os sinais de alarme máximo: **exclusão de cópias de sombra, desativação de proteção, parada em lote de serviços de banco de dados e de backup, exclusão de jobs de backup**.
+- **Exfiltração**: volume de saída atípico, transferência para armazenamento de nuvem não corporativo, sessão longa e contínua fora do horário.
+- **Cifragem**: taxa anormal de renomeação e escrita, aumento súbito de entropia dos arquivos, aparecimento do mesmo arquivo de texto em muitas pastas.
+
+Um detalhe operacional que decide o desfecho: **os alertas da fase de pré-cifragem não podem esperar triagem humana**. Exclusão de cópias de sombra em servidor de arquivos às três da manhã justifica isolamento automático da máquina. Se a política exige que um analista acorde, leia e decida, a cifragem termina antes.
+
+## ⚖️ Brasil em Foco
+
+**O relógio da comunicação começa no conhecimento.** A LGPD (art. 48) obriga a comunicar à ANPD e aos titulares o incidente com risco ou dano relevante, e a Resolução CD/ANPD nº 15/2024 fixou prazo, forma e conteúdo mínimo — inclusive quando a organização ainda não tem o quadro completo, caso em que se comunica o que se sabe e complementa depois. Em ransomware com exfiltração, **o dever existe mesmo que a operação tenha sido integralmente restaurada**, porque houve acesso não autorizado a dados pessoais [@lgpd2018; @anpd2024res15].
+
+**Cifragem sem exfiltração comprovada também pode ser comunicável.** Indisponibilidade é afetação de dados pessoais, e ausência de prova de exfiltração não é prova de ausência — sobretudo quando a organização não tinha registro suficiente para saber. A decisão de comunicar deve considerar a incerteza, e a documentação da análise que levou à decisão é parte da prestação de contas exigida pela lei [@anpd2023ransomware].
+
+**Notificação policial e preservação de prova.** O registro de ocorrência e o acionamento das delegacias especializadas em crimes cibernéticos são recomendáveis, e o material de orientação nacional consolida o roteiro de prevenção e de resposta esperado [@cert2024ransomware]. A preservação adequada de imagens de disco e de memória, com cadeia de custódia, é o que torna a prova utilizável — tema do Volume 13. Extorsão mediante ameaça de divulgação é crime autônomo, e a invasão que a precedeu se enquadra no art. 154-A do Código Penal [@lei12737].
+
+**Provedores de internet e telecomunicações têm dever adicional.** Ataque que afete a continuidade ou a qualidade do serviço aciona obrigações de comunicação e de registro perante a Anatel, e o dever de guarda de registros de conexão do Marco Civil permanece — inclusive quando os sistemas que os armazenam foram cifrados. **Registro de conexão cifrado pelo ransomware continua sendo registro que a lei manda guardar**, o que é mais um argumento para mantê-los em repositório separado e imutável [@anatel717; @marcocivil2014].
+
+**Setor financeiro e saúde têm regimes próprios.** Instituições autorizadas pelo Banco Central seguem a política de segurança cibernética e as regras de contratação de serviços de processamento e armazenamento em nuvem, com comunicação de incidentes relevantes ao regulador e requisitos de continuidade. Serviços de saúde tratam dado sensível, o que eleva o dever de segurança e o risco de dano relevante — e, portanto, a probabilidade de comunicação obrigatória [@bcb4893; @lgpd2018].
+
+**Contratação e seguro.** Contratos com prestadores que operam a infraestrutura precisam prever comunicação imediata de incidente, cooperação na investigação, preservação de evidência e responsabilidades — porque, perante o titular e a ANPD, o controlador responde. Seguro cibernético existe no mercado brasileiro, mas a cobertura costuma exigir controles comprovados (MFA, backup imutável testado, EDR), e a ausência deles é a via mais comum de negativa.
+
+**Pagamento tem tratamento fiscal, contábil e de conformidade.** Não há proibição expressa, mas há obrigações de identificação de operações suspeitas, exposição a sanções internacionais e o dever de registrar contabilmente o desembolso. Decisão de pagar sem parecer jurídico é decisão que a organização terá dificuldade de explicar depois.
+
+## 🛠️ No Campo
+
+**1. MFA em tudo que é exposto — VPN, acesso remoto, portais, painéis.** É o controle isolado que mais previne ransomware, porque a via de entrada dominante é credencial válida.
+
+**2. Backup imutável ou offline, com credencial fora do domínio.** Se o backup pode ser apagado com credencial de administrador de domínio, ele será apagado. Isso não é hipótese, é o roteiro.
+
+**3. Teste restauração, com cronômetro, e registre o resultado.** Backup nunca restaurado é fé, não controle — e o tempo de restauração é o número que a diretoria vai pedir.
+
+**4. Priorize correção por exploração conhecida em ativos de borda.** Concentrador de VPN, firewall, gateway, servidor de transferência de arquivos e hipervisor: são alvo preferencial e frequentemente não têm EDR.
+
+**5. Isole automaticamente a máquina que exclui cópias de sombra ou desliga proteção.** Esse alerta não sobrevive a uma fila de triagem. Automatize o isolamento e aceite o falso positivo ocasional.
+
+**6. Cace persistência e reconhecimento, não a nota de resgate.** Conta nova em grupo privilegiado, tarefa agendada de madrugada, ferramenta de acesso remoto fora do padrão, enumeração massiva de diretório.
+
+**7. Proteja separadamente a infraestrutura de virtualização e a de backup.** Credencial própria, MFA, acesso a partir de estação administrativa dedicada, sem relação de confiança com o domínio de produção.
+
+**8. Monitore volume de saída.** A exfiltração precede a cifragem. Detectá-la é a última chance antes do dano — e é o que determina a extensão do dever de comunicação.
+
+**9. Tenha o plano de resposta escrito, impresso e ensaiado.** Plano armazenado apenas no compartilhamento que foi cifrado é o clichê que continua acontecendo. Inclua contatos fora de banda.
+
+**10. Decida antes quem decide.** Quem autoriza desligar a produção, quem fala com o regulador, quem fala com a imprensa, quem aciona a resposta contratada. No sábado às cinco da manhã não se monta comitê.
+
+**11. Consulte iniciativas de decifragem gratuita antes de qualquer negociação.** Há famílias com decifrador público por erro de implementação. É o primeiro telefonema, não o último.
+
+**12. Preserve antes de recuperar.** Imagem de memória e de disco de máquinas representativas, e cópia dos registros, antes de reinstalar. Sem isso não há causa raiz — e sem causa raiz a reincidência é provável.
+
+**13. Erradique antes de restaurar.** Restaurar em ambiente ainda comprometido devolve o problema em dias. Via de entrada fechada, persistência removida, credenciais rotacionadas — inclusive as de serviço e as do backup.
+
+## Resumo
+
+- Ransomware moderno é **intrusão operada por humano**, não infecção. A cifragem é a monetização final de um comprometimento que já dura dias ou semanas — e essa janela é a defesa real.
+- As vias de acesso inicial são três, todas banais: **credencial válida sem MFA em serviço exposto** (a dominante), phishing com carregador e exploração de vulnerabilidade em ativo de borda.
+- A fase decisiva é a **neutralização do backup e das defesas**. Backup acessível com credencial de domínio não é backup; o que resiste é cópia imutável, offline ou em conta separada — e testada.
+- A criptografia é **híbrida por projeto**: chave simétrica por arquivo, envelopada pela chave pública do operador. A chave privada nunca esteve na vítima, então não há recuperação por criptanálise — só por erro de implementação, e nesse caso o decifrador costuma ser público e gratuito.
+- Exfiltração antes da cifragem transforma o incidente de disponibilidade em incidente de confidencialidade, **com dever de comunicação mesmo que tudo seja restaurado**.
+- Pagar não recupera o dado exfiltrado, não elimina o dever de comunicar, não expulsa o atacante da rede e ainda expõe a sanções. **A decisão real sobre pagar é tomada meses antes, quando se decide como fazer backup.**
+- Cada fase deixa sinal observável, e os alertas de pré-cifragem — exclusão de cópias de sombra, desativação de proteção, parada em lote de serviços — **exigem isolamento automático, não triagem humana**.
+- No Brasil, o relógio da comunicação à ANPD começa no conhecimento; o dever de guarda de registros do Marco Civil não é suspenso porque os registros foram cifrados; e setores regulados acumulam obrigações próprias perante Banco Central e Anatel.

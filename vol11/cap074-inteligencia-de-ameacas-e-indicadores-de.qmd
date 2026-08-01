@@ -1,3 +1,248 @@
 # Inteligência de ameaças e indicadores de comprometimento {#sec-cap074}
 
-*(em elaboracao)*
+A assinatura custava caro e entregava, por dia, cerca de duzentos mil indicadores novos. A equipe fez o que parecia óbvio: ligou a fonte diretamente ao firewall e ao proxy, em bloqueio automático.
+
+O primeiro problema apareceu em três dias, quando um endereço de uma grande rede de distribuição de conteúdo entrou na lista — e com ele saíram do ar dezenas de sites legítimos que a empresa usava. O segundo apareceu em duas semanas: o volume de bloqueios era tão alto que ninguém mais olhava os registros. O terceiro, e o mais grave, apareceu no incidente de outubro: **o domínio usado pelo atacante estava na fonte havia onze dias**, corretamente identificado, e passou porque tinha sido classificado numa categoria que a integração não importava.
+
+A organização tinha comprado dados. Continuava sem inteligência.
+
+Este capítulo trata da diferença, que é a diferença entre gastar dinheiro e reduzir risco.
+
+## Dado, informação e inteligência
+
+A distinção é conceitualmente simples e operacionalmente decisiva.
+
+**Dado** é o fato bruto: um endereço IP, um hash, um domínio. Sozinho, não sustenta decisão nenhuma.
+
+**Informação** é o dado com contexto: aquele domínio foi usado como C2 por uma família de ransomware, observado entre 3 e 19 de março, entregue por anexo de nota fiscal falsa.
+
+**Inteligência** é a informação analisada e destinada a **uma decisão de alguém específico**: "este ator ataca provedores regionais brasileiros por VPN sem MFA; nós temos dois concentradores nessa condição; a recomendação é habilitar MFA neles nesta semana e caçar estes três comportamentos nos registros dos últimos trinta dias".
+
+O teste é impiedoso e resolve a maior parte das discussões sobre a área: **se ninguém muda nada por causa daquilo, não é inteligência — é assinatura de conteúdo**. A pergunta que precede qualquer investimento em inteligência de ameaças não é "que fontes vamos assinar?", e sim **"que decisões nós tomamos mal por falta de informação?"**.
+
+## O ciclo, e por que ele começa onde começa
+
+O modelo clássico organiza a produção de inteligência em um ciclo. O detalhe que separa programas úteis de programas caros está inteiramente na primeira etapa [@nistsp800150].
+
+::: {#fig-ciclo-inteligencia}
+```{.tikz}
+%%| filename: ciclo-inteligencia
+%%| alt: O ciclo de inteligência, da definição de requisitos à disseminação e realimentação, com o alerta de que pular a primeira etapa produz assinatura de conteúdo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.5cm, minimum height=1.35cm},
+    fx/.style={-{Stealth[length=2.4mm]}, thick, manualgray}}
+
+  \node[et, draw=manualred, fill=manualred!13] (a) at (-5.4,1.5)
+    {\textbf{1. Requisitos}\\[2pt] que decisão precisa de resposta?};
+  \node[et, draw=manualblue, fill=manualblue!12] (b) at (-1.8,1.5)
+    {\textbf{2. Coleta}\\[2pt] fontes internas e externas};
+  \node[et, draw=manualblue, fill=manualblue!12] (c) at (1.8,1.5)
+    {\textbf{3. Processamento}\\[2pt] normalizar, deduplicar, enriquecer};
+  \node[et, draw=manualyellow, fill=manualyellow!14] (d) at (5.4,1.5)
+    {\textbf{4. Análise}\\[2pt] avaliar, correlacionar, concluir};
+  \node[et, draw=manualgreen, fill=manualgreen!13] (e) at (1.8,-1.0)
+    {\textbf{5. Disseminação}\\[2pt] no formato de quem decide};
+  \node[et, draw=manualgreen, fill=manualgreen!13] (f) at (-1.8,-1.0)
+    {\textbf{6. Realimentação}\\[2pt] serviu? o que faltou?};
+
+  \draw[fx] (a) -- (b);
+  \draw[fx] (b) -- (c);
+  \draw[fx] (c) -- (d);
+  \draw[fx] (d.south) to[out=-90,in=0] (e.east);
+  \draw[fx] (e) -- (f);
+  \draw[fx] (f.west) to[out=180,in=-90] (a.south);
+
+  \node[draw=manualred, fill=manualred!11, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.9cm]
+    at (-4.4,-2.5)
+    {\textbf{Pular a etapa 1} é o erro que define os programas caros e
+     inúteis: compra-se fonte, liga-se ao bloqueio, e nunca se soube
+     que pergunta aquilo respondia.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.9cm]
+    at (3.4,-2.5)
+    {\textbf{Pular a etapa 6} é o erro que os mata devagar: sem saber
+     se o produto serviu, o programa vira rotina de publicação e
+     ninguém percebe que parou de ser lido.};
+\end{tikzpicture}
+```
+O ciclo de inteligência. As duas etapas que a prática mais negligencia são exatamente a primeira e a última — e são elas que determinam se o resto tem valor.
+:::
+
+**Requisitos** definem as perguntas que a organização precisa responder, e de quem é a decisão. Sem isso, tudo o mais é coleta sem propósito. Bons requisitos são específicos: "quais atores atacam provedores de internet no Brasil e por que vias?", "há credenciais nossas em vazamentos recentes?", "a técnica do incidente de março apareceu em outros lugares?".
+
+**Coleta** busca nas fontes — e a fonte mais valiosa é quase sempre **interna**: os incidentes da própria organização, os alertas, os registros, as análises dos capítulos anteriores. É a única que fala com certeza sobre o adversário que realmente veio.
+
+**Processamento** normaliza formatos, remove duplicatas e enriquece: a quem pertence o endereço, desde quando o domínio existe, que outras amostras se ligam a ele.
+
+**Análise** é a etapa que ferramenta nenhuma faz: avaliar confiabilidade, correlacionar, formar juízo, declarar incerteza. E a incerteza precisa ser declarada em linguagem calibrada — "provável", "possível", "quase certo" —, com o significado dessas palavras acordado antes, sob pena de o leitor entender o oposto do que se quis dizer.
+
+**Disseminação** entrega no formato de quem decide. Diretoria não lê lista de indicadores; analista não precisa de slide executivo. Produto entregue no formato errado é produto não consumido.
+
+**Realimentação** fecha o ciclo. Um programa sem realimentação vira publicação periódica que ninguém lê e ninguém cancela.
+
+## Três níveis, três consumidores
+
+Confundir os níveis é a causa mais comum de inteligência entregue à pessoa errada.
+
+**Estratégico.** Horizonte de meses a anos, público executivo. Tendências setoriais, mudanças regulatórias, risco de terceiros, evolução do ecossistema criminoso. Decide orçamento, prioridade e postura. Não contém indicadores.
+
+**Operacional.** Horizonte de semanas a meses, público de arquitetura e liderança técnica. Campanhas em curso, atores relevantes para o setor, técnicas em ascensão. Decide onde investir esforço de detecção — e é o nível que mais se beneficia do vocabulário do @sec-cap073.
+
+**Tático.** Horizonte de dias, público de operação. Indicadores, regras, assinaturas, comportamentos concretos. Decide o que bloquear e o que caçar hoje.
+
+A maioria dos programas nasce e morre no nível tático, porque é o mais fácil de comprar. O valor de longo prazo está nos outros dois — e é neles que a área justifica sua existência para quem assina o cheque.
+
+## Indicadores: o que valem e por quanto tempo
+
+Indicadores de comprometimento são os artefatos observáveis que sugerem intrusão: hashes, endereços, domínios, URLs, caminhos, chaves de registro, nomes de mutex e de tarefa, cabeçalhos incomuns, certificados.
+
+Três propriedades governam seu uso, e ignorá-las é o que produz o desastre da abertura do capítulo.
+
+**Indicador sem contexto é inútil e perigoso.** Um endereço IP isolado não diz se é servidor dedicado do atacante, hospedagem compartilhada com dez mil sites legítimos, nó de saída de rede de anonimato, serviço de nuvem, ou um sistema de captura mantido por pesquisadores para monitorar a botnet — este último caso especialmente traiçoeiro, porque bloqueá-lo **esconde exatamente as máquinas infectadas que você mais precisa encontrar**. O contexto mínimo de um indicador é: o que ele representa, quando foi observado, em que campanha, com que confiança e por quanto tempo vale.
+
+**Indicadores expiram — e a data de validade é parte do dado.** Hash de amostra é estável, mas descreve um arquivo que já não circula. Domínio e endereço são rotativos por projeto. Um endereço malicioso em março pode ser um servidor legítimo de terceiro em maio, e continuar na lista de bloqueio é gerar incidente próprio. **Fonte que não expira indicador é fonte que acumula falso positivo com o tempo.**
+
+**A qualidade varia enormemente entre fontes.** Vale perguntar de cada uma: de onde veio a observação, houve validação, há contexto, há expiração, qual a taxa de falso positivo medida, quanto tempo entre observação e publicação.
+
+::: {#fig-indicadores}
+```{.tikz}
+%%| filename: indicadores
+%%| alt: Qualidade e vida útil dos indicadores, com as armadilhas de falso positivo e a política de uso recomendada
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=6pt, text width=6.2cm},
+    hd/.style={font=\scriptsize\bfseries, anchor=west}}
+
+  \node[hd] at (-7.0,3.05) {Vida útil típica};
+  \node[cx, draw=manualblue, fill=manualblue!11, anchor=north west] at (-7.0,2.75)
+    {\textbf{Hash} --- estável, mas descreve arquivo que já não circula\\
+     \textbf{Domínio e IP} --- dias a semanas; rotativos por projeto\\
+     \textbf{Caminho, mutex, tarefa} --- meses; ligados ao código\\
+     \textbf{Comportamento e técnica} --- anos};
+
+  \node[hd] at (0.5,3.05) {Armadilhas de falso positivo};
+  \node[cx, draw=manualred, fill=manualred!11, anchor=north west] at (0.5,2.75)
+    {$\bullet$ Hospedagem compartilhada e redes de distribuição de conteúdo\\
+     $\bullet$ Serviços de nuvem e encurtadores legítimos\\
+     $\bullet$ Nós de saída de redes de anonimato\\
+     $\bullet$ \textbf{Sistemas de captura de pesquisadores} --- bloquear
+     esconde as suas máquinas infectadas};
+
+  \node[hd] at (-7.0,-0.35) {Política de uso que funciona};
+  \node[cx, draw=manualgreen, fill=manualgreen!12, anchor=north west,
+        text width=13.7cm] at (-7.0,-0.65)
+    {\textbf{Bloqueio automático} apenas para fonte de alta confiança, com contexto e
+     expiração, e sempre com lista de exceções da própria organização.\\[3pt]
+     \textbf{Alerta e enriquecimento} para o resto --- o indicador entra como contexto do
+     evento, não como veredito.\\[3pt]
+     \textbf{Busca retroativa} sempre --- indicador novo vale tanto para o futuro quanto
+     para os últimos 30 a 90 dias de registro. É aí que se descobre o que já passou.};
+\end{tikzpicture}
+```
+Vida útil, armadilhas e política de uso dos indicadores. A busca retroativa é o uso mais subestimado e frequentemente o mais produtivo.
+:::
+
+O uso mais valioso de um indicador novo é frequentemente o menos praticado: **procurá-lo no passado**. Um domínio publicado hoje, buscado nos registros de DNS e de proxy dos últimos noventa dias, responde à pergunta que importa — *já passou por aqui?* — e é assim que se descobrem comprometimentos silenciosos.
+
+## Fontes e formatos
+
+**Internas.** Os próprios incidentes, análises, alertas e registros. Mais relevantes que qualquer fonte externa, porque descrevem o adversário que de fato apareceu. Um programa que não realimenta os próprios achados está comprando de fora o que já tem dentro.
+
+**Abertas.** Publicações de fornecedores e pesquisadores, listas comunitárias, catálogos de vulnerabilidades exploradas, boletins de CSIRTs. Qualidade variável, custo baixo, e a base sobre a qual quase todo programa começa [@cisakev].
+
+**Comunitárias e setoriais.** Grupos de compartilhamento entre organizações do mesmo setor. Costumam ser a fonte de melhor relação entre relevância e custo, porque quem ataca o vizinho ataca você com o mesmo repertório.
+
+**Comerciais.** Cobertura mais ampla, contexto mais rico, acesso a fóruns fechados e monitoramento de credenciais vazadas. Faz sentido quando há requisitos definidos que as fontes anteriores não atendem — nunca antes disso.
+
+Para a troca, três padrões dominam. **STIX** é o formato estruturado para descrever indicadores, atores, campanhas e relações; **TAXII** é o protocolo de transporte [@stix21; @taxii21]. **Plataformas de compartilhamento** comunitárias implementam ambos e adicionam correlação e governança de quem vê o quê [@misp2024]. E o **protocolo de semáforo** classifica a permissão de redistribuição de cada item, do irrestrito ao restrito ao destinatário — respeitá-lo é a condição para continuar sendo convidado a receber [@first2024tlp].
+
+## Atribuição: por que importa menos do que parece
+
+"Quem nos atacou?" é a primeira pergunta da diretoria e quase nunca a mais útil.
+
+Atribuição é difícil por razões estruturais: infraestrutura é alugada e compartilhada, ferramentas vazam e são reutilizadas, e há bandeira falsa deliberada — artefatos plantados para apontar para outro ator. Além disso, cada empresa de pesquisa batiza os grupos com seu próprio esquema de nomes, de modo que o mesmo conjunto de atividade tem cinco nomes diferentes, e reconciliá-los é trabalho especializado.
+
+Do ponto de vista da defesa, a atribuição **raramente muda a ação**: a resposta a uma intrusão por credencial sem MFA é a mesma independentemente de quem esteja do outro lado. O que muda a ação é o **repertório**: se o ator conhecido por atacar o setor usa determinada via, essa via merece prioridade.
+
+Atribuição importa de verdade em três contextos: ação policial e diplomática, exposição a sanções na decisão sobre pagamento, e avaliação de risco estratégico — se o adversário é oportunista ou dirigido, a postura de defesa muda. Fora desses casos, é uma pergunta cujo custo de responder excede o benefício.
+
+## Colocando para funcionar
+
+Um programa mínimo e honesto, na ordem em que se constrói:
+
+**Escreva os requisitos.** Três a cinco perguntas, com o nome de quem decide a partir delas. Revise por trimestre.
+
+**Comece pelo que é interno e pelo que é gratuito.** Realimente os próprios incidentes. Entre em uma comunidade setorial. Consuma boletins nacionais. Só então avalie compra.
+
+**Enriqueça em vez de bloquear.** O ganho maior não é bloquear mais: é fazer o analista ver, ao abrir o alerta, que aquele domínio foi registrado há três dias e está associado a uma campanha ativa. Isso encurta triagem e melhora decisão.
+
+**Automatize com critério.** Bloqueio automático só de fontes de alta confiança, com contexto e expiração, e sempre com lista de exceções da própria organização — os domínios e endereços que jamais devem ser bloqueados, por serem críticos ao negócio.
+
+**Busque no passado, sempre.** Todo indicador novo dispara consulta retroativa de trinta a noventa dias.
+
+**Meça o que serviu.** Quantos alertas foram enriquecidos, quantas buscas retroativas encontraram algo, quantas decisões foram tomadas a partir de um produto, quais fontes geraram falso positivo. **Fonte que nunca produziu nada em um ano é fonte para cancelar** — e a renovação automática de assinaturas é o principal mecanismo de desperdício em inteligência de ameaças.
+
+## ⚖️ Brasil em Foco
+
+**Indicador é compartilhável; conteúdo de vítima não é.** Hash, domínio, endereço, nome de mutex, técnica e regra de detecção podem circular livremente entre pares. Já credenciais de terceiros, documentos exfiltrados, dados de clientes e capturas com conteúdo pessoal são tratamento de dados pessoais, e repassá-los transforma cooperação defensiva em incidente próprio. **A linha prática é: compartilhe o que descreve o ataque, nunca o que descreve a vítima** [@lgpd2018].
+
+**Há base legal para o compartilhamento defensivo, mas ele exige disciplina.** O tratamento de dados para segurança da informação e prevenção à fraude encontra amparo na LGPD — inclusive na hipótese de legítimo interesse e nas previsões específicas sobre segurança —, desde que haja finalidade determinada, minimização, prazo e registro. Compartilhar endereço IP associado a atividade maliciosa cabe nesse enquadramento; compartilhar a base de clientes afetados não [@lgpd2018; @anpd2023guia].
+
+**O ecossistema nacional tem endereços definidos.** O CERT.br é o ponto de referência nacional para tratamento de incidentes, mantém material técnico e recebe notificações; há CSIRTs setoriais e acadêmicos, grupos de compartilhamento do setor financeiro e comunidades de provedores. Para infraestrutura pública federal há estrutura própria de coordenação. **Participar de um desses grupos costuma render mais que a primeira assinatura comercial**, e a moeda de entrada é contribuir, não apenas consumir [@cert2024praticas; @certbrfraudes].
+
+**Respeitar a classificação de compartilhamento é condição de permanência.** O protocolo de semáforo é adotado pelos grupos nacionais. Repassar a um público amplo um material recebido com restrição — inclusive dentro da própria empresa — é a falha que retira a organização da lista de convidados, e ela raramente volta [@first2024tlp].
+
+**Vazamento de credenciais tem peso próprio no Brasil.** Monitorar o aparecimento de credenciais corporativas e de dados de clientes em vazamentos e em logs de ladrões de informação é um dos usos de melhor retorno, dado que credencial válida é a via de entrada dominante (@sec-cap070). Cuidado, porém, com o efeito colateral: **adquirir bases vazadas para "verificar exposição" é comprar dado pessoal de origem ilícita**, com risco jurídico direto. O caminho defensável é o serviço que verifica exposição sem transferir a base à organização.
+
+**Setores regulados têm obrigações de troca e de comunicação.** Instituições financeiras seguem os requisitos do Banco Central quanto a política de segurança cibernética e comunicação de incidentes relevantes; provedores respondem à Anatel; e o dever de comunicação à ANPD independe do setor. Inteligência bem organizada encurta todos esses relatos, porque fornece contexto pronto [@bcb4893; @anatel717; @anpd2024res15].
+
+**Fraude nacional exige fontes nacionais.** Golpes de Pix, fraude de boleto, comprometimento de e-mail corporativo em português, aplicativos maliciosos que se passam por instituições brasileiras e campanhas com iscas de órgãos públicos aparecem primeiro nas fontes locais. **Programa alimentado apenas por fontes internacionais chega atrasado exatamente ao que mais afeta a operação brasileira** [@certbrfraudes; @febraban2024].
+
+## 🛠️ No Campo
+
+**1. Escreva os requisitos antes de assinar qualquer fonte.** Três a cinco perguntas, com o nome de quem decide a partir de cada uma. Sem isso, o resto é despesa.
+
+**2. Realimente os próprios incidentes primeiro.** A melhor fonte é a que descreve o adversário que já veio até você.
+
+**3. Entre numa comunidade setorial antes de comprar.** Melhor relevância por custo — e contribua, não apenas consuma.
+
+**4. Nunca ligue fonte bruta direto ao bloqueio.** É o caminho mais curto para derrubar serviço legítimo e perder a confiança da operação.
+
+**5. Mantenha lista de exceções da organização.** Domínios e endereços que jamais podem ser bloqueados, revisada e versionada.
+
+**6. Exija contexto e expiração de toda fonte.** Sem "o que é, quando foi visto, com que confiança, até quando vale", o indicador não entra em automação.
+
+**7. Faça busca retroativa de 30 a 90 dias com todo indicador novo.** É o uso mais subestimado e o que mais descobre comprometimento silencioso.
+
+**8. Prefira enriquecer a bloquear.** Contexto no alerta encurta triagem e melhora decisão mais do que mais uma lista de bloqueio.
+
+**9. Não bloqueie sistemas de captura de pesquisadores.** Bloquear esconde justamente as máquinas infectadas que você precisa encontrar.
+
+**10. Calibre a linguagem de incerteza e documente-a.** "Provável" e "possível" precisam significar a mesma coisa para quem escreve e para quem lê.
+
+**11. Entregue no formato de quem decide.** Diretoria não lê indicador; analista não decide por slide.
+
+**12. Respeite a classificação de compartilhamento.** Inclusive internamente. Quebrar isso uma vez custa o acesso à comunidade.
+
+**13. Compartilhe o que descreve o ataque, nunca o que descreve a vítima.**
+
+**14. Não compre base vazada para "verificar exposição".** Use serviço que verifica sem transferir a base. Comprar é adquirir dado pessoal de origem ilícita.
+
+**15. Meça e cancele.** Fonte sem resultado em um ano deve ser cortada. A renovação automática é o maior desperdício da área.
+
+## Resumo
+
+- **Dado é o fato; informação é o dado com contexto; inteligência é a informação analisada para uma decisão específica.** Se ninguém muda nada por causa daquilo, é assinatura de conteúdo, não inteligência.
+- O ciclo — requisitos, coleta, processamento, análise, disseminação, realimentação — vale pelas duas pontas que a prática negligencia: **começar sem requisitos produz gasto sem propósito; terminar sem realimentação mata o programa devagar.**
+- Os três níveis servem consumidores distintos: **estratégico** (executivo, sem indicadores), **operacional** (arquitetura e detecção) e **tático** (operação). Programas que só compram o tático nunca justificam o próprio custo.
+- Indicador sem contexto é inútil e perigoso, e **indicadores expiram** — a data de validade é parte do dado. Fonte que não expira acumula falso positivo até derrubar serviço legítimo.
+- As armadilhas clássicas de falso positivo são hospedagem compartilhada, redes de distribuição de conteúdo, serviços de nuvem, nós de anonimato e **sistemas de captura de pesquisadores** — este último com o efeito perverso de esconder as máquinas infectadas.
+- A política que funciona: **bloqueio automático só de fonte confiável com contexto, expiração e lista de exceções; enriquecimento para o resto; e busca retroativa de 30 a 90 dias com todo indicador novo** — o uso mais subestimado e frequentemente o mais produtivo.
+- A fonte mais valiosa é interna; depois, comunidades setoriais; só então o comercial. STIX e TAXII padronizam a troca, e o protocolo de semáforo governa a redistribuição — respeitá-lo é condição de permanência na comunidade.
+- **Atribuição raramente muda a ação defensiva.** Importa para ação policial, para exposição a sanções e para avaliação estratégica; fora disso, o que muda a defesa é o repertório do adversário, não o nome dele.
+- No Brasil, indicadores são compartilháveis e conteúdo de vítima não é; participar do ecossistema nacional costuma render mais que a primeira assinatura comercial; comprar base vazada para verificar exposição é adquirir dado de origem ilícita; e **programa alimentado só por fontes internacionais chega atrasado justamente à fraude que mais afeta a operação brasileira**.

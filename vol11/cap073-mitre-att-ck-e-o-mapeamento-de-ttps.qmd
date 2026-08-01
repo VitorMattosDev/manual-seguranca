@@ -1,3 +1,262 @@
 # MITRE ATT&CK e o mapeamento de TTPs {#sec-cap073}
 
-*(em elaboracao)*
+Em março, a equipe respondeu a um incidente com um carregador escrito em .NET, entregue por anexo, que criou uma tarefa agendada, extraiu credenciais da memória e se moveu para três servidores. Bloqueou os hashes, bloqueou os domínios, fechou o chamado.
+
+Em julho, outro incidente. Binário diferente, família diferente, infraestrutura diferente, hashes diferentes — todos os bloqueios de março inúteis. Mas o comportamento era o mesmo: anexo, tarefa agendada, extração de credencial da memória, execução remota nos mesmos três servidores.
+
+**A organização tinha bloqueado a campanha e não tinha detectado o método.** E método é o que se repete.
+
+Este capítulo trata da linguagem que torna essa distinção operacional: como descrever comportamento adversário de forma padronizada, comparável e — principalmente — acionável.
+
+## O que são TTPs, e por que a ordem das letras importa
+
+A sigla vem da doutrina militar: táticas, técnicas e procedimentos.
+
+**Tática** é o objetivo — *por que* o adversário está fazendo aquilo. Obter acesso inicial, persistir, escalar privilégio, evadir defesas, coletar credenciais, mover-se lateralmente, exfiltrar, impactar.
+
+**Técnica** é o método — *como* ele alcança o objetivo. Para persistir: tarefa agendada, serviço, chave de execução, item de inicialização.
+
+**Procedimento** é a implementação específica — *exatamente o quê*. A ferramenta X criando uma tarefa chamada `MicrosoftEdgeUpdateTaskCore`, com aquela linha de comando, às 3h.
+
+A hierarquia importa porque **a estabilidade cresce da direita para a esquerda**. Procedimentos mudam a cada campanha; técnicas mudam a cada anos; táticas praticamente não mudam, porque são os objetivos que definem uma intrusão. Detecção construída sobre procedimento envelhece em dias. Detecção construída sobre técnica sobrevive à troca de ferramenta.
+
+Esse raciocínio foi formalizado numa hierarquia de indicadores que se tornou referência: quanto mais alto na pirâmide, mais custa ao adversário mudar — e mais dói para ele quando a defesa detecta [@bianco2013].
+
+::: {#fig-piramide-dor}
+```{.tikz}
+%%| filename: piramide-dor
+%%| alt: Pirâmide de indicadores, do hash trivialmente mutável até as táticas, técnicas e procedimentos no topo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    nvl/.style={draw, thick, align=center, font=\tiny, inner sep=3pt,
+                minimum height=0.72cm},
+    obs/.style={align=left, font=\tiny, text width=6.1cm, anchor=west}}
+
+  \foreach \idx/\py/\lg/\cor/\tit/\des in {%
+    1/0/6.0/manualgreen/{Valores de hash}/{trocar: segundos --- reempacotar},
+    2/0.8/5.2/manualgreen/{Endereços IP}/{trocar: minutos --- outro servidor},
+    3/1.6/4.4/manualyellow/{Nomes de domínio}/{trocar: horas --- registrar outro},
+    4/2.4/3.6/manualyellow/{Artefatos de rede e host}/{trocar: dias --- ajustar o código},
+    5/3.2/2.8/manualred/{Ferramentas}/{trocar: semanas --- desenvolver ou comprar},
+    6/4.0/2.0/manualred/{TTPs}/{trocar: \textbf{muda o modo de operar}}}
+    {
+      \node[nvl, draw=\cor, fill=\cor!13, minimum width=\lg cm] at (-3.9,\py)
+        {\textbf{\tit}};
+      \node[obs, manualgray] at (-0.6,\py) {\des};
+    }
+
+  \draw[-{Stealth[length=3mm]}, very thick, manualgray] (-7.3,-0.4) -- (-7.3,4.5);
+  \node[font=\tiny\bfseries, manualgray, rotate=90, anchor=south]
+    at (-7.6,2.0) {custo para o adversário};
+
+  \node[draw=manualblue, fill=manualblue!11, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=6.1cm]
+    at (2.5,-1.5)
+    {\textbf{A troca que a defesa faz}\\[3pt]
+     A base é barata de coletar e barata de burlar --- útil por horas.
+     O topo é caro de detectar e caro de mudar --- útil por anos.
+     Uma operação madura mantém as duas pontas, mas \textbf{investe no topo}.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=6.1cm]
+    at (-4.0,-1.5)
+    {\textbf{O erro comum}\\[3pt]
+     Encerrar o incidente ao bloquear hash e domínio. Foi bloqueada a
+     \textbf{campanha}, não o \textbf{método} --- e o método volta em julho
+     com outro binário.};
+\end{tikzpicture}
+```
+A hierarquia de indicadores por custo de substituição. Bloquear a base resolve hoje; detectar o topo resolve o ano.
+:::
+
+## ATT&CK: a base de conhecimento
+
+ATT&CK é uma base de conhecimento pública que catalogou o comportamento adversário observado em intrusões reais e o organizou em um vocabulário comum [@mitreattack]. Sua virtude não é teórica: **é derivada de observação**, e cada técnica traz referências a incidentes documentados.
+
+A estrutura tem cinco elementos que importam na prática.
+
+**Matrizes** separam domínios: ambiente corporativo (Windows, Linux, macOS, nuvem, contêineres, rede), dispositivos móveis e sistemas de controle industrial. São vocabulários distintos — usar a matriz errada produz mapeamento inútil.
+
+**Táticas** são as colunas: as etapas de uma intrusão, do reconhecimento ao impacto. Não são sequenciais no sentido estrito — o adversário volta atrás, repete, salta —, mas descrevem o conjunto de objetivos possíveis.
+
+**Técnicas e subtécnicas** são as células, cada uma com identificador estável (`T1053` para tarefa agendada, `T1053.005` para a variante do Windows). O identificador é o que torna o vocabulário comparável entre equipes, ferramentas e fornecedores.
+
+**Grupos e software** catalogam adversários e ferramentas conhecidos, com as técnicas atribuídas a cada um. É o que permite responder: "quais técnicas usa quem ataca o meu setor?"
+
+**Mitigações e fontes de dados** completam o modelo. As fontes de dados são o elemento mais subestimado: cada técnica lista **que telemetria permite observá-la**. Isso converte a pergunta vaga "estou protegido?" na pergunta respondível "eu coleto criação de processo com linha de comando?" — e a resposta a essa segunda pergunta é verificável.
+
+## Como ATT&CK conversa com os outros modelos
+
+Três modelos aparecem juntos na literatura e são complementares, não concorrentes.
+
+A **cadeia de destruição** descreve a intrusão como uma sequência linear de sete etapas e introduziu a ideia decisiva de que **interromper qualquer elo frustra o ataque inteiro** [@hutchins2011]. É excelente para comunicar a lógica da defesa em profundidade; é fraca para descrever o que acontece depois do acesso inicial, onde a atividade não é linear.
+
+O **modelo diamante** descreve cada evento por quatro vértices — adversário, capacidade, infraestrutura e vítima — e pelas relações entre eles [@caltagirone2013]. É a ferramenta analítica de pivô: partindo de um domínio (infraestrutura), chega-se a outras vítimas; partindo de uma amostra (capacidade), chega-se a outras campanhas.
+
+**ATT&CK** preenche o que falta aos dois: um vocabulário granular e catalogado para o comportamento, especialmente na fase pós-comprometimento.
+
+Na prática madura, usam-se os três: a cadeia para estruturar a narrativa do incidente, ATT&CK para nomear cada comportamento, e o diamante para conduzir o pivô investigativo.
+
+## Os três usos que valem a pena
+
+### 1. Mapear a detecção existente — e resistir ao teatro
+
+O uso mais comum é montar um mapa de cobertura: para cada técnica, a organização tem detecção? Uma ferramenta de visualização em camadas permite pintar a matriz e comparar cenários [@attacknavigator2024].
+
+É também o uso mais facilmente corrompido, e vale nomear os três modos de corrupção:
+
+**Pintar de verde o que não se detecta.** Ter uma regra que menciona a técnica não é detectá-la. Detecção existe quando alguém verificou que ela dispara contra a execução real da técnica — e não disparou tanto que virou ruído ignorado.
+
+**Contar técnicas como se fossem pontos.** "Cobrimos 214 de 600 técnicas" não significa nada. As técnicas têm pesos radicalmente diferentes: detectar extração de credencial da memória vale mais que detectar dez técnicas de descoberta que a organização nunca verá. **Cobertura é qualitativa, ponderada pelo que o seu adversário provável faz.**
+
+**Ignorar a qualidade da detecção.** Detectar uma técnica pela única ferramenta pública que a implementa é frágil — outra implementação passa. Detectar pelo efeito que qualquer implementação produz é robusto. A diferença entre as duas não aparece em nenhum mapa colorido, e é ela que decide o resultado.
+
+O antídoto é a validação: emular a técnica em ambiente controlado e verificar se o alerta aparece. Exercícios conjuntos entre time de ataque e de defesa (@sec-cap056) existem para isso, e é a única forma honesta de pintar a matriz.
+
+### 2. Priorizar por ameaça, não por catálogo
+
+A matriz corporativa tem centenas de técnicas. Nenhuma equipe cobre todas, e tentar é a receita para cobrir mal todas elas.
+
+A priorização racional parte de três filtros:
+
+**Quem ataca o meu setor e o meu porte, e com que técnicas?** Um provedor regional de internet, um hospital e uma fintech enfrentam repertórios diferentes. Relatórios setoriais e grupos catalogados dão a base.
+
+**Que técnicas aparecem em quase toda intrusão, independentemente do ator?** Existe um núcleo pequeno e estável — acesso com credencial válida, tarefa agendada e serviço para persistência, extração de credencial da memória, execução por interpretador de comandos, uso de ferramenta administrativa nativa, execução remota, exclusão de cópias de sombra, canal de aplicação para C2. **Esse núcleo cobre desproporcionalmente mais incidentes reais que a cauda longa da matriz.**
+
+**Que fontes de dados eu já coleto?** Uma técnica indetectável com a telemetria atual não é prioridade de regra: é prioridade de **coleta**. Confundir as duas coisas gera meses de trabalho em regras que nunca poderiam disparar.
+
+### 3. Falar a mesma língua
+
+Mapear incidentes, relatórios de teste de invasão, avaliações de fornecedor e boletins de inteligência para o mesmo vocabulário produz um efeito que só aparece depois de alguns meses: **as coisas passam a ser comparáveis**.
+
+O relatório do teste de invasão do ano passado, o incidente de março, o boletim do CSIRT setorial e a avaliação da ferramenta nova falam todos em `T1053.005` — e a pergunta "isso a gente já viu?" ganha resposta em vez de opinião. Avaliações públicas de produtos de detecção usam esse vocabulário justamente para permitir comparação [@mitreevals2024].
+
+Para o lado das contramedidas, existe um catálogo complementar que mapeia defesas para as técnicas que elas afetam [@d3fend2024] — útil para responder "se eu implantar este controle, que técnicas ele atinge?", que é a pergunta que justifica orçamento.
+
+## Do incidente à regra: o ciclo completo
+
+O valor de ATT&CK aparece quando ele fecha um ciclo, e não quando produz um diagrama bonito.
+
+::: {#fig-ciclo-attack}
+```{.tikz}
+%%| filename: ciclo-attack
+%%| alt: Ciclo que vai do incidente ao mapeamento de técnicas, à lacuna de detecção, à regra e à validação
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.35cm, minimum height=1.35cm},
+    fx/.style={-{Stealth[length=2.4mm]}, thick, manualgray}}
+
+  \node[et, draw=manualblue, fill=manualblue!12] (a) at (-5.6,1.3)
+    {\textbf{1. Incidente\\ou análise}\\[2pt] comportamento observado};
+  \node[et, draw=manualblue, fill=manualblue!12] (b) at (-2.8,1.3)
+    {\textbf{2. Mapear}\\[2pt] nomear cada passo com o identificador};
+  \node[et, draw=manualyellow, fill=manualyellow!14] (c) at (0,1.3)
+    {\textbf{3. Lacuna}\\[2pt] o que passou sem alerta?};
+  \node[et, draw=manualyellow, fill=manualyellow!14] (d) at (2.8,1.3)
+    {\textbf{4. Coleta}\\[2pt] a telemetria existe? senão, isso vem antes};
+  \node[et, draw=manualgreen, fill=manualgreen!13] (e) at (5.6,1.3)
+    {\textbf{5. Regra}\\[2pt] escrever a detecção};
+
+  \node[et, draw=manualred, fill=manualred!12, text width=3.0cm] (f) at (0,-1.3)
+    {\textbf{6. Validar emulando a técnica}\\[2pt] disparou? gerou ruído demais?};
+
+  \draw[fx] (a) -- (b);
+  \draw[fx] (b) -- (c);
+  \draw[fx] (c) -- (d);
+  \draw[fx] (d) -- (e);
+  \draw[fx] (e.south) to[out=-90,in=0] (f.east);
+  \draw[fx] (f.west) to[out=180,in=-90] node[left=2pt, font=\tiny, pos=0.75]
+    {reabre} (b.south);
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.3cm]
+    at (-4.3,-2.6)
+    {\textbf{O passo que quase todos pulam é o 6.}
+     Sem emulação, o mapa de cobertura é uma \textbf{declaração de intenção},
+     não uma medida.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.3cm]
+    at (4.3,-2.6)
+    {\textbf{E o 4 é o que ordena o trabalho.}
+     Técnica sem telemetria não é lacuna de regra --- é lacuna de
+     \textbf{coleta}, e regra nenhuma a resolve.};
+\end{tikzpicture}
+```
+O ciclo que transforma ATT&CK em detecção. O mapeamento sem os passos 4 e 6 produz cor na tela e nada mais.
+:::
+
+Um exemplo concreto do ciclo, a partir do incidente que abre o capítulo:
+
+O comportamento observado foi "criou uma tarefa agendada chamada `MicrosoftEdgeUpdateTaskCore` para executar um binário na pasta temporária". Isso é **procedimento**. A técnica correspondente é a persistência por tarefa agendada. A pergunta de detecção não é "alguém criou uma tarefa com esse nome?" — é **"que criações de tarefa agendada são anômalas neste ambiente?"**.
+
+A resposta exige contexto: em uma organização típica, tarefas são criadas por instaladores de software, por administradores em janelas de manutenção e por poucos processos legítimos. Tarefa criada por processo filho de aplicativo de escritório, ou apontando para binário em pasta temporária ou de perfil de usuário, ou criada fora de janela de manutenção, é anômala **independentemente do nome, do hash e do domínio** — e detecta tanto a campanha de março quanto a de julho.
+
+Esse é o salto qualitativo: da lista de indicadores para a lógica de detecção. A escrita formal dessas regras é o Volume 12.
+
+## Os limites honestos do modelo
+
+ATT&CK não é uma norma nem uma metodologia de gestão, e forçá-lo a esses papéis produz frustração.
+
+**Não é lista de conformidade.** Não existe "estar em conformidade com ATT&CK". Quem precisa de estrutura de gestão usa as normas do Volume 15; ATT&CK é vocabulário técnico.
+
+**Não é exaustivo nem estático.** Reflete o que foi observado e publicado, com atraso em relação ao que é novo, e muda de versão em versão — técnicas são criadas, fundidas e renumeradas. Mapeamentos precisam registrar a versão usada.
+
+**O mapeamento tem ambiguidade real.** O mesmo comportamento cabe em mais de uma técnica, e analistas competentes discordam. A convenção interna consistente vale mais que a precisão teórica.
+
+**Cobrir muitas técnicas não é ser seguro.** A prevenção — MFA, correção, menor privilégio, segmentação, backup imutável — continua valendo mais que qualquer mapa de detecção, e nada disso aparece bem numa matriz de técnicas adversárias.
+
+## ⚖️ Brasil em Foco
+
+**Vocabulário comum encurta a comunicação de incidente.** A comunicação exigida pela LGPD e detalhada pela Resolução CD/ANPD nº 15/2024 pede descrição do incidente, das medidas adotadas e dos riscos. Descrever a intrusão em técnicas mapeadas — em vez de prosa livre — produz relato consistente, comparável entre incidentes e defensável em fiscalização. **Também facilita demonstrar que a organização entendeu o que houve**, que é parte do que a prestação de contas exige [@lgpd2018; @anpd2024res15].
+
+**Compartilhamento entre pares brasileiros funciona melhor em TTP.** Trocar hashes e domínios entre provedores e CSIRTs tem validade de horas; trocar técnicas e comportamentos tem validade de meses, e não expõe dado de vítima. Comunidades setoriais, CSIRTs e o CERT.br operam nessa lógica, e o mapeamento padronizado é o que torna o material de um participante utilizável pelos demais [@cert2024praticas; @nistsp800150].
+
+**Contratação pública e privada ganha critério objetivo.** Em vez de exigir "solução de detecção avançada com inteligência artificial", o edital ou o contrato pode exigir **cobertura demonstrável de um conjunto nomeado de técnicas**, com validação por emulação e evidência de alerta. Isso é verificável, comparável entre propostas e alinhado com a exigência de especificação objetiva da Lei 14.133/2021 — e é um dos poucos avanços práticos disponíveis para melhorar contratação de segurança [@lei14133; @mitreevals2024].
+
+**O perfil de ameaça brasileiro tem ênfases próprias.** Fraude bancária e de meios de pagamento, comprometimento de e-mail corporativo com desvio de pagamento, ransomware em provedores e prefeituras, e abuso de acessibilidade em dispositivo móvel aparecem com peso maior aqui do que a média global. A priorização de técnicas deve refletir isso, e não copiar a matriz de prioridades de um relatório estrangeiro [@certbrfraudes; @febraban2024].
+
+**Setores regulados podem usar o mapeamento como evidência.** Instituições sob regulação do Banco Central precisam demonstrar capacidade de detecção e resposta; provedores respondem à Anatel por continuidade e à legislação por guarda de registros. Um mapa de cobertura validado por emulação, versionado e com data, é evidência de diligência mais convincente que uma declaração de que "há EDR instalado" [@bcb4893; @anatel717].
+
+**Cuidado com a inteligência genérica importada.** Boletins internacionais descrevem adversários que podem nunca alcançar uma empresa média brasileira, enquanto o que de fato a atinge — fraude de boleto, golpe de Pix, ransomware oportunista via VPN sem MFA — recebe pouca cobertura nesses relatórios. **Priorizar pelo que é publicado lá fora é priorizar pelo problema de outra pessoa.**
+
+## 🛠️ No Campo
+
+**1. Separe procedimento de técnica em todo incidente.** "Tarefa chamada X" é procedimento; "persistência por tarefa agendada" é técnica. A detecção que dura é escrita sobre a segunda.
+
+**2. Não encerre incidente ao bloquear hash e domínio.** Isso bloqueia a campanha. Registre a técnica e crie a detecção que pega a próxima.
+
+**3. Comece pelo núcleo, não pela matriz inteira.** Credencial válida, tarefa agendada e serviço, extração de credencial da memória, interpretador de comandos, execução remota, exclusão de cópias de sombra, C2 por canal de aplicação. Cobre a maior parte dos incidentes reais.
+
+**4. Antes de escrever regra, verifique a coleta.** Técnica sem telemetria é lacuna de coleta, não de regra. Inverter a ordem desperdiça meses.
+
+**5. Valide emulando.** Se ninguém executou a técnica em ambiente controlado e viu o alerta, a cobertura é declaração de intenção.
+
+**6. Meça cobertura por peso, nunca por contagem.** "214 de 600" não é métrica. Cobertura ponderada pelo repertório do adversário provável é.
+
+**7. Registre a versão do modelo em cada mapeamento.** Técnicas são renumeradas e fundidas. Mapeamento sem versão apodrece em silêncio.
+
+**8. Adote convenção interna e documente-a.** Ambiguidade de mapeamento é real; consistência interna vale mais que precisão teórica.
+
+**9. Mapeie também o teste de invasão e a avaliação de fornecedor.** É o que torna as coisas comparáveis ao longo do tempo.
+
+**10. Priorize pelo perfil brasileiro.** Fraude de meios de pagamento, comprometimento de e-mail corporativo, ransomware via acesso remoto sem MFA. Não copie a lista de prioridades de relatório estrangeiro.
+
+**11. Use o vocabulário na comunicação regulatória.** Relato em técnicas é mais claro, mais defensável e demonstra entendimento do incidente.
+
+**12. Especifique cobertura de técnicas em contrato.** Verificável e comparável — melhor que "detecção avançada" em qualquer edital.
+
+**13. Não confunda cobertura de detecção com segurança.** MFA, correção, menor privilégio, segmentação e backup imutável continuam pesando mais — e não aparecem na matriz.
+
+## Resumo
+
+- **Táticas, técnicas e procedimentos** formam uma hierarquia de estabilidade crescente: procedimentos mudam a cada campanha, técnicas duram anos, táticas praticamente não mudam. Detecção sobre procedimento envelhece; sobre técnica, permanece.
+- A hierarquia de indicadores por custo de substituição vai de hashes e endereços (trocáveis em minutos) até TTPs (cuja troca exige mudar o modo de operar). **Bloquear a base resolve o dia; detectar o topo resolve o ano.**
+- ATT&CK é base de conhecimento derivada de observação, com matrizes por domínio, táticas, técnicas com identificador estável, grupos, software, mitigações e **fontes de dados** — estas últimas o elemento mais subestimado, porque convertem "estou protegido?" em uma pergunta verificável sobre telemetria.
+- Cadeia de destruição, modelo diamante e ATT&CK são complementares: a primeira estrutura a narrativa, o segundo conduz o pivô investigativo, o terceiro nomeia o comportamento.
+- Os três usos que valem: **mapear detecção existente** (resistindo ao teatro de cobertura), **priorizar por ameaça real** e **padronizar a linguagem** entre incidentes, testes, fornecedores e boletins.
+- Os três modos de corromper o mapa: pintar de verde o que não foi validado, contar técnicas como pontos e ignorar a robustez da detecção. **O antídoto é emular a técnica e verificar se o alerta aparece.**
+- O ciclo que dá valor ao modelo vai do incidente ao mapeamento, à lacuna, à **verificação de coleta**, à regra e à **validação por emulação** — e reabre. Sem os dois passos destacados, o resultado é cor na tela.
+- ATT&CK não é norma de conformidade, não é exaustivo, muda de versão e admite ambiguidade de mapeamento. E cobrir muitas técnicas não substitui prevenção.
+- No Brasil, o vocabulário melhora a comunicação à ANPD, viabiliza compartilhamento útil entre pares, permite exigir cobertura verificável em contrato — e a priorização precisa refletir o perfil nacional de ameaça, não a pauta dos relatórios estrangeiros.

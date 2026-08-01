@@ -1,3 +1,231 @@
 # Análise estática em laboratório {#sec-cap071}
 
-*(em elaboracao)*
+O anexo chamava-se `NF-e_4471982.pdf.exe` e chegou a onze caixas do setor financeiro. O gateway barrou nove; duas passaram porque as regras de bloqueio por extensão não cobriam o caso. O analista tinha uma pergunta a responder e um prazo curto: **o que essa coisa faz, e o que preciso procurar nas outras máquinas?**
+
+Ele não executou o arquivo. Em quarenta minutos, sem rodar uma linha do código, sabia: era um carregador escrito em .NET, empacotado por um cifrador comercial, com três domínios embutidos, que criava uma tarefa agendada com nome imitando um componente do sistema, e cujo hash difuso batia com uma família documentada dois meses antes. Os três domínios foram para o bloqueio, o nome da tarefa virou consulta de caça nas outras estações, e duas delas voltaram positivas.
+
+Isso é análise estática: **extrair o máximo de conhecimento acionável sem executar o artefato**. É mais rápida, mais segura e frequentemente suficiente.
+
+## O laboratório antes da amostra
+
+Antes de qualquer análise vem o ambiente, e a regra que o rege é simples: **assuma que a amostra vai escapar e projete para que isso não importe**.
+
+**Isolamento de rede.** A máquina de análise não fala com a rede corporativa. Nem para atualizar, nem para buscar ferramenta, nem "só um minuto". A separação precisa ser de segmento e de política — rede exclusiva, sem rota para o ambiente produtivo, sem confiança do domínio (@sec-cap028). Para análise estática, o padrão saudável é **sem rede alguma**, com transferência controlada de arquivos.
+
+**Isolamento do hospedeiro.** Virtualização é o caminho prático, e a hipótese que se assume é a de que a máquina virtual pode ser escapada — logo, o hospedeiro não é a estação de trabalho de ninguém, não tem credencial corporativa, não monta pastas compartilhadas com a máquina virtual e não guarda nada que importe (@sec-cap014). Compartilhamento de área de transferência e de pastas entre máquina virtual e hospedeiro é conveniência que já custou incidentes.
+
+**Instantâneos e descartabilidade.** Toda análise começa de um instantâneo limpo e termina com a reversão dele. A máquina de análise é gado, não animal de estimação.
+
+**Contenção do artefato.** Amostras ficam em arquivo protegido por senha, com extensão neutralizada — a convenção de renomear `.exe` para `.exe_` e de compactar com senha existe justamente para impedir a execução acidental e o antivírus de apagar a evidência antes da análise. E a proteção mais importante: **a amostra nunca sai do laboratório por e-mail, mensageria ou compartilhamento de nuvem corporativo**.
+
+**Registro do que se fez.** Data e hora, hash da amostra, origem, quem manipulou, o que foi executado, o que foi observado. Isso é bom método e, quando o caso vira processo, é o que sustenta a cadeia de custódia (@sec-cap063 e o Volume 13).
+
+Uma advertência que precede tudo: **enviar a amostra a um serviço público de análise é publicá-la**. Documentos e binários corporativos carregam nomes internos, caminhos, endereços e às vezes credenciais. Amostra que envolve dado de cliente ou informação de negócio vai para laboratório próprio [@virustotal2024].
+
+## A escada da triagem estática
+
+A análise estática tem uma ordem natural, do mais barato ao mais caro. Subir os degraus só quando o anterior não respondeu é o que diferencia trabalho de curiosidade — e a maioria dos casos termina no terceiro degrau. O tratamento clássico e detalhado de cada uma dessas etapas está na literatura de referência da área [@sikorski2012; @monnappa2018].
+
+::: {#fig-escada-estatica}
+```{.tikz}
+%%| filename: escada-estatica
+%%| alt: Escada da triagem estática, do hash e identificação de tipo até a desmontagem, com o custo crescente de cada degrau
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    dg/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=5.4cm, minimum height=0.95cm},
+    obs/.style={align=left, font=\tiny, text width=6.0cm, anchor=west}}
+
+  \foreach \idx/\py/\cor/\tit/\des in {%
+    1/0/manualgreen/{Hash e reputação}/{identificar se já é conhecido},
+    2/1.15/manualgreen/{Tipo real do arquivo}/{bytes iniciais, não a extensão},
+    3/2.3/manualblue/{Cadeias de texto e entropia}/{domínios, caminhos, indício de empacotamento},
+    4/3.45/manualblue/{Cabeçalhos e importações}/{seções, funções externas, assinatura},
+    5/4.6/manualyellow/{Agrupamento por similaridade}/{hash difuso, imphash --- ligar a famílias},
+    6/5.75/manualred/{Desmontagem e descompilação}/{último recurso, caro e demorado}}
+    \node[dg, draw=\cor, fill=\cor!12, anchor=west] at (-6.9,\py)
+      {\textbf{\idx. \tit}\\\des};
+
+  \draw[-{Stealth[length=3mm]}, very thick, manualgray] (-7.35,-0.55) -- (-7.35,6.4);
+  \node[font=\tiny\bfseries, manualgray, rotate=90, anchor=south]
+    at (-7.65,2.9) {custo e tempo crescentes};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.9cm]
+    at (2.1,4.3)
+    {\textbf{A regra da escada}\\[3pt]
+     Suba um degrau apenas quando o anterior não respondeu à pergunta
+     que motivou a análise. A maioria dos casos operacionais termina no
+     degrau \textbf{3} --- com indicadores suficientes para bloquear e caçar.};
+
+  \node[draw=manualred, fill=manualred!11, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.9cm]
+    at (2.1,1.3)
+    {\textbf{Pergunta que orienta tudo}\\[3pt]
+     Não é ``como isso funciona em detalhe?'', e sim
+     \textbf{``o que bloqueio agora e o que procuro nas outras máquinas?''}
+     Análise sem essa pergunta vira passatempo caro.};
+\end{tikzpicture}
+```
+A escada da triagem estática. O objetivo operacional é sair com indicadores acionáveis, não com engenharia reversa completa.
+:::
+
+### Degrau 1 — hash e reputação
+
+Calcule SHA-256 (@sec-cap017) e consulte as bases. Se a família é conhecida e há relatório publicado, ele responde em minutos o que a análise levaria dias para reconstruir. Um detalhe importante de método: **hash negativo não significa arquivo limpo** — significa que aquele hash específico é novo, o que é o esperado para qualquer amostra reempacotada nas últimas horas.
+
+### Degrau 2 — o tipo real do arquivo
+
+Extensão é sugestão. O que determina o formato são os bytes iniciais — `MZ` para executável do Windows, `\x7fELF` para Linux, `PK` para os formatos baseados em compactação (incluindo documentos de escritório modernos), `%PDF` para PDF. Identificar o tipo real revela imediatamente as técnicas de dupla extensão, de ícone falsificado e de arquivo que se apresenta como documento e é executável.
+
+### Degrau 3 — cadeias de texto e entropia
+
+Extrair as cadeias de texto legíveis do binário é o passo com melhor relação entre esforço e resultado. Interessam: domínios e endereços IP, caminhos de arquivo, nomes de chave de registro e de tarefa agendada, nomes de função e de biblioteca, mensagens de erro, extensões de arquivo alvo, nome de mutex, e artefatos do ambiente de compilação — caminhos de projeto que às vezes trazem nome de usuário e estrutura de diretório do autor.
+
+Extraia cadeias em ASCII **e** em UTF-16, porque boa parte das cadeias do Windows está no segundo formato e ferramentas mal configuradas as perdem silenciosamente.
+
+A **entropia** mede a aleatoriedade dos bytes. Código e texto têm entropia moderada; dados comprimidos ou cifrados têm entropia alta e uniforme. Uma seção do binário com entropia próxima do máximo é forte indício de empacotamento (@sec-cap069). Isso não é veredito — instaladores legítimos comprimem —, mas muda a expectativa: **se está empacotado, o que se vê em disco não é o que vai rodar**, e a análise estática do conteúdo real depende de desempacotar, o que geralmente leva à análise dinâmica (@sec-cap072).
+
+Um sinal correlato: **poucas cadeias de texto em um binário grande** é anômalo. Software real é verborrágico. Silêncio indica que o conteúdo está cifrado.
+
+### Degrau 4 — cabeçalhos, seções e importações
+
+Para executáveis do Windows, o formato PE traz um conjunto de campos com valor informativo direto [@pecoff2024]:
+
+- **Data de compilação** no cabeçalho. Útil como pista, mas trivialmente falsificável — data no futuro ou em 1992 é sinal de adulteração, não de nada mais profundo.
+- **Tabela de seções**: nomes, tamanho em disco versus tamanho em memória, permissões. Seção com nome fora do padrão, seção executável e gravável ao mesmo tempo, ou tamanho em disco muito menor que o tamanho em memória são indícios clássicos de empacotamento.
+- **Tabela de importações**: as funções externas que o binário declara usar. É a lista de capacidades declaradas — funções de rede, de criptografia, de manipulação de processos, de registro, de captura de teclado. Uma tabela de importações **muito curta**, contendo apenas as funções necessárias para carregar bibliotecas dinamicamente e resolver endereços em tempo de execução, é por si só um indicador: significa que as capacidades reais estão escondidas.
+- **Recursos embutidos**: ícones (frequentemente copiados de aplicativos legítimos para o disfarce), mas também executáveis inteiros e configurações escondidas como recurso.
+- **Assinatura digital**: presença, validade, cadeia e — o ponto que costuma escapar — **se o certificado é legítimo mas foi emitido para um nome irrelevante**. Assinatura válida não é atestado de benignidade (@sec-cap019); certificados são roubados e emitidos para empresas de fachada. O que importa é *quem* assinou.
+
+Para Linux, o raciocínio equivalente se faz sobre o cabeçalho ELF, as seções, os símbolos e as bibliotecas dinâmicas — com atenção a binários estaticamente ligados e sem símbolos, que são a norma em implantes.
+
+### Degrau 5 — agrupamento por similaridade
+
+Hash criptográfico é tudo ou nada: um byte diferente, hash completamente diferente. Isso é exatamente o que se quer para integridade e exatamente o que atrapalha na análise de malware, onde variantes se multiplicam.
+
+Duas técnicas resolvem isso. O **hash difuso** — que divide o arquivo em blocos por conteúdo e produz uma assinatura comparável, gerando um grau de similaridade em vez de um veredito binário — permite dizer "esta amostra é 87% similar àquela de março" [@kornblum2006; @tlhash2018]. E o **imphash**, o hash da tabela de importações, que agrupa binários compilados a partir do mesmo código-fonte com o mesmo conjunto de funções, mesmo quando o conteúdo difere.
+
+O valor operacional é o agrupamento: transformar mil amostras avulsas em doze famílias, e ligar o que chegou hoje ao que foi analisado em março.
+
+### Degrau 6 — desmontagem e descompilação
+
+Abrir o código em um desmontador ou descompilador [@ghidra2024] responde perguntas que nada mais responde: qual é exatamente o algoritmo de geração de domínio, como a configuração é decifrada, qual a lógica de escolha de alvos. É também caro, demorado e exige competência específica.
+
+Para a operação de segurança, a decisão é de custo-benefício: **desmontar quando a resposta muda uma decisão de defesa** — extrair a configuração para bloquear toda a infraestrutura, confirmar se houve exfiltração, determinar se um decifrador é possível. Curiosidade técnica é legítima em laboratório de estudo; em resposta a incidente, com relógio correndo, ela desloca esforço do que importa.
+
+## Regras YARA: transformando análise em detecção
+
+O produto durável da análise estática não é o relatório: é a **regra**. YARA é a linguagem consagrada para descrever padrões que identificam famílias de arquivos [@yara2024], e escrever uma boa regra é o que faz o conhecimento de hoje valer no mês que vem.
+
+```yara
+rule Carregador_Exemplo_Didatico
+{
+    meta:
+        autor       = "equipe de seguranca"
+        descricao   = "Exemplo didatico de estrutura de regra"
+        referencia  = "chamado INC-2024-0417"
+        data        = "2026-03-14"
+
+    strings:
+        // cadeias caracteristicas observadas na familia
+        $mutex   = "Global\\svc_upd_7741" wide ascii
+        $tarefa  = "MicrosoftEdgeUpdateTaskCore" wide
+        $trecho  = { 8B 45 ?? 33 D2 F7 F1 8A 04 ?? }   // wildcards toleram variacao
+
+    condition:
+        uint16(0) == 0x5A4D          // e um executavel do Windows
+        and filesize < 2MB
+        and 2 of them                // exige combinacao, nao coincidencia isolada
+}
+```
+
+Três princípios separam uma regra útil de uma fonte de falsos positivos:
+
+**Ancore no que o autor não pode mudar sem custo.** Um nome de mutex, uma sequência de bytes da rotina de decifragem, uma estrutura de configuração. Cadeias como uma mensagem de erro genérica ou um domínio isolado mudam a cada campanha — e ficam melhor como indicador de curto prazo do que como regra.
+
+**Exija combinação e restrinja o universo.** Uma condição do tipo "2 de 4 cadeias, em arquivo executável, menor que 2 MB" erra muito menos que "contém esta cadeia".
+
+**Meça antes de publicar.** Rode contra um acervo de arquivos legítimos — binários do sistema, instaladores comuns, o que a organização de fato usa — e conte os falsos positivos. **Regra não testada em ambiente limpo é incidente futuro**, especialmente quando alimenta bloqueio automático.
+
+Documente autoria, data, referência ao caso e escopo pretendido nos metadados. Regra órfã, sem contexto, ninguém tem coragem de remover nem de confiar — e o acervo apodrece.
+
+A escrita de regras de detecção é retomada com profundidade no Volume 12, junto de Sigma para eventos; aqui interessa o vínculo direto: **a análise estática existe para produzir a regra**.
+
+## Além do executável
+
+Boa parte do que chega não é executável, e cada formato tem sua triagem própria.
+
+**Documentos de escritório.** Os formatos modernos são pacotes compactados de XML: descompactá-los e inspecionar as partes revela macros, objetos embutidos e referências externas que buscam conteúdo remoto. Macros ofuscadas — cadeias quebradas em pedaços, concatenação, codificação, execução indireta — se extraem e se leem sem executar nada.
+
+**PDF.** Estrutura de objetos que pode conter JavaScript, ações automáticas na abertura, arquivos embutidos e redirecionamentos. A triagem consiste em enumerar os objetos e procurar as construções que disparam ação.
+
+**Atalhos e scripts.** Arquivos de atalho do Windows tornaram-se vetor comum porque carregam uma linha de comando arbitrária com ícone inofensivo — e a linha de comando embutida se lê estaticamente. Scripts em linguagem interpretada chegam ofuscados por concatenação, codificação e substituição; a desofuscação estática é frequentemente possível e é o caminho preferido, porque não requer execução.
+
+**Imagens de contêiner.** Analisar camadas, manifesto e binários adicionados sem instanciar o contêiner é a triagem estática equivalente (@sec-cap052).
+
+## Os limites — e por que existe o próximo capítulo
+
+A análise estática tem fronteiras honestas, e reconhecê-las evita conclusões erradas.
+
+**Empacotamento** é a principal: se o código real só existe depois de descompactado em memória, o que está em disco não informa sobre comportamento. **Ofuscação** de fluxo de controle e de cadeias eleva muito o custo da leitura. **Código gerado ou baixado em tempo de execução** simplesmente não está no arquivo. **Configuração remota** — o binário busca do C2 o que fazer — significa que o comportamento não está no artefato, e sim na resposta do servidor.
+
+E há o mais importante conceitualmente: **a análise estática mostra capacidades, não comportamento**. Um binário que importa funções de rede pode nunca usá-las. Saber o que ele *pode* fazer é diferente de saber o que ele *faz*, com quem fala e o que deixa para trás.
+
+Daí a divisão de trabalho: estática primeiro, porque é barata e segura; dinâmica quando a estática não responde. Na prática, alternam-se — a execução revela onde olhar, e a leitura explica o que a execução mostrou.
+
+## ⚖️ Brasil em Foco
+
+**Analisar é lícito; distribuir e executar contra terceiro não é.** A Lei 12.737/2012 tipifica a invasão de dispositivo e a produção e difusão de programa com esse fim. Pesquisa e resposta a incidente em laboratório isolado, sobre amostra recebida em ambiente próprio ou de cliente com autorização, não se enquadram — o que se enquadra é a difusão do artefato e o teste contra sistema alheio. **Isso torna o cuidado com o compartilhamento uma questão jurídica, não só de higiene** [@lei12737].
+
+**A amostra pode conter dado pessoal — e frequentemente contém.** Logs de ladrões de informação, documentos exfiltrados, capturas de tela e bases de dados aparecem no material coletado, e passam a ser tratamento de dados pessoais pela organização que os detém. Isso exige finalidade definida (resposta a incidente e defesa), acesso restrito, prazo de retenção, registro e descarte seguro ao fim. **Manter indefinidamente um acervo de dados de vítimas "para pesquisa" é tratamento sem base legal clara** [@lgpd2018].
+
+**Compartilhar indicador não é compartilhar dado pessoal.** Hash, domínio, endereço IP, nome de mutex, regra de detecção e técnica podem e devem circular entre pares e CSIRTs. Já o conteúdo exfiltrado, credenciais de terceiros e documentos de vítimas não. A distinção é operacionalmente simples e evita transformar cooperação defensiva em incidente próprio [@cert2024praticas].
+
+**Cadeia de custódia importa desde a triagem.** Se o incidente puder gerar processo — trabalhista, criminal ou cível —, a amostra é prova. Registrar hash na coleta, quem manipulou, quando e com que ferramenta, e preservar cópia inalterada em mídia controlada, é o que sustenta a validade depois. Análise feita sobre a única cópia existente, sem hash prévio, é análise que a parte contrária derruba (Volume 13).
+
+**Licenciamento de ferramentas em ambiente corporativo.** Boa parte do instrumental é livre, mas versões gratuitas de ferramentas comerciais frequentemente vedam uso corporativo, e serviços de análise têm termos que **concedem ao provedor direito sobre o arquivo enviado**. Em organização com dever de sigilo — provedor, instituição financeira, saúde, escritório de advocacia —, isso precisa ser lido antes do primeiro envio, não depois.
+
+**Provedores de internet têm posição peculiar.** Recebem amostras de clientes, hospedam infraestrutura de terceiros e podem ter equipamentos usados como retransmissores. Analisar o que trafega na rede esbarra na inviolabilidade das comunicações do Marco Civil (@sec-cap009): análise de metadados e de artefato entregue voluntariamente pelo cliente é uma coisa; inspeção de conteúdo de comunicação alheia é outra, com regime jurídico próprio [@marcocivil2014; @lei9296].
+
+**Rotule o que sai da equipe.** A prática internacional de classificação de compartilhamento por semáforo — do irrestrito ao restrito ao destinatário — é adotada pelos CSIRTs brasileiros e evita o vazamento acidental mais comum: repassar a um grupo amplo o que foi recebido em confiança [@first2024tlp].
+
+## 🛠️ No Campo
+
+**1. Monte o laboratório antes de precisar dele.** Máquina virtual isolada, sem rede, sem pasta compartilhada, sem área de transferência comum, em hospedeiro que não é a estação de ninguém. Instantâneo limpo, revertido ao fim de cada análise.
+
+**2. Comece pela pergunta operacional.** "O que bloqueio agora e o que procuro nas outras máquinas?" Sem isso, a análise vira passatempo.
+
+**3. Suba a escada um degrau por vez.** Hash, tipo real, cadeias e entropia resolvem a maioria dos casos com indicadores suficientes.
+
+**4. Extraia cadeias em ASCII e UTF-16.** Metade do que interessa no Windows está no segundo, e a configuração padrão de muitas ferramentas o ignora.
+
+**5. Trate entropia alta e importações curtas como "está empacotado".** O disco não mostra o que vai rodar; planeje análise dinâmica.
+
+**6. Use hash difuso e imphash para agrupar.** Transformar mil amostras em doze famílias é o que torna o acervo utilizável.
+
+**7. Não confie em assinatura digital como atestado.** Certificado válido emitido para nome irrelevante é padrão em campanha organizada. O que importa é quem assinou.
+
+**8. Termine toda análise com uma regra YARA versionada.** Com metadados, referência ao caso e teste contra acervo limpo. Regra é o produto durável; relatório é o subproduto.
+
+**9. Meça falso positivo antes de publicar a regra.** Especialmente se ela alimentar bloqueio automático. Rode contra os binários que a organização realmente usa.
+
+**10. Nunca envie amostra sensível a serviço público.** Publicar é irreversível, e os termos de serviço costumam ceder direitos sobre o arquivo.
+
+**11. Compartilhe indicador, nunca conteúdo de vítima.** Hash, domínio, mutex e regra circulam; documento exfiltrado e credencial de terceiro não.
+
+**12. Registre hash e manuseio desde a coleta.** Se virar processo, é isso que sustenta a prova — e não custa nada fazer desde o início.
+
+**13. Defina prazo de retenção do acervo de amostras.** Acervo eterno com dados de vítimas é passivo, não patrimônio.
+
+## Resumo
+
+- Análise estática é **extrair conhecimento acionável sem executar** o artefato: mais rápida, mais segura e suficiente na maioria dos casos operacionais.
+- O laboratório vem antes da amostra: máquina virtual isolada e descartável, sem rede e sem compartilhamento com o hospedeiro, hospedeiro sem credencial corporativa, amostra contida em arquivo com senha e nunca reencaminhada.
+- A triagem tem uma escada de custo crescente — **hash, tipo real do arquivo, cadeias e entropia, cabeçalhos e importações, agrupamento por similaridade, desmontagem**. Suba um degrau só quando o anterior não respondeu.
+- Extensão não determina formato; **bytes iniciais determinam**. Extraia cadeias em ASCII e UTF-16. Entropia alta e tabela de importações curta indicam empacotamento — e empacotamento significa que o disco não revela o comportamento.
+- **Assinatura digital válida não atesta benignidade**: certificados são roubados e emitidos para fachadas. O que importa é quem assinou.
+- Hash criptográfico é tudo ou nada; **hash difuso e imphash permitem agrupar variantes em famílias**, que é o que torna o acervo utilizável ao longo do tempo.
+- O produto durável da análise é a **regra YARA**: ancorada no que o autor não muda sem custo, exigindo combinação de indicadores, medida contra acervo limpo antes de publicar e documentada com caso e data.
+- A estática mostra **capacidades, não comportamento** — e encontra seu limite em empacotamento, ofuscação, código baixado em tempo de execução e configuração remota. É por isso que existe a análise dinâmica.
+- No Brasil, analisar em laboratório é lícito e distribuir a amostra não é; o acervo frequentemente contém dado pessoal de vítimas, com dever de finalidade, restrição de acesso e prazo de descarte; e o compartilhamento defensivo circula indicadores, nunca conteúdo de vítima.

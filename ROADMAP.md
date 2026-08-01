@@ -114,12 +114,12 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ### Volume 11 — Malware e Inteligência de Ameaças
 
-- [ ] **cap 069** - Taxonomia de malware - `vol11/cap069-taxonomia-de-malware.qmd`
-- [ ] **cap 070** - Anatomia de um ataque de ransomware - `vol11/cap070-anatomia-de-um-ataque-de-ransomware.qmd`
-- [ ] **cap 071** - Análise estática em laboratório - `vol11/cap071-analise-estatica-em-laboratorio.qmd`
-- [ ] **cap 072** - Análise dinâmica e sandboxing - `vol11/cap072-analise-dinamica-e-sandboxing.qmd`
-- [ ] **cap 073** - MITRE ATT&CK e o mapeamento de TTPs - `vol11/cap073-mitre-att-ck-e-o-mapeamento-de-ttps.qmd`
-- [ ] **cap 074** - Inteligência de ameaças e indicadores de comprometimento - `vol11/cap074-inteligencia-de-ameacas-e-indicadores-de.qmd`
+- [x] **cap 069** - Taxonomia de malware - `vol11/cap069-taxonomia-de-malware.qmd`
+- [x] **cap 070** - Anatomia de um ataque de ransomware - `vol11/cap070-anatomia-de-um-ataque-de-ransomware.qmd`
+- [x] **cap 071** - Análise estática em laboratório - `vol11/cap071-analise-estatica-em-laboratorio.qmd`
+- [x] **cap 072** - Análise dinâmica e sandboxing - `vol11/cap072-analise-dinamica-e-sandboxing.qmd`
+- [x] **cap 073** - MITRE ATT&CK e o mapeamento de TTPs - `vol11/cap073-mitre-att-ck-e-o-mapeamento-de-ttps.qmd`
+- [x] **cap 074** - Inteligência de ameaças e indicadores de comprometimento - `vol11/cap074-inteligencia-de-ameacas-e-indicadores-de.qmd`
 
 ## Fase 4 — Perspectiva Defensiva
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (68 concluidos).
+**Total:** 107 capitulos em 16 volumes (74 concluidos).
 
