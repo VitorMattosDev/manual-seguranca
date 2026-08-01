@@ -1,3 +1,214 @@
 # PCI-DSS e requisitos setoriais {#sec-cap100}
 
-*(em elaboracao)*
+"A gente não guarda cartão." A frase foi dita com convicção pelo responsável técnico de um comércio eletrônico de porte médio, e ele acreditava nela. O checkout redirecionava para o gateway de pagamento, o número do cartão nunca tocava o banco de dados da loja, e o time tinha certeza de estar fora do escopo.
+
+A auditoria que veio depois de um incidente encontrou três coisas. O formulário de pagamento era servido pela própria página da loja, com um campo carregado por script de terceiro — o que colocava a página no escopo. O registro de erro da aplicação, em determinadas exceções, gravava o corpo inteiro da requisição, número do cartão incluído, e esse registro ia para um serviço de monitoramento externo. E o atendimento, em casos de contestação, pedia ao cliente que enviasse foto do cartão por mensagem — arquivos que ficavam guardados no sistema de tíquetes por dois anos.
+
+Ninguém "guardava cartão" no sentido em que o time entendia a frase. E, no entanto, dados de titular de cartão circulavam e repousavam em três lugares diferentes que ninguém tinha mapeado. **Escopo é a palavra central deste capítulo.** É onde a maior parte do custo e da maior parte das falhas mora.
+
+## Quem é quem no pagamento
+
+Entender o ecossistema evita confundir obrigações que são de terceiros com as próprias.
+
+O **portador** usa o cartão. O **emissor** é a instituição que emitiu o cartão e concede o crédito. A **bandeira** define as regras da rede e é quem, em última instância, exige a conformidade. O **credenciador** — o adquirente — habilita o estabelecimento a aceitar cartões e liquida os valores. **Subcredenciadores e facilitadores** intermediam para lojistas menores. O **gateway** e o **provedor de serviço de pagamento** operam a captura técnica da transação.
+
+O PCI DSS é um padrão da indústria, mantido pelo conselho formado pelas bandeiras. **Não é lei.** A obrigação de cumpri-lo chega por contrato: o credenciador exige do estabelecimento, a bandeira exige do credenciador, e assim por diante. A consequência do descumprimento também é contratual — multas, retenção de valores, elevação de nível de validação e, no limite, descredenciamento. Depois de um incidente, é comum a organização descobrir que a conta inclui o custo da investigação forense obrigatória, das reemissões de cartão e das penalidades da bandeira [@pcidss4].
+
+## Os dados: o que se pode e o que nunca se pode armazenar
+
+A distinção mais importante do padrão, e a que resolve metade das dúvidas do dia a dia:
+
+**Dados do titular do cartão** — o número da conta primária, o nome do titular, a data de validade e o código de serviço. Podem ser armazenados, com proteção. O número da conta primária, especificamente, precisa ser ilegível onde estiver armazenado, por truncamento, tokenização, resumo criptográfico forte com sal, ou criptografia forte com gestão de chaves adequada.
+
+**Dados sensíveis de autenticação** — o conteúdo completo da trilha magnética ou do equivalente no chip, o código de verificação de três ou quatro dígitos impresso no cartão, e o PIN ou seu bloco cifrado. **Não podem ser armazenados após a autorização.** Nunca. Nem cifrados, nem "temporariamente", nem em registro de depuração.
+
+Essa segunda regra é violada com uma frequência desconcertante, e quase sempre pelo mesmo caminho: registro de aplicação que grava corpo de requisição, captura de tráfego mantida para diagnóstico, e mensagem de erro que inclui a carga útil. O ponto de atenção prático é que a violação não acontece no código que o time escreveu para tratar pagamento — acontece na infraestrutura genérica de observabilidade que ninguém associou a dados de cartão.
+
+Um teste rápido que vale executar: procurar por padrões de número de cartão nos repositórios de registro, no sistema de tíquetes, nos anexos de correio do atendimento e nos backups. Quem faz isso pela primeira vez costuma encontrar algo.
+
+## Os doze requisitos
+
+O padrão organiza os requisitos em seis objetivos de controle.
+
+**Construir e manter rede e sistemas seguros.** (1) Instalar e manter controles de segurança de rede. (2) Aplicar configurações seguras a todos os componentes do sistema.
+
+**Proteger dados da conta.** (3) Proteger os dados armazenados da conta. (4) Proteger os dados do titular com criptografia forte durante a transmissão em redes públicas abertas.
+
+**Manter um programa de gestão de vulnerabilidades.** (5) Proteger todos os sistemas e redes contra software malicioso. (6) Desenvolver e manter sistemas e software seguros.
+
+**Implementar medidas fortes de controle de acesso.** (7) Restringir o acesso aos componentes do sistema e aos dados do titular pela necessidade de conhecer. (8) Identificar usuários e autenticar o acesso aos componentes do sistema. (9) Restringir o acesso físico aos dados do titular.
+
+**Monitorar e testar redes regularmente.** (10) Registrar e monitorar todo acesso aos componentes do sistema e aos dados do titular. (11) Testar regularmente a segurança de sistemas e redes.
+
+**Manter uma política de segurança da informação.** (12) Apoiar a segurança da informação com políticas e programas organizacionais.
+
+A leitura que vale fazer é esta: **não há nada aqui que já não tenha sido tratado neste manual**. Segmentação e controle de rede do @sec-cap028, configuração segura do @sec-cap036, criptografia em repouso e em trânsito dos capítulos @sec-cap041 e @sec-cap020, gestão de vulnerabilidades do @sec-cap039, desenvolvimento seguro do @sec-cap042, controle de acesso do @sec-cap022, registro e monitoramento do @sec-cap076, testes do @sec-cap058. O PCI DSS não inventou controles — ele fixou prazos, tornou-os verificáveis e amarrou tudo a uma consequência contratual.
+
+## Escopo: onde mora o dinheiro
+
+O escopo do PCI DSS abrange todos os componentes do sistema que armazenam, processam ou transmitem dados do titular ou dados sensíveis de autenticação, **mais** todos os componentes conectados a esse ambiente ou que possam afetar a sua segurança [@pcissc2022scoping].
+
+Aquele "mais" é o que surpreende. Um servidor de diretório que autentica administradores do ambiente de cartão está no escopo. Uma ferramenta de gestão que alcança as máquinas do ambiente está no escopo. Uma estação de trabalho com acesso administrativo ao ambiente está no escopo. Sem segmentação, **a rede corporativa inteira está no escopo** — e é assim que uma avaliação que custaria dezenas de milhares passa a custar centenas.
+
+::: {#fig-escopo-pci}
+```{.tikz}
+%%| filename: escopo-pci
+%%| alt: Fluxo de uma transacao com cartao mostrando onde o escopo PCI DSS incide e o efeito da segmentacao e da tokenizacao
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.35cm, minimum height=1.0cm},
+    sx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[et, draw=manualgray, fill=manualgray!12] (t1) at (-4.9,2.1) {portador\\digita o cartão};
+  \node[et, draw=manualred, fill=manualred!14]   (t2) at (-2.0,2.1) {página de\\pagamento};
+  \node[et, draw=manualred, fill=manualred!14]   (t3) at (0.9,2.1) {gateway /\\captura};
+  \node[et, draw=manualyellow, fill=manualyellow!18] (t4) at (3.8,2.1) {credenciador};
+  \node[et, draw=manualgreen, fill=manualgreen!13] (t5) at (3.8,0.5) {bandeira e\\emissor};
+  \node[et, draw=manualblue, fill=manualblue!13] (t6) at (0.9,0.5) {token\\devolvido};
+  \node[et, draw=manualblue, fill=manualblue!13] (t7) at (-2.0,0.5) {loja armazena\\só o token};
+
+  \draw[sx] (t1) -- (t2);
+  \draw[sx] (t2) -- (t3);
+  \draw[sx] (t3) -- (t4);
+  \draw[sx] (t4) -- (t5);
+  \draw[sx] (t5) -- (t6);
+  \draw[sx] (t6) -- (t7);
+
+  \draw[manualred, very thick, dashed, rounded corners=5pt]
+    (-3.35,1.35) rectangle (2.25,2.85);
+  \node[font=\tiny\bfseries, manualred, anchor=south] at (-0.55,2.9)
+    {ambiente de dados do titular --- escopo cheio};
+
+  \draw[manualblue, very thick, dashed, rounded corners=5pt]
+    (-3.35,-0.25) rectangle (2.25,1.25);
+  \node[font=\tiny\bfseries, manualblue, anchor=north] at (-0.55,-0.3)
+    {token não é dado de cartão --- fora do escopo se irreversível};
+
+  \node[draw=manualyellow, fill=manualyellow!10, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.9cm]
+    at (0,-1.9)
+    {\textbf{As duas alavancas que reduzem custo são as mesmas há vinte
+     anos: segmentar e não tocar no dado.} Segmentação bem feita tira a
+     rede corporativa do escopo; tokenização e redirecionamento tiram a
+     aplicação. Ambas precisam de validação --- segmentação é testada por
+     teste de invasão específico, e a tokenização só reduz escopo se o
+     token não for reversível pelo comerciante.};
+\end{tikzpicture}
+```
+Onde o escopo incide no fluxo de uma transação, e o efeito de segmentação e tokenização.
+:::
+
+Duas armadilhas de escopo merecem destaque porque são recentes e pegam muita gente.
+
+**A página de pagamento é escopo mesmo quando o cartão não passa pelo servidor.** Se o formulário é servido pela sua página, scripts carregados nela podem capturar o que o usuário digita — que é exatamente como funcionam os ataques de captura no lado do cliente do @sec-cap045. A versão 4 do padrão respondeu a isso com requisitos específicos sobre gestão e integridade dos scripts das páginas de pagamento e sobre detecção de alterações não autorizadas em cabeçalhos e conteúdo. Redirecionamento completo ou formulário embutido servido pelo provedor reduzem o escopo; formulário próprio, não.
+
+**Telefone e atendimento estão no escopo.** Gravação de chamada em que o cliente dita o número do cartão, mensagem com foto do cartão, anotação em sistema de tíquetes — tudo isso é armazenamento de dado de cartão, e a gravação com o código de verificação recitado é armazenamento de dado sensível de autenticação, que é proibido.
+
+## Validação: quem prova o quê
+
+O nível de validação depende do volume anual de transações e do tipo de participante, com faixas definidas por cada bandeira. O que importa entender é a diferença entre os instrumentos.
+
+**O questionário de autoavaliação** é usado por comerciantes de menor volume, e existe em variantes conforme a forma de aceitação: para comércio eletrônico com redirecionamento completo, para comércio eletrônico com página própria, para terminal autônomo, para quem não armazena eletronicamente, e a variante completa para os demais. Escolher a variante errada é falha comum — e a diferença entre a variante mais enxuta e a completa é de dezenas para centenas de perguntas [@pcissc2024saq].
+
+**O relatório de conformidade** é produzido por avaliador qualificado, exigido dos participantes de maior volume e de provedores de serviço relevantes. É auditoria com evidência, não questionário.
+
+**A varredura trimestral por fornecedor aprovado** verifica exposições externas e precisa terminar em resultado aprovado — o que na prática significa corrigir ou justificar formalmente cada achado.
+
+**O teste de invasão** é anual, e adicional após mudanças significativas. Quando há segmentação usada para reduzir escopo, ela precisa ser **testada especificamente**, com periodicidade própria — e é aqui que muita segmentação declarada se revela porosa.
+
+**O atestado de conformidade** é o documento que resume o resultado e circula entre as partes. É o equivalente ao certificado do @sec-cap095, com a mesma advertência: leia o escopo declarado, não apenas o carimbo.
+
+## O que a versão 4 mudou
+
+A revisão trouxe mudanças que importam mesmo para quem já era conforme.
+
+**Autenticação multifator ampliada** para todo acesso ao ambiente de dados do titular, não apenas para acesso administrativo remoto — e com requisitos sobre a resistência do mecanismo, alinhados ao @sec-cap024.
+
+**A abordagem customizada.** Pela primeira vez, o padrão admite que a organização atinja o objetivo de um requisito por meio diferente do prescrito, desde que documente a análise de risco específica, defina como o controle é testado e o submeta ao avaliador. É flexibilidade real, com custo de documentação real — e não serve para quem quer simplificar, serve para quem tem arquitetura moderna que não se encaixa na redação original.
+
+**Análise de risco direcionada.** Vários requisitos com periodicidade passaram a admitir frequência definida pela organização, desde que sustentada por análise de risco documentada e revisada.
+
+**Requisitos de página de pagamento**, já mencionados, endereçando a captura no lado do cliente.
+
+**Ênfase em "processos contínuos como parte do negócio"** em vez de esforço concentrado antes da avaliação — o mesmo problema que o @sec-cap095 aponta na certificação ISO.
+
+## Outros regimes setoriais brasileiros
+
+O PCI DSS é o mais conhecido dos requisitos setoriais, e está longe de ser o único que uma organização brasileira encontra.
+
+**Sistema financeiro.** A Resolução CMN nº 4.893/2021 e a Resolução BCB nº 85/2021 impõem política de segurança cibernética aprovada pelo conselho, diretor responsável, plano de resposta a incidentes, testes e cenários, e — o ponto que mais afeta arquitetura — regras específicas para **contratação de serviços de processamento e armazenamento de dados e de computação em nuvem**, incluindo comunicação prévia ao Banco Central, requisitos de acesso a informações pelo regulador, e cuidados com a localização dos dados e com a continuidade em caso de encerramento contratual [@bcb4893; @bcb85].
+
+**Open Finance.** O compartilhamento padronizado de dados e de serviços entre instituições opera sobre um arcabouço próprio de segurança, com certificados, perfis de autorização baseados em padrões abertos e diretório de participantes. É um dos ambientes mais estruturados de segurança de API em produção no país, e um bom estudo de caso para o @sec-cap048 [@bcbopenfinance; @bcbresconj1].
+
+**Pix.** O arranjo tem requisitos próprios de segurança, e o Mecanismo Especial de Devolução criou um processo de tratamento de fraude com prazos definidos. Limites noturnos, marcação de contas envolvidas em fraude e obrigações de comunicação compõem um regime que evolui rápido — e que é diretamente relevante para o @sec-cap066 [@bcbpix; @bcbmed].
+
+**Saúde suplementar.** Operadoras respondem a exigências de segurança e de interoperabilidade de dados de saúde, com a agravante de tratarem dados sensíveis sob a LGPD, o que estreita as bases legais disponíveis [@ansrn2024; @lgpd2018].
+
+**Setor elétrico.** Agentes do sistema interligado observam requisitos de segurança cibernética nos procedimentos de rede, num ambiente em que a convergência entre tecnologia da informação e tecnologia de operação é o ponto crítico — tema do Volume 16 [@ons2024].
+
+**Administração pública federal.** Órgãos e entidades seguem as normas do Gabinete de Segurança Institucional e notificam incidentes ao CTIR Gov, com prestação de contas ao TCU [@ingsi5; @gtcsg2024].
+
+O padrão comum a todos esses regimes é o mesmo: política formal aprovada em alto nível, responsável designado, gestão de incidentes com comunicação ao regulador, controle sobre terceiros, e evidência. Uma organização que estrutura isso uma vez, com o desenho integrado do @sec-cap094, atende vários regimes com o mesmo esforço. Uma que trata cada regime como projeto separado paga várias vezes pelo mesmo trabalho.
+
+## ⚖️ Brasil em Foco
+
+**PCI DSS não é lei, mas o contrato o torna obrigatório.** No Brasil, a exigência chega ao lojista pelo credenciador ou subcredenciador, e as consequências do descumprimento são contratuais — multa, retenção, mudança de nível de validação, descredenciamento. Depois de um incidente, somam-se investigação forense obrigatória por empresa qualificada, custos de reemissão e penalidades da bandeira. Ler as cláusulas de segurança do contrato de credenciamento **antes** do incidente é diligência elementar e raramente feita [@pcidss4].
+
+**Um vazamento de cartão é também um incidente de dados pessoais.** Número de cartão, nome e dados de transação são dados pessoais sob a LGPD. Isso significa comunicação à ANPD em três dias úteis do conhecimento do fato quando houver risco relevante, comunicação aos titulares, e todas as obrigações do @sec-cap097 — **em paralelo** ao processo contratual com a bandeira e o credenciador, que tem prazos e destinatários completamente diferentes [@anpd2024res15; @lgpd2018].
+
+**O regime do Banco Central alcança a arquitetura, não só a política.** As regras de contratação de nuvem exigem, entre outros pontos, que a instituição assegure ao Banco Central o acesso a informações, dados e recursos relevantes, que avalie a capacidade do prestador, e que trate a localização dos dados e a continuidade em caso de encerramento contratual. Na prática, isso restringe quais provedores e quais regiões podem ser usados, e é uma decisão de arquitetura que precisa ser tomada no início do projeto — não descoberta na revisão de conformidade [@bcb4893; @bcb85].
+
+**O Pix mudou o perfil de fraude e o regime de resposta.** O volume e a irreversibilidade das transações instantâneas deslocaram a fraude para a engenharia social e para o controle de dispositivo, e o Mecanismo Especial de Devolução criou um caminho formal de contestação com prazos curtos. Para quem constrói sistemas de pagamento, isso significa que os controles antifraude precisam operar em tempo de transação, não em conciliação posterior [@bcbpix; @bcbmed; @febraban2024].
+
+**Cartão presente e maquininha também têm requisitos.** Terminais de captura seguem padrões próprios de segurança de dispositivo mantidos pelo mesmo conselho, e o estabelecimento tem obrigações de inspeção física e de proteção contra adulteração — o requisito 9 do padrão. Adulteração de terminal é um vetor real e frequentemente esquecido em programas focados apenas no comércio eletrônico [@pcidss4].
+
+**O Código de Defesa do Consumidor incide sobre a fraude.** A responsabilidade do fornecedor por falha na prestação do serviço e o entendimento consolidado sobre fortuito interno em fraudes bancárias significam que o custo do incidente raramente para no cliente. É o argumento econômico que sustenta investimento em antifraude no país, e ele é mais eficaz na conversa com a diretoria do que a referência ao padrão [@cdc1990; @stjsumula479].
+
+## 🛠️ No Campo
+
+**1. Mapeie por onde o dado de cartão realmente passa.** Formulário, registro de aplicação, tíquete de atendimento, gravação de chamada, backup. O mapa desenhado pelo time raramente coincide com a realidade.
+
+**2. Procure padrões de número de cartão nos seus registros e anexos.** Quem faz isso pela primeira vez costuma encontrar algo.
+
+**3. Nunca armazene dado sensível de autenticação após a autorização.** Código de verificação, trilha e PIN — nem cifrados, nem temporariamente, nem em registro de depuração.
+
+**4. Desligue o registro de corpo de requisição em rotas de pagamento.** É o caminho mais comum de violação, e ele nasce na observabilidade genérica, não no código de pagamento.
+
+**5. Segmente para reduzir escopo, e teste a segmentação.** Segmentação declarada e não testada é a que se revela porosa no momento errado.
+
+**6. Prefira redirecionamento completo ou formulário do provedor.** Formulário próprio mantém a página no escopo, com os requisitos de integridade de script.
+
+**7. Inventarie os scripts das páginas de pagamento e monitore alterações.** É requisito da versão 4 e é a defesa direta contra captura no lado do cliente.
+
+**8. Verifique se a tokenização é irreversível do seu lado.** Token que o comerciante consegue destokenizar não tira nada do escopo.
+
+**9. Escolha a variante correta do questionário de autoavaliação.** A diferença entre a mais enxuta e a completa é de dezenas para centenas de perguntas.
+
+**10. Trate o atendimento como escopo.** Gravação com o código de verificação recitado é armazenamento proibido; foto de cartão no sistema de tíquetes também.
+
+**11. Leia o escopo do atestado de conformidade do seu provedor.** Vale a mesma advertência do certificado ISO: o carimbo não diz o que foi avaliado.
+
+**12. Documente a análise de risco direcionada quando usar frequência própria.** A flexibilidade da versão 4 é real e vem com custo de documentação real.
+
+**13. Trate o incidente de cartão como incidente de dados pessoais também.** ANPD, titulares, bandeira e credenciador são canais paralelos com prazos distintos.
+
+**14. Leia as cláusulas de segurança do contrato de credenciamento antes do incidente.** É onde estão a multa, a forense obrigatória e o custo de reemissão.
+
+**15. Se é instituição regulada, resolva a questão de nuvem no início do projeto.** Comunicação prévia, acesso do regulador e localização dos dados são decisões de arquitetura, não de revisão final.
+
+**16. Estruture uma vez o que vários regimes pedem.** Política aprovada, responsável designado, gestão de incidentes, controle de terceiros e evidência atendem PCI, Banco Central, Anatel e LGPD com o mesmo esforço.
+
+## Resumo
+
+- PCI DSS **não é lei**: é padrão da indústria cuja obrigatoriedade chega por contrato, com consequências contratuais — multa, retenção, forense obrigatória, descredenciamento.
+- A distinção central é entre **dados do titular** (armazenáveis com proteção; o número da conta precisa ser ilegível onde repousa) e **dados sensíveis de autenticação** (código de verificação, trilha e PIN), que **nunca** podem ser armazenados após a autorização.
+- A violação dessa segunda regra quase nunca nasce no código de pagamento. Nasce na observabilidade genérica: registro de corpo de requisição, captura de tráfego para diagnóstico, mensagem de erro com a carga útil.
+- **Escopo é onde mora o custo.** Ele abrange o que armazena, processa ou transmite dados de cartão **e** tudo o que se conecta a esse ambiente ou pode afetar sua segurança. Sem segmentação, a rede corporativa inteira entra.
+- Duas alavancas reduzem escopo: **segmentar** e **não tocar no dado**. Ambas precisam de validação — a segmentação é testada por teste de invasão específico, e a tokenização só reduz escopo se o token não for reversível pelo comerciante.
+- A página de pagamento está no escopo mesmo quando o cartão não passa pelo servidor, porque scripts carregados nela podem capturar o que o usuário digita. A versão 4 respondeu com requisitos de inventário e integridade de script.
+- Atendimento telefônico, gravação de chamada e sistema de tíquetes são escopo, e é onde muitos programas focados em comércio eletrônico deixam dados descobertos.
+- Os doze requisitos não trazem controle novo em relação ao que este manual já cobriu. O que o padrão acrescentou foi prazo, verificabilidade e consequência contratual.
+- A versão 4 ampliou a exigência de autenticação multifator, admitiu a **abordagem customizada** com documentação própria, permitiu frequências definidas por análise de risco direcionada e enfatizou processo contínuo em vez de esforço concentrado antes da avaliação.
+- No Brasil, o vazamento de cartão é simultaneamente incidente de dados pessoais sob a LGPD, com prazo de três dias úteis à ANPD, e evento contratual perante bandeira e credenciador — canais paralelos, prazos e conteúdos distintos.
+- Os demais regimes setoriais — Banco Central, Open Finance, Pix, saúde suplementar, setor elétrico, administração pública — repetem a mesma estrutura: política aprovada em alto nível, responsável designado, gestão de incidentes com comunicação ao regulador, controle sobre terceiros e evidência. Quem estrutura uma vez atende vários; quem trata cada um como projeto separado paga várias vezes.
