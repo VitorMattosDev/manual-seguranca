@@ -1,3 +1,250 @@
 # Recuperação após um ataque de ransomware {#sec-cap093}
 
-*(em elaboracao)*
+Na terceira noite, a equipe já tinha restaurado quarenta e dois servidores. O faturamento voltou, o sistema de provisionamento voltou, o atendimento voltou. Às 2h40 da quarta madrugada, tudo foi cifrado de novo.
+
+O adversário nunca tinha saído. Ele mantinha acesso por uma conta de serviço criada três semanas antes do primeiro disparo, que ninguém notou porque tinha nome parecido com o de um agente de monitoramento legítimo. A restauração foi feita para dentro do mesmo domínio, com as mesmas credenciais administrativas, sem que ninguém tivesse reconstruído a identidade. Cada servidor devolvido à rede foi devolvido a um ambiente que continuava sob controle de outra pessoa.
+
+Aqui está a diferença que organiza este capítulo. Na recuperação de desastre do @sec-cap090, o ambiente está **quebrado**. Na recuperação de ransomware, o ambiente está **hostil** — e existe alguém do outro lado que sabe que você vai restaurar, que já removeu snapshots, que já procurou o servidor de backup e que anteciparia a sua próxima jogada se pudesse. Restaurar sem tratar disso é devolver o ambiente ao adversário com os dados já descompactados.
+
+## O que torna esta recuperação diferente
+
+Três propriedades separam esse cenário de um alagamento ou de uma falha de armazenamento.
+
+**O adversário pode continuar dentro.** Ransomware moderno é o ato final de uma intrusão que durou semanas: acesso inicial, escalonamento, mapeamento, exfiltração, destruição de cópias e só então a cifragem (@sec-cap070). Persistência plantada nesse período sobrevive à restauração se a restauração não a considerar.
+
+**O incidente não termina quando os sistemas voltam.** Quase toda operação relevante exfiltra dados antes de cifrar, para pressionar com a ameaça de publicação. Isso significa que existe um incidente de dados pessoais em curso, com obrigações regulatórias próprias, independentemente do sucesso técnico da recuperação.
+
+**Três relógios correm em paralelo.** O da recuperação técnica, o da investigação — que precisa de evidência preservada — e o regulatório e de comunicação, que não espera o primeiro terminar. Quem trata os três em sequência perde os dois últimos.
+
+::: {#fig-trilhas-ransomware}
+```{.tikz}
+%%| filename: trilhas-ransomware
+%%| alt: Quatro trilhas paralelas de recuperacao de ransomware ao longo do tempo com pontos de sincronizacao
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    tr/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=11.4cm, minimum height=0.95cm}}
+
+  \node[tr, draw=manualred, fill=manualred!12] at (0,2.4)
+    {\textbf{técnica} --- conter $\rightarrow$ ambiente limpo $\rightarrow$
+     reconstruir identidade $\rightarrow$ restaurar por prioridade
+     $\rightarrow$ reintegrar sob vigilância};
+  \node[tr, draw=manualblue, fill=manualblue!12] at (0,1.15)
+    {\textbf{investigativa} --- preservar evidência $\rightarrow$ achar o
+     acesso inicial $\rightarrow$ mapear persistência $\rightarrow$
+     determinar o que saiu};
+  \node[tr, draw=manualyellow, fill=manualyellow!18] at (0,-0.1)
+    {\textbf{jurídica e regulatória} --- acionar encarregado $\rightarrow$
+     avaliar risco $\rightarrow$ comunicar ANPD e titulares $\rightarrow$
+     autoridade policial e reguladores setoriais};
+  \node[tr, draw=manualgreen, fill=manualgreen!12] at (0,-1.35)
+    {\textbf{negócio e comunicação} --- contingência manual $\rightarrow$
+     mensagem a clientes e imprensa $\rightarrow$ fornecedores e seguradora
+     $\rightarrow$ retomada};
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray]
+    (-6.1,-2.2) -- (6.1,-2.2);
+  \node[font=\tiny, manualgray, anchor=north] at (-5.6,-2.35) {hora 0};
+  \node[font=\tiny, manualgray, anchor=north] at (0,-2.35) {dias};
+  \node[font=\tiny, manualgray, anchor=north] at (5.4,-2.35) {semanas};
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.2cm]
+    at (0,-3.4)
+    {\textbf{As quatro trilhas correm em paralelo, não em sequência.} A
+     falha mais comum é tratar tudo como problema de TI e só acionar
+     jurídico, encarregado e comunicação quando os sistemas já voltaram
+     --- momento em que o prazo regulatório frequentemente já estourou.};
+\end{tikzpicture}
+```
+As quatro trilhas da recuperação de ransomware. Cada uma tem dono, e a coordenação entre elas é o papel do comando do incidente.
+:::
+
+## As primeiras horas: o que não fazer
+
+A janela inicial define o custo de tudo o que vem depois. Cinco reflexos comuns são caros.
+
+**Não desligar e reinstalar tudo imediatamente.** É o impulso natural e destrói a evidência que diria por onde entraram — sem a qual você fecha a porta errada e ele volta pela mesma. Desligar também apaga a memória, que em alguns casos contém material de chave e artefatos que só existem ali (@sec-cap087). A ordem é isolar da rede, preservar, depois agir.
+
+**Não restaurar imediatamente para o mesmo ambiente.** É o erro da abertura deste capítulo. Restaurar antes de saber se o adversário continua dentro entrega o resultado do trabalho a ele.
+
+**Não usar as credenciais administrativas comprometidas.** Se o domínio caiu, toda credencial que já circulou nele é suspeita. Continuar administrando a resposta com essas contas é dar visibilidade do plano de recuperação a quem observa (@sec-cap084).
+
+**Não coordenar a resposta pelos canais comprometidos.** Correio corporativo e mensageria interna podem estar sendo lidos. A resposta se coordena por canal fora de banda, definido antes.
+
+**Não pagar por impulso, nem descartar a hipótese por impulso.** É uma decisão de negócio com dimensões jurídicas e de seguro, tomada com informação — e nunca nas primeiras horas, sob pânico.
+
+Em paralelo, três coisas precisam começar de imediato: **acionar o encarregado de dados** e o jurídico, porque o prazo regulatório conta a partir do conhecimento do fato e não do fim da investigação; **verificar o estado dos backups** a partir de um ponto de vista isolado, o que costuma ser a informação que define toda a estratégia; e **abrir a linha do tempo**, registrando horários, decisões e quem decidiu, porque isso será a base do relatório ao regulador, à seguradora e à autoridade policial.
+
+## Avaliar antes de agir
+
+Cinco perguntas ordenam a estratégia, e as respostas mudam radicalmente o plano.
+
+**Qual é a extensão da cifragem?** Quais sistemas, quais dados, e — importante — o que **não** foi atingido e por quê. Segmentos poupados costumam indicar até onde o adversário chegou.
+
+**A identidade foi comprometida?** Se houve controle do diretório, o problema deixa de ser de servidores e passa a ser de reconstrução de confiança. É a resposta que mais encarece a recuperação, e ignorá-la é o erro da abertura.
+
+**Os backups estão íntegros e limpos?** Íntegros: existem, são legíveis, a cadeia está completa. Limpos: o ponto escolhido é anterior ao comprometimento. Restaurar de um ponto posterior à intrusão devolve a persistência junto com os dados — daí a importância da retenção profunda discutida no @sec-cap089.
+
+**Houve exfiltração, e de quê?** Determina o dever de comunicação, o risco aos titulares e a exposição futura. Metadados de rede e registros de fluxo são a fonte que responde isso (@sec-cap088), e a ausência deles costuma ser a pior lacuna do incidente.
+
+**Qual é a prioridade de retomada?** Aqui a análise de impacto do @sec-cap090 paga o investimento. Sem ela, a ordem de restauração vira negociação política na madrugada.
+
+## Ambiente limpo, identidade nova, restauração vigiada
+
+O padrão consolidado para recuperar de um comprometimento de domínio é construir um **ambiente limpo** e trazer o serviço para ele, em vez de tentar sanear o ambiente contaminado por partes [@nistsp800184; @cisaransomware2023; @nistir8374].
+
+::: {#fig-fluxo-recuperacao}
+```{.tikz}
+%%| filename: fluxo-recuperacao
+%%| alt: Fluxo de recuperacao com ambiente limpo, reconstrucao de identidade, validacao isolada do backup e reintegracao sob vigilancia
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=3.0cm, minimum height=1.35cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[et, draw=manualred, fill=manualred!13]     (e1) at (-4.4,2.2)
+    {\textbf{1. isolar e preservar}\\rede cortada, evidência copiada,
+     memória capturada};
+  \node[et, draw=manualblue, fill=manualblue!13]   (e2) at (-0.7,2.2)
+    {\textbf{2. ambiente limpo}\\rede nova, mídia confiável,
+     credenciais novas};
+  \node[et, draw=manualblue, fill=manualblue!11]   (e3) at (3.0,2.2)
+    {\textbf{3. identidade nova}\\diretório reconstruído,
+     segredos rotacionados};
+  \node[et, draw=manualyellow, fill=manualyellow!18] (e4) at (3.0,-0.4)
+    {\textbf{4. validar o backup}\\restaurar em rede isolada,
+     varrer, conferir data};
+  \node[et, draw=manualgreen, fill=manualgreen!13] (e5) at (-0.7,-0.4)
+    {\textbf{5. restaurar por prioridade}\\ordem da análise de impacto};
+  \node[et, draw=manualgreen, fill=manualgreen!11] (e6) at (-4.4,-0.4)
+    {\textbf{6. reintegrar vigiado}\\detecção reforçada antes de
+     liberar acesso};
+
+  \draw[fx] (e1) -- (e2);
+  \draw[fx] (e2) -- (e3);
+  \draw[fx] (e3) -- (e4);
+  \draw[fx] (e4) -- (e5);
+  \draw[fx] (e5) -- (e6);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.4cm]
+    at (-0.7,-2.4)
+    {\textbf{O passo 3 é o que quase todo mundo pula.} Restaurar servidores
+     limpos para dentro de um diretório comprometido devolve o ambiente ao
+     adversário com os dados já descompactados --- e é a causa mais comum
+     de recifragem durante a própria recuperação.};
+\end{tikzpicture}
+```
+O fluxo de recuperação sob adversário. A sequência é linear de propósito: cada etapa pressupõe que a anterior foi concluída.
+:::
+
+**O ambiente limpo** é um segmento de rede novo, com regras próprias, alcançável apenas por estações administrativas dedicadas, com credenciais criadas do zero e sem qualquer relação de confiança com o ambiente contaminado. Sistemas entram nele, nunca saem para o antigo.
+
+**A reconstrução da identidade** é a parte cara e a que não pode ser abreviada quando houve comprometimento do diretório. Envolve, no mínimo: reinstalação dos controladores a partir de mídia confiável em vez de restauração do que existia; rotação completa de senhas administrativas, de contas de serviço e das credenciais que sustentam a emissão de tíquetes de autenticação, com a rotação repetida conforme a orientação do fabricante para invalidar credenciais forjadas; revisão de todas as contas e de todos os grupos privilegiados, procurando o que foi criado ou alterado durante a janela da intrusão; e revogação e reemissão de certificados e de segredos de aplicação. Sem isso, restaurar é cosmético (@sec-cap037, @sec-cap026).
+
+**A validação do backup em isolamento** vem antes de qualquer restauração para o ambiente limpo: subir a cópia em rede sem saída, verificar integridade, varrer com ferramentas atualizadas, confirmar que o ponto escolhido é anterior ao comprometimento e que o sistema funciona.
+
+**A restauração por prioridade** segue a ordem de dependências e de impacto, com validação a cada etapa em vez de restauração em massa.
+
+**A reintegração vigiada** é o passo final e o mais negligenciado. Antes de devolver acesso amplo, a detecção precisa estar reforçada — registro de eventos ampliado, agentes de endpoint instalados e reportando, regras específicas para os indicadores do próprio incidente, atenção especial a criação de contas, alterações de grupo privilegiado e conexões de saída incomuns. As primeiras semanas após a recuperação são o período de maior risco de retorno.
+
+Sobre **decifrar**: em alguns casos existe ferramenta pública de recuperação, quando falhas na implementação da família foram estudadas ou quando chaves foram apreendidas por autoridades. Consultar iniciativas como o No More Ransom antes de assumir que restaurar é a única via é barato e ocasionalmente decisivo. Mesmo quando funciona, decifrar **não sanea o ambiente**: a persistência continua lá [@nomoreransom].
+
+## A decisão sobre pagamento
+
+Este manual não recomenda pagar. Recomenda que a decisão seja tomada por quem tem autoridade para tomá-la, com informação, e não por reflexo — e que a organização decida **antes**, em tempo de paz, qual é a sua posição e quem decide.
+
+Os elementos que compõem a decisão:
+
+**Pagar não garante recuperação.** As ferramentas de decifragem entregues são frequentemente lentas, incompletas ou defeituosas, e a restauração a partir delas costuma levar mais tempo que a restauração de backup íntegro.
+
+**Pagar não resolve a exfiltração.** A promessa de destruir os dados copiados é inverificável por construção. O incidente de dados pessoais permanece, e o dever de comunicação também. Casos de nova cobrança meses depois, com os mesmos dados, são documentados [@mandiant2024mtrends].
+
+**Pagar financia a próxima campanha** e sinaliza a organização como pagadora, o que aumenta a probabilidade de novo ataque.
+
+**Há dimensões jurídicas.** Sanções internacionais podem alcançar determinados grupos, o que expõe a organização e seus intermediários; obrigações de prevenção à lavagem de dinheiro e de comunicação de operações suspeitas incidem sobre a transação; e o registro contábil de um pagamento dessa natureza precisa de tratamento adequado. Nada disso se resolve às três da manhã sem o jurídico.
+
+**A apólice de seguro tem regras próprias**, e frequentemente exige comunicação prévia à seguradora e uso de fornecedores credenciados sob pena de perda de cobertura. Ler a apólice depois do incidente é o pior momento possível.
+
+A pergunta que orienta a preparação é simples e desconfortável: *se o backup imutável estiver íntegro e o RTO for atingível, a decisão desaparece*. Quase todo o valor de negociação do adversário vem da fragilidade da nossa recuperação — o que faz do @sec-cap089 a contramedida mais eficaz contra extorsão.
+
+## O incidente que continua depois que os sistemas voltam
+
+Restaurar o serviço encerra a crise operacional e não encerra o incidente.
+
+**Os dados exfiltrados continuam fora.** Publicação em sites de vazamento, revenda e uso em fraude direcionada contra clientes e funcionários vêm depois — às vezes meses depois. Isso pede monitoramento continuado, orientação aos titulares afetados e preparação do atendimento para o volume de contatos que surge quando a publicação acontece.
+
+**A comunicação tem prazo próprio.** Comunicar a ANPD e os titulares quando há risco relevante, comunicar clientes contratualmente, comunicar reguladores setoriais, registrar ocorrência policial. Cada um com forma e prazo próprios.
+
+**A investigação precisa fechar a porta.** Determinar o acesso inicial e corrigi-lo é o que impede a repetição. Incidentes que reincidem quase sempre reincidem pelo mesmo caminho — acesso remoto sem multifator, credencial de terceiro, serviço exposto sem correção.
+
+**As lições precisam virar mudança rastreada.** A revisão pós-incidente, sem culpa, com ações nomeadas e com prazo, seguindo a mesma disciplina do @sec-cap091. E há um período de graça de atenção e orçamento logo após o incidente que é a melhor janela que a segurança da organização terá para corrigir o que estava pendente havia anos. Desperdiçá-la é comum.
+
+## ⚖️ Brasil em Foco
+
+**A ANPD tratou o tema explicitamente.** A autoridade já se manifestou sobre incidentes de ransomware, e o entendimento operacional é firme: cifragem que torna dados pessoais indisponíveis é incidente de segurança, e a existência de exfiltração agrava a avaliação de risco. A comunicação à autoridade e aos titulares, quando houver risco relevante, deve ocorrer em até três dias úteis contados do **conhecimento do fato** — não do fim da investigação —, com o conteúdo mínimo previsto na Resolução CD/ANPD nº 15/2024 e complementação posterior quando o quadro se esclarecer. Recuperar tudo sem vazamento externo não elimina o dever: houve acesso não autorizado [@lgpd2018; @anpd2024res15; @anpd2023ransomware].
+
+**Ransomware é crime, e o registro importa.** A invasão de dispositivo informático é tipificada pela Lei 12.737/2012, com agravantes; a extorsão e o dano têm tipificação própria no Código Penal; e a Lei 14.155/2021 endureceu penas para crimes praticados por meio eletrônico. O registro de ocorrência — nas delegacias especializadas em crimes cibernéticos onde existirem, ou pelas delegacias eletrônicas estaduais — é passo concreto: documenta a condição de vítima, é frequentemente exigido pela seguradora e sustenta a posição da organização perante clientes e reguladores [@lei12737; @lei14155].
+
+**Preservação de evidência tem consequência processual.** Sob o Marco Civil, provedores têm dever de guarda de registros e podem receber determinação de preservação. Em um incidente, isso significa que a pressa de reinstalar entra em conflito direto com uma obrigação legal: preserve imagens, registros e memória antes de qualquer reconstrução, com cadeia de custódia documentada (@sec-cap085) [@marcocivil2014; @rfc3227].
+
+**Reguladores setoriais têm prazos próprios.** Instituições financeiras e de pagamento devem comunicar incidentes relevantes ao Banco Central conforme sua política de segurança cibernética; prestadoras de telecomunicações respondem à Anatel quanto à indisponibilidade e à qualidade; órgãos da administração pública federal seguem os fluxos de notificação do CTIR Gov. Esses relatos correm em paralelo ao da ANPD, com conteúdos diferentes [@bcb4893; @bcbresconj1; @anatel717; @gtcsg2024].
+
+**Pagamento: sanções, lavagem e registro.** A transação em criptoativo para um grupo criminoso levanta questões de conformidade com sanções internacionais — inclusive por meio de intermediários —, de prevenção à lavagem de dinheiro e de comunicação de operações atípicas, além do tratamento contábil e fiscal do desembolso. Nenhuma dessas conversas cabe na madrugada do incidente: elas precisam estar resolvidas em política, com alçada definida, antes de acontecer [@lei9613].
+
+**Apoio e coordenação nacional.** O CERT.br recebe notificações de incidentes e mantém material de referência sobre tratamento e sobre ransomware, e a coordenação com operadoras contribui para a derrubada de infraestrutura hospedada no país. Iniciativas internacionais como o No More Ransom disponibilizam ferramentas de decifragem quando existem. É apoio barato e subutilizado no país [@cert2024ransomware; @cert2024praticas; @nomoreransom].
+
+**Comunicação a consumidores.** Para organizações com base de consumidores, a interrupção e a exposição de dados geram deveres de informação sob o Código de Defesa do Consumidor, e informação incompleta ou minimizadora agrava a exposição judicial — que, em vazamentos de grande escala, tende a se manifestar em ações repetitivas. A mensagem pública precisa passar pelo jurídico antes de sair, e o atendimento precisa de roteiro pronto [@cdc1990].
+
+## 🛠️ No Campo
+
+**1. Isole antes de desligar.** Cortar a rede preserva memória e evidência; reinstalar por impulso apaga a resposta para "por onde entraram".
+
+**2. Acione encarregado e jurídico na primeira hora.** O prazo regulatório conta do conhecimento do fato, não do fim da investigação.
+
+**3. Coordene a resposta fora de banda.** Correio e mensageria corporativa podem estar sendo lidos pelo adversário.
+
+**4. Verifique o estado dos backups a partir de um ponto isolado.** É a informação que define toda a estratégia — e é o que remove o poder de barganha do adversário.
+
+**5. Abra a linha do tempo desde o minuto zero.** Horários, decisões e quem decidiu. Vira relatório para regulador, seguradora e polícia.
+
+**6. Assuma que a identidade caiu se o domínio caiu.** Reconstrua diretório a partir de mídia confiável, rotacione tudo, repita a rotação das credenciais de emissão de tíquetes conforme a orientação do fabricante.
+
+**7. Construa o ambiente limpo antes de restaurar qualquer coisa.** Rede nova, estações administrativas dedicadas, nenhuma relação de confiança com o ambiente contaminado.
+
+**8. Valide cada backup em rede isolada antes de restaurar.** Integridade, varredura, data anterior ao comprometimento, sistema funcionando.
+
+**9. Escolha um ponto anterior à intrusão, não anterior à cifragem.** A intrusão começou semanas antes; é para isso que serve a retenção profunda.
+
+**10. Restaure na ordem da análise de impacto, validando a cada etapa.** Restauração em massa sem validação é como se recontamina.
+
+**11. Reforce a detecção antes de reintegrar.** Contas criadas, grupos privilegiados alterados, saída incomum. As primeiras semanas são o período de maior risco de retorno.
+
+**12. Consulte iniciativas públicas de decifragem antes de assumir que só há restauração.** É barato e ocasionalmente decisivo — e não dispensa sanear o ambiente.
+
+**13. Decida a política de pagamento em tempo de paz.** Quem decide, com que informação, com jurídico e seguradora à mesa. Nunca sob pânico na primeira noite.
+
+**14. Leia a apólice antes do incidente.** Comunicação prévia e fornecedores credenciados costumam ser condição de cobertura.
+
+**15. Registre ocorrência policial e notifique o CERT.br.** Documenta a condição de vítima, costuma ser exigido pela seguradora e devolve contexto sobre a campanha.
+
+**16. Prepare o atendimento para a publicação dos dados.** Ela vem depois da recuperação, às vezes meses depois, e o volume de contatos é grande.
+
+**17. Feche a porta de entrada e rastreie as ações.** Reincidência quase sempre usa o mesmo caminho: acesso remoto sem multifator, credencial de terceiro, serviço exposto sem correção.
+
+**18. Use a janela de atenção pós-incidente.** É a melhor oportunidade de orçamento e de prioridade que a segurança da organização vai ter — e ela fecha rápido.
+
+## Resumo
+
+- Na recuperação de desastre o ambiente está **quebrado**; na de ransomware ele está **hostil**. Existe um adversário que já removeu cópias, que pode continuar dentro e que sabe que você vai restaurar.
+- Quatro trilhas correm em **paralelo**: técnica, investigativa, jurídica e regulatória, e de negócio e comunicação. Tratá-las em sequência é o que estoura o prazo regulatório.
+- As primeiras horas se perdem por reflexo: reinstalar antes de preservar, restaurar para o ambiente comprometido, administrar com credenciais suspeitas, coordenar por canal lido pelo adversário e decidir sobre pagamento sob pânico.
+- Cinco perguntas ordenam a estratégia: extensão da cifragem, comprometimento da identidade, integridade **e limpeza** dos backups, ocorrência de exfiltração e prioridade de retomada.
+- A recuperação sob adversário é sequencial: isolar e preservar → ambiente limpo → **reconstruir a identidade** → validar o backup em isolamento → restaurar por prioridade → reintegrar sob vigilância reforçada.
+- O passo mais pulado é a reconstrução da identidade. Restaurar servidores limpos para dentro de um diretório comprometido é a causa mais comum de recifragem durante a própria recuperação.
+- O ponto de restauração precisa ser anterior à **intrusão**, não à cifragem — o que só é possível com retenção profunda o bastante para atravessar a permanência do adversário.
+- A decisão sobre pagamento é do negócio, com jurídico e seguradora, tomada em tempo de paz: pagar não garante recuperação, não resolve a exfiltração, financia a próxima campanha e tem dimensões de sanções e de conformidade. Backup imutável íntegro faz a decisão desaparecer.
+- O incidente continua depois da retomada: dados exfiltrados são publicados ou revendidos depois, a comunicação tem prazos próprios, a porta de entrada precisa ser fechada e a janela de atenção pós-incidente é a melhor oportunidade de correção que a organização terá.
+- No Brasil, o prazo de três dias úteis da ANPD conta do conhecimento do fato mesmo com tudo restaurado; a invasão é crime tipificado e o registro de ocorrência importa; a preservação de evidência conflita com a pressa de reinstalar e prevalece; e reguladores setoriais têm relatos próprios que correm em paralelo.
