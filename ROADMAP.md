@@ -164,7 +164,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 098** - Marco Civil, Lei 12.737 e o direito penal digital brasileiro - `vol15/cap098-marco-civil-lei-12-737-e-o-direito-penal.qmd`
 - [x] **cap 099** - Obrigações regulatórias de provedores de internet - `vol15/cap099-obrigacoes-regulatorias-de-provedores-de.qmd`
 - [x] **cap 100** - PCI-DSS e requisitos setoriais - `vol15/cap100-pci-dss-e-requisitos-setoriais.qmd`
-- [ ] **cap 101** - Auditoria, conformidade e gestão de riscos de terceiros - `vol15/cap101-auditoria-conformidade-e-gestao-de-riscos-de.qmd`
+- [x] **cap 101** - Auditoria, conformidade e gestão de riscos de terceiros - `vol15/cap101-auditoria-conformidade-e-gestao-de-riscos-de.qmd`
 
 ### Volume 16 — Fronteira e Carreira
 
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (100 concluidos).
+**Total:** 107 capitulos em 16 volumes (101 concluidos).
 

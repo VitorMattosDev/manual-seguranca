@@ -1,3 +1,217 @@
 # Auditoria, conformidade e gestão de riscos de terceiros {#sec-cap101}
 
-*(em elaboracao)*
+O fornecedor entregava um serviço pequeno: um sistema de gestão de chamados usado pela equipe de suporte. Passou pela avaliação de segurança em 2022 com nota alta, respondeu ao questionário de 180 perguntas sem uma única ressalva, apresentou certificado ISO/IEC 27001 válido e relatório SOC 2 Tipo II sem exceções. Foi aprovado e nunca mais foi olhado.
+
+Em 2025, o comprometimento do ambiente daquele fornecedor deu ao adversário acesso a três anos de tíquetes de suporte — que continham, porque sempre contêm, credenciais compartilhadas em texto claro, capturas de tela de sistemas internos, diagramas de rede enviados por clientes e endereços de servidores de gestão. A porta de entrada da organização não foi o fornecedor: foi o que a organização tinha depositado dentro dele ao longo de três anos, sem que ninguém tivesse reavaliado o que aquele "serviço pequeno" havia se tornado.
+
+Duas lições organizam este capítulo. A primeira é que **a criticidade de um terceiro não é a do serviço que ele presta, mas a do acesso e dos dados que ele acumula**. A segunda é que a avaliação de 2022 estava correta e mesmo assim foi inútil, porque conformidade é uma fotografia e o risco é um filme.
+
+## Conformidade não é segurança, e a diferença é operacional
+
+Este manual já disse isso de várias formas. Vale agora ser preciso sobre onde exatamente a diferença aparece, porque a frase virou clichê e o clichê esconde o mecanismo.
+
+**Conformidade é um estado verificado contra um referencial, em um momento.** Ela responde: "no período avaliado, dentro do escopo declarado, os controles X, Y e Z estavam desenhados e operando conforme o critério."
+
+**Segurança é a propriedade de resistir a um adversário adaptativo.** Ela responde a uma pergunta que nenhum referencial faz: "o que acontece quando alguém competente, com tempo e motivação, tenta entrar hoje?"
+
+Quatro descolamentos explicam por que uma organização conforme pode ser insegura.
+
+**O escopo.** Já visto no @sec-cap095 e no @sec-cap100: o que está fora não foi olhado, e o adversário não respeita a fronteira do escopo.
+
+**O momento.** O relatório cobre um período que já passou. Mudanças posteriores — uma migração, uma aquisição, uma mudança de arquitetura — não estão nele.
+
+**O critério.** O referencial exige o que era razoável quando foi escrito. Nenhum deles antecipa a técnica de ataque do mês que vem.
+
+**A profundidade.** Auditoria testa amostra e testa desenho e operação de um controle. Não testa se o controle resiste a alguém tentando contorná-lo — isso é o teste de invasão do @sec-cap058, e é outra coisa.
+
+E aqui vale o contrapeso, porque o discurso "conformidade não é segurança" é frequentemente usado como desculpa por quem não quer fazer nem uma coisa nem outra: organizações que passam por auditorias honestas têm inventário, controle de acesso revisado, registros preservados e processos com dono. As que desprezam conformidade em nome da "segurança de verdade" costumam não ter nem uma coisa nem outra. **A conformidade é o piso que impede a queda livre; ela só engana quem a confunde com o teto.**
+
+## Como uma auditoria funciona por dentro
+
+Entender o mecanismo muda a forma como se prepara para ela — e como se lê o relatório de um fornecedor.
+
+O auditor testa duas coisas distintas. **O desenho do controle**: ele, se operar como descrito, atinge o objetivo? **A efetividade operacional**: ele de fato operou, ao longo do período, em todas as ocasiões aplicáveis? Um controle bem desenhado que ninguém executa falha no segundo teste, e é aí que a maioria das exceções aparece [@iso19011].
+
+A evidência tem hierarquia, e conhecê-la economiza discussão. **Observação direta e reexecução** pelo auditor valem mais. **Registro gerado pelo sistema** vale muito. **Documento produzido pela organização** vale menos. **Declaração verbal** quase não vale — e é por isso que a resposta "a gente faz isso, pode confiar" nunca encerra o assunto.
+
+A **amostragem** é o que torna a auditoria viável e o que limita sua garantia: de trezentas concessões de acesso no período, o auditor examina talvez vinte e cinco. Se uma falha, a conclusão não é "uma falha em vinte e cinco" — é que a taxa de falha da população provavelmente é relevante, e a exceção é registrada como tal.
+
+Vale ainda distinguir os papéis: **auditoria interna** é a terceira linha do @sec-cap094, reporta ao conselho e cobre o que a organização decidir. **Auditoria externa** é conduzida por firma independente e produz relatório destinado a terceiros. **Certificação** é auditoria externa contra norma específica, por organismo acreditado.
+
+## Ler um relatório de terceiro sem se enganar
+
+Organizações recebem certificados e relatórios de fornecedores e, com frequência, arquivam sem ler. É desperdício de um documento caro que costuma dizer bastante.
+
+**Relatório SOC 2** examina controles de uma organização prestadora de serviço contra critérios de confiança: segurança — sempre presente — e, opcionalmente, disponibilidade, integridade de processamento, confidencialidade e privacidade. O **Tipo I** avalia o desenho em uma data. O **Tipo II** avalia desenho e efetividade operacional ao longo de um período, normalmente de seis a doze meses. **Tipo I tem valor muito limitado** para decisão de risco; peça Tipo II [@aicpasoc2].
+
+O que ler em um SOC 2, na ordem:
+
+**A opinião do auditor.** Sem ressalva, com ressalva, adversa ou abstenção. Está na primeira página e responde à pergunta mais importante.
+
+**O período.** Um relatório cobrindo período encerrado há catorze meses é informação histórica. Peça o atual ou uma carta de ponte.
+
+**O escopo dos sistemas.** Quais serviços e quais ambientes foram cobertos. É comum que o produto que você usa não esteja no relatório que o fornecedor mandou.
+
+**As exceções.** A seção de testes traz cada controle, o teste aplicado e o resultado. Exceções existem em relatórios saudáveis; o que importa é a natureza delas e a resposta da administração. Um relatório sem nenhuma exceção em doze meses merece a mesma desconfiança que um SGSI sem não conformidades.
+
+**Os controles complementares da entidade usuária.** Esta é a seção que quase ninguém lê e que mais importa: são os controles que **você** precisa operar para que os controles do fornecedor funcionem. "O cliente é responsável por gerenciar o ciclo de vida das contas de seus usuários" é uma frase que aparece em quase todo relatório e que, ignorada, produz o incidente que o cliente atribuirá ao fornecedor.
+
+**Certificado ISO/IEC 27001** exige a leitura do escopo e a verificação da acreditação do organismo, conforme o @sec-cap095. **Atestado de conformidade PCI DSS** exige a leitura do escopo e da data, conforme o @sec-cap100.
+
+## O ciclo de vida do terceiro
+
+::: {#fig-ciclo-terceiro}
+```{.tikz}
+%%| filename: ciclo-terceiro
+%%| alt: Ciclo de vida da gestao de risco de terceiros da triagem ao encerramento com o ponto de maior alavancagem no contrato
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fs/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=3.5cm, minimum height=1.6cm},
+    sx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[fs, draw=manualblue, fill=manualblue!13] (c1) at (-4.1,2.4)
+    {\textbf{1. triagem}\\
+     que dados acessa, que acesso técnico terá, qual a dependência
+     operacional};
+  \node[fs, draw=manualblue, fill=manualblue!11] (c2) at (0,2.4)
+    {\textbf{2. diligência}\\
+     profundidade proporcional à criticidade --- evidência, não só
+     questionário};
+  \node[fs, draw=manualred, fill=manualred!14] (c3) at (4.1,2.4)
+    {\textbf{3. contrato}\\
+     \textit{o único momento de real alavancagem} --- o que não entrar aqui
+     não se consegue depois};
+
+  \node[fs, draw=manualgreen, fill=manualgreen!13] (c4) at (4.1,0.15)
+    {\textbf{4. integração}\\
+     acesso mínimo, credencial nominal, registro do que é enviado ao
+     fornecedor};
+  \node[fs, draw=manualyellow, fill=manualyellow!18] (c5) at (0,0.15)
+    {\textbf{5. monitoramento}\\
+     reavaliação por criticidade, evidência renovada, mudanças
+     acompanhadas};
+  \node[fs, draw=manualgray, fill=manualgray!12] (c6) at (-4.1,0.15)
+    {\textbf{6. encerramento}\\
+     revogação de acesso, devolução e comprovação de eliminação de
+     dados};
+
+  \draw[sx] (c1) -- (c2);
+  \draw[sx] (c2) -- (c3);
+  \draw[sx] (c3) -- (c4);
+  \draw[sx] (c4) -- (c5);
+  \draw[sx] (c5) -- (c6);
+  \draw[sx, dashed] (c6) to[bend left=22] (c1);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.9cm]
+    at (0,-1.85)
+    {\textbf{As etapas 5 e 6 são as que quase ninguém executa.} O fornecedor
+     é avaliado uma vez, aprovado, e some do radar por anos enquanto acumula
+     acesso e dados --- e o encerramento raramente inclui comprovação de
+     eliminação. A maior parte do risco de terceiros vive exatamente nesse
+     intervalo não vigiado.};
+\end{tikzpicture}
+```
+O ciclo de vida da gestão de risco de terceiros. A alavancagem está no contrato; o risco vive no monitoramento ausente.
+:::
+
+**Triagem.** Antes de avaliar, classifique. As perguntas que definem criticidade não são sobre o tamanho do contrato: que dados o fornecedor acessa ou armazena? Que acesso técnico ele terá ao nosso ambiente? Qual a nossa dependência operacional dele? Ele subcontrata partes relevantes? Um serviço barato com acesso administrativo à nossa rede é mais crítico que um contrato caro sem acesso nenhum — e é exatamente esse o erro da abertura deste capítulo.
+
+**Diligência proporcional.** Fornecedor de baixa criticidade: verificação documental básica. Média: questionário com evidência amostral e revisão de relatório de auditoria. Alta: revisão detalhada de relatório, evidência específica, entrevista técnica e, em alguns casos, avaliação própria. Diligência igual para todos gasta o esforço no lugar errado e cansa a organização.
+
+Sobre **questionários**: eles são úteis para triagem e péssimos como garantia. São autodeclaratórios, respondidos por quem quer vender, e um fornecedor experiente sabe exatamente o que responder. Padrões como o questionário de iniciativa de consenso da aliança de segurança em nuvem ajudam por serem comparáveis, mas a regra permanece: **evidência vale mais que resposta**. Peça o relatório, peça a política, peça o resultado do último teste — e leia [@csaccm].
+
+**Contrato.** O único momento de alavancagem real. Depois da assinatura, você pede favores. As cláusulas que importam: requisitos de segurança específicos e não genéricos; **notificação de incidente com prazo em horas**, não "sem demora injustificada"; direito de auditoria ou, na sua impossibilidade, direito a relatórios de auditoria periódicos; regras de subcontratação com notificação prévia; localização e devolução dos dados; comprovação de eliminação ao término; e o acordo de operador exigido pela LGPD quando houver tratamento de dados pessoais.
+
+O prazo de notificação merece ênfase. Se o controlador tem três dias úteis para comunicar a ANPD a contar do conhecimento do fato, e o operador tem contratualmente "prazo razoável" para avisá-lo, o controlador descobre o incidente com o prazo já vencido. Prazo contratual do operador precisa ser de horas.
+
+**Integração.** Acesso mínimo necessário, credenciais nominais e não compartilhadas, autenticação multifator, e — o item mais negligenciado — **registro do que é enviado ao fornecedor**. A abertura deste capítulo é sobre isso: ninguém decidiu depositar credenciais e diagramas de rede naquele sistema de chamados; foi acontecendo.
+
+**Monitoramento.** Reavaliação em cadência proporcional à criticidade, com evidência renovada e não apenas confirmação de que o contrato continua vigente. Mudanças relevantes no fornecedor — aquisição, mudança de subcontratado, incidente público — disparam reavaliação fora do ciclo.
+
+**Encerramento.** Revogação de todos os acessos, incluindo os que foram criados fora do processo; devolução dos dados em formato utilizável; e **comprovação de eliminação**, com prazo e responsável. É a etapa mais esquecida, e a que mais deixa dados vivos em ambientes que não são mais de ninguém.
+
+## Risco de quarta parte e concentração
+
+Dois riscos que a gestão tradicional de fornecedores não enxerga.
+
+**A quarta parte** é o fornecedor do seu fornecedor. Você avaliou a empresa de folha de pagamento; ela usa três provedores de nuvem, um serviço de mensageria e uma biblioteca de terceiro. O comprometimento de qualquer um deles alcança seus dados. Não é viável auditar a cadeia inteira; é viável **exigir contratualmente que o fornecedor tenha um programa de gestão de terceiros**, notifique mudanças de subcontratados relevantes e responda pelos atos deles.
+
+**A concentração** é o risco de muitos fornecedores críticos dependerem do mesmo ponto único — a mesma região de nuvem, o mesmo provedor de autenticação, a mesma rede de distribuição de conteúdo. Vinte fornecedores avaliados individualmente como resilientes podem cair juntos. Só se enxerga esse risco olhando o portfólio de fornecedores como conjunto, e é um exercício que quase nunca é feito — mas que a análise de impacto do @sec-cap090 deveria ter como insumo.
+
+A **cadeia de suprimentos de software** é o caso mais agudo desse problema, e tem tratamento próprio: inventário de componentes de software, procedência verificável e assinatura de artefatos. É tema do Volume 16, e as referências de práticas para gestão de risco cibernético da cadeia de suprimentos são o ponto de partida [@nistsp800161; @ntiasbom; @slsa].
+
+## Fazer isso caber em uma organização real
+
+Programas de terceiros morrem de ambição. Uma versão executável, para quem está começando:
+
+Liste os fornecedores que têm **acesso a dados sensíveis ou acesso técnico ao ambiente** — não todos os fornecedores. Costumam ser de quinze a quarenta em uma empresa média, não trezentos. Classifique-os em três níveis de criticidade. Para os críticos, obtenha relatório de auditoria atual e leia as exceções e os controles complementares; para os médios, questionário com evidência amostral; para os baixos, verificação documental. Ajuste as cláusulas contratuais nas próximas renovações, começando pelos críticos. Estabeleça reavaliação anual para críticos e bienal para médios. E crie o gatilho que dispara reavaliação fora do ciclo: incidente público, aquisição, mudança de subcontratado.
+
+Uma observação sobre automação: plataformas de governança e de avaliação contínua ajudam a coletar evidência e a manter o inventário, e são úteis a partir de certa escala. Não substituem a leitura crítica de um relatório nem a negociação de uma cláusula — e uma pontuação de risco automática de um fornecedor, baseada em sinais externos, é indicador, não diagnóstico.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD estabelece a relação controlador-operador e a responsabilidade solidária.** O artigo 39 obriga o operador a tratar os dados conforme as instruções do controlador, e o artigo 42 prevê a obrigação de reparação, com hipóteses de solidariedade entre controlador e operador. Isso significa, na prática, que contratar um operador **não transfere a responsabilidade** — e que o contrato de operação, com instruções documentadas, medidas de segurança exigidas e prazo de notificação de incidente, é peça de defesa tanto quanto de gestão [@lgpd2018; @lei13709art46].
+
+**O prazo de notificação do operador precisa ser de horas.** Com três dias úteis para comunicar a ANPD a contar do conhecimento do fato, cláusula que dá ao operador "prazo razoável" entrega ao controlador um prazo já vencido. É o ajuste contratual de maior retorno em toda a negociação, e o mais fácil de conseguir porque raramente é contestado [@anpd2024res15].
+
+**O Banco Central regulou a contratação de serviços relevantes.** As resoluções aplicáveis a instituições financeiras e de pagamento exigem, para contratação de processamento e armazenamento de dados e de computação em nuvem, verificação prévia da capacidade do prestador, comunicação ao regulador, garantia de acesso do Banco Central a informações e dados, cuidados com a localização e planejamento para o encerramento contratual. É um dos regimes mais explícitos de gestão de terceiros no país, e serve de modelo mesmo para quem não é regulado [@bcb4893; @bcb85].
+
+**A Anatel alcança a cadeia de fornecimento do setor.** O regulamento de segurança cibernética de telecomunicações trata de cuidados na aquisição de produtos e serviços e de requisitos aplicáveis a equipamentos, colocando a diligência sobre fornecedores dentro da obrigação regulatória do provedor [@anatel740; @anatel680].
+
+**A Lei nº 14.133/2021 permite exigir e fiscalizar.** A lei de licitações e contratos administrativos autoriza requisitos técnicos e de qualidade, prevê a gestão e a fiscalização contratual e permite exigir demonstração de capacidade. Para quem vende ao setor público, isso significa que a evidência de segurança é condição de contratação e de manutenção do contrato; para o órgão contratante, significa que a fiscalização da execução inclui os requisitos de segurança pactuados [@lei14133].
+
+**A auditoria independente tem regime próprio no Brasil.** Trabalhos de asseguração conduzidos por firmas de auditoria seguem normas profissionais brasileiras convergentes com as internacionais, e relatórios sobre controles de organizações prestadoras de serviço são emitidos sob esse arcabouço. Ao receber um relatório, verificar sob qual norma foi emitido, por quem, e com qual tipo de opinião é diligência básica — e é o que separa um relatório de asseguração de um documento de apresentação comercial [@aicpasoc2; @iso19011].
+
+**Contratos de nuvem raramente admitem auditoria própria.** Grandes provedores não concedem direito de auditoria individual, e insistir nisso trava a negociação sem ganho. A alternativa praticável é exigir contratualmente o fornecimento periódico de relatórios de auditoria independentes e de certificações, com direito a esclarecimentos — e ler o que vier, especialmente os controles complementares da entidade usuária [@csaccm; @iso27017].
+
+## 🛠️ No Campo
+
+**1. Classifique fornecedores pelo acesso e pelos dados, não pelo valor do contrato.** Serviço barato com acesso administrativo é mais crítico que contrato caro sem acesso.
+
+**2. Comece pela lista de quem tem dados sensíveis ou acesso ao ambiente.** São dezenas, não centenas — e é aí que está o risco.
+
+**3. Peça SOC 2 Tipo II, não Tipo I.** Tipo I avalia desenho em uma data e tem valor limitado para decisão de risco.
+
+**4. Leia a opinião, o período, o escopo e as exceções — nessa ordem.** Relatório de período encerrado há mais de um ano é história.
+
+**5. Leia sempre os controles complementares da entidade usuária.** São os controles que **você** precisa operar; ignorá-los produz o incidente que será atribuído ao fornecedor.
+
+**6. Desconfie de relatório sem nenhuma exceção em doze meses.** Vale a mesma leitura de um SGSI sem não conformidades.
+
+**7. Trate questionário como triagem, nunca como garantia.** Autodeclaração respondida por quem quer vender. Evidência vale mais que resposta.
+
+**8. Negocie segurança no contrato, porque depois você só pede favor.** É o único momento de alavancagem real do ciclo.
+
+**9. Fixe notificação de incidente em horas.** "Sem demora injustificada" entrega ao controlador um prazo regulatório já vencido.
+
+**10. Exija notificação prévia de mudança de subcontratado relevante.** É a única forma praticável de enxergar a quarta parte.
+
+**11. Registre o que a organização envia para cada fornecedor.** Credenciais, diagramas e capturas de tela chegam lá sem que ninguém tenha decidido.
+
+**12. Reavalie por criticidade e por gatilho.** Anual para críticos, e fora do ciclo quando houver incidente público, aquisição ou troca de subcontratado.
+
+**13. Encerre de verdade.** Revogação de todos os acessos, devolução dos dados e comprovação de eliminação com prazo e responsável.
+
+**14. Olhe o portfólio de fornecedores como conjunto.** Vinte fornecedores resilientes que dependem do mesmo ponto único caem juntos.
+
+**15. Não insista em direito de auditoria com grandes provedores de nuvem.** Troque por fornecimento periódico de relatórios e direito a esclarecimentos.
+
+**16. Assine acordo de operador quando houver dados pessoais.** Instruções documentadas, medidas de segurança exigidas e prazo de notificação — contratar não transfere responsabilidade.
+
+**17. Trate pontuação automática de risco de fornecedor como indicador.** Sinal externo é insumo de priorização, não diagnóstico.
+
+## Resumo
+
+- **A criticidade de um terceiro é a do acesso e dos dados que ele acumula**, não a do serviço que ele presta. Um sistema de chamados barato acumula credenciais, diagramas e capturas de tela por anos e vira porta de entrada.
+- Conformidade é fotografia; risco é filme. Os quatro descolamentos entre conformidade e segurança são o **escopo** (o que ficou fora), o **momento** (o período já passou), o **critério** (o referencial não antecipa a técnica nova) e a **profundidade** (auditoria testa amostra, não resistência a adversário).
+- O contrapeso importa: quem despreza conformidade em nome de "segurança de verdade" costuma não ter nem uma coisa nem outra. **Conformidade é o piso que impede a queda livre** — engana apenas quem a toma por teto.
+- Auditoria testa **desenho** e **efetividade operacional**, e a maioria das exceções aparece no segundo. A evidência tem hierarquia: observação e reexecução valem mais; declaração verbal quase não vale.
+- Em um SOC 2, leia nesta ordem: opinião, período, escopo dos sistemas, exceções e — sobretudo — **controles complementares da entidade usuária**, que são os controles que você precisa operar para que os do fornecedor funcionem.
+- Peça **Tipo II**, não Tipo I. E desconfie de relatório sem nenhuma exceção em doze meses tanto quanto de um SGSI sem não conformidades.
+- O ciclo de vida tem seis etapas — triagem, diligência, contrato, integração, monitoramento e encerramento — e as duas últimas são as que quase ninguém executa. É exatamente nesse intervalo não vigiado que o risco de terceiros vive.
+- **O contrato é o único momento de alavancagem real.** Notificação de incidente em horas, direito a relatórios de auditoria, regras de subcontratação, devolução e comprovação de eliminação de dados.
+- Questionários servem para triagem e não servem como garantia: são autodeclaratórios e respondidos por quem quer vender. Evidência vale mais que resposta.
+- **Quarta parte e concentração** são invisíveis à gestão tradicional. A primeira se endereça exigindo que o fornecedor tenha seu próprio programa e notifique mudanças; a segunda só aparece olhando o portfólio como conjunto.
+- No Brasil, contratar operador **não transfere responsabilidade** — a LGPD prevê solidariedade —, o prazo de três dias úteis à ANPD torna imprescindível fixar notificação contratual em horas, e o regime do Banco Central para contratação de nuvem é o modelo mais explícito de gestão de terceiros disponível, útil inclusive para quem não é regulado.
