@@ -1,3 +1,196 @@
 # Marco Civil, Lei 12.737 e o direito penal digital brasileiro {#sec-cap098}
 
-*(em elaboracao)*
+O ofício chegou por e-mail, em papel timbrado, assinado por um delegado, pedindo "com urgência" os dados cadastrais, o histórico de conexões e o conteúdo das mensagens de um assinante, em razão de investigação em curso. O gerente de infraestrutura do provedor, querendo colaborar com a apuração de um crime real, respondeu com tudo o que tinha em vinte minutos.
+
+Três coisas deram errado. A primeira: parte do que foi entregue exigia ordem judicial, e entregá-la sem ela expôs o provedor a responsabilização civil e o próprio funcionário a risco penal. A segunda: o conteúdo das comunicações não estava sequer amparado por aquele tipo de requisição, e o provedor não deveria tê-lo armazenado. A terceira, mais banal e mais cara: não havia processo, então não havia registro de quem pediu, do que foi entregue, nem sob qual fundamento — o que tornou impossível defender a conduta depois.
+
+Este capítulo trata do arcabouço legal que responde a essas perguntas. Ele não substitui advogado, e nenhum capítulo de manual técnico substitui. O que ele faz é dar ao profissional de segurança o mapa: o que a lei protege, o que ela criminaliza, o que ela obriga a guardar, quem pode pedir o quê e onde estão os limites da própria atuação de quem trabalha com segurança ofensiva.
+
+## O Marco Civil: uma lei de direitos antes de ser uma lei de obrigações
+
+A Lei nº 12.965/2014 estabeleceu princípios, garantias, direitos e deveres para o uso da internet no Brasil. Ela nasceu de um processo de consulta pública ampla e foi construída sobre uma escolha explícita: proteger a liberdade de expressão e a privacidade como regra, e tratar restrições como exceção fundamentada [@marcocivil2014; @cgibr2009].
+
+Três eixos importam diretamente para quem opera infraestrutura.
+
+**A inviolabilidade das comunicações.** O artigo 7º assegura a inviolabilidade e o sigilo do fluxo das comunicações pela internet e das comunicações privadas armazenadas, salvo por ordem judicial. É a garantia que torna ilícita a inspeção de conteúdo pelo provedor, e é o motivo pelo qual a inspeção profunda de pacotes tem limites bem mais estreitos do que a capacidade técnica sugere. O que a lei permite ao provedor é o tratamento necessário à prestação do serviço, à manutenção da rede e à segurança — nunca a leitura do conteúdo alheio.
+
+**A neutralidade de rede.** O artigo 9º obriga o responsável pela transmissão a tratar de forma isonômica quaisquer pacotes, sem distinção por conteúdo, origem, destino, serviço, terminal ou aplicação. A discriminação só se admite por requisitos técnicos indispensáveis à prestação adequada dos serviços — inclusive a priorização de serviços de emergência —, e o regulamento traz o detalhamento. Do ponto de vista de segurança, isso significa que **medidas de mitigação de ataque são legítimas** quando técnicas, proporcionais, transparentes e não discriminatórias em relação a conteúdo ou concorrente. Filtrar tráfego de negação de serviço é gestão técnica; degradar um serviço concorrente não é [@decreto8771].
+
+**A responsabilidade por conteúdo de terceiros.** O artigo 19 estabeleceu, como regra, que o provedor de aplicação só responde civilmente por conteúdo gerado por terceiro se, após **ordem judicial específica**, não o tornar indisponível. A exceção do artigo 21 trata de conteúdo íntimo divulgado sem consentimento, em que a notificação do participante basta. Esse desenho foi objeto de julgamento pelo Supremo Tribunal Federal, que em 2025 reconheceu a inconstitucionalidade parcial do dispositivo e ampliou as hipóteses de responsabilização a partir de notificação extrajudicial em determinadas categorias de conteúdo grave, mantendo a exigência de ordem judicial como regra em casos de crimes contra a honra. É um tema em evolução e um dos poucos deste manual em que a orientação prática é acompanhar a regulamentação e a jurisprudência com apoio jurídico próprio, em vez de fixar uma regra estável [@stfart19].
+
+## O que se guarda, por quanto tempo, e o que se entrega a quem
+
+A distinção entre as duas categorias de registro é a base de todo o resto, e é onde a maioria dos erros operacionais acontece.
+
+**Registro de conexão** (artigo 13) é o conjunto de informações referentes à data e hora de início e término de uma conexão, sua duração e o endereço IP utilizado pelo terminal. O provedor de conexão — o provedor de acesso à internet — deve guardá-lo por **um ano**, sob sigilo, em ambiente controlado e de segurança.
+
+**Registro de acesso a aplicação** (artigo 15) é o conjunto de informações referentes à data e hora de uso de uma determinada aplicação a partir de um determinado endereço IP. O provedor de aplicação constituído como pessoa jurídica que exerça a atividade de forma organizada e com fins econômicos deve guardá-lo por **seis meses**.
+
+Três consequências práticas se seguem, e nenhuma delas é intuitiva.
+
+**Nenhum dos dois inclui conteúdo.** A lei é expressa em vedar a guarda de registros de acesso a outras aplicações sem consentimento, e nada nela autoriza o armazenamento do conteúdo das comunicações. Provedor que guarda o que não deve amplia sua exposição e cria um alvo.
+
+**Guardar além do prazo exige base própria.** Terminado o prazo legal, a obrigação cessa. Continuar guardando deixa de ser cumprimento de obrigação legal e passa a demandar outra base legal sob a LGPD, com finalidade e prazo definidos (@sec-cap097). Retenção "por precaução" e indefinida é uma decisão que precisa ser justificada, não um estado natural.
+
+**O provedor pode ser obrigado a guardar mais.** Autoridade policial, administrativa ou o Ministério Público podem requerer cautelarmente a **guarda** de registros por prazo superior, e a partir daí têm sessenta dias para pedir em juízo a autorização de acesso. Repare na separação: pedir para **preservar** é uma coisa; pedir para **acessar** é outra, e essa depende de ordem judicial.
+
+::: {#fig-requisicao-dados}
+```{.tikz}
+%%| filename: requisicao-dados
+%%| alt: Fluxo de atendimento a requisicao de dados distinguindo dados cadastrais registros de conexao e conteudo
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cx/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=3.5cm, minimum height=2.4cm},
+    hd/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=3.5cm, minimum height=0.75cm}}
+
+  \node[hd, draw=manualgreen, fill=manualgreen!16] (h1) at (-4.1,1.9)
+    {\textbf{DADOS CADASTRAIS}\\qualificação, filiação, endereço};
+  \node[hd, draw=manualyellow, fill=manualyellow!20] (h2) at (0,1.9)
+    {\textbf{REGISTROS}\\conexão e acesso a aplicação};
+  \node[hd, draw=manualred, fill=manualred!16] (h3) at (4.1,1.9)
+    {\textbf{CONTEÚDO}\\mensagens, arquivos, fluxo};
+
+  \node[cx, draw=manualgreen, fill=manualgreen!8] at (-4.1,-0.15)
+    {Autoridade policial e Ministério Público podem requisitar
+     administrativamente, nas hipóteses previstas em lei.\\[3pt]
+     Guarda: enquanto durar a relação, mais prazos fiscais.\\[3pt]
+     \textbf{Ainda assim: registre quem pediu, o quê e sob qual base.}};
+  \node[cx, draw=manualyellow, fill=manualyellow!10] at (0,-0.15)
+    {\textbf{Exige ordem judicial} para acesso (art. 22), com indícios,
+     motivação e período determinado.\\[3pt]
+     Preservação cautelar pode ser requerida sem juiz; o acesso, não.\\[3pt]
+     Guarda: 1 ano (conexão), 6 meses (aplicação).};
+  \node[cx, draw=manualred, fill=manualred!8] at (4.1,-0.15)
+    {\textbf{Exige ordem judicial específica}, sob o regime da Lei 9.296/96
+     quando há interceptação do fluxo.\\[3pt]
+     Sigilo é a regra constitucional.\\[3pt]
+     \textbf{O provedor não deve armazenar conteúdo alheio.}};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.9cm]
+    at (0,-2.35)
+    {\textbf{A pergunta operacional não é "posso colaborar?", e sim "o que
+     exatamente está sendo pedido, e qual é o instrumento que ampara esse
+     pedido?"}. Entregar além do amparo expõe o provedor e quem assinou.
+     Entregar aquém do devido, também. Ter processo escrito resolve os dois
+     lados.};
+\end{tikzpicture}
+```
+As três categorias de dados e os instrumentos que amparam cada requisição. Confundi-las é o erro operacional mais comum.
+:::
+
+Sobre o **artigo 22**: o requerimento judicial de fornecimento de registros deve conter fundados indícios da ocorrência do ilícito, justificativa motivada da utilidade dos registros e período ao qual se referem. Pedidos genéricos, sem período delimitado ou sem indicação de utilidade, não atendem o requisito legal — e o provedor pode e deve apontar isso ao juízo, o que é diferente de recusar cumprimento.
+
+## Os crimes: o que a lei brasileira tipifica
+
+A Lei nº 12.737/2012, conhecida pelo nome da atriz cujo caso motivou sua tramitação, inseriu no Código Penal o artigo 154-A. A Lei nº 14.155/2021 reformulou o dispositivo e endureceu o regime, e é a redação atual que importa [@lei12737; @lei14155; @codigopenal].
+
+**Invasão de dispositivo informático (art. 154-A).** Invadir dispositivo informático alheio, conectado ou não à rede, com o fim de obter, adulterar ou destruir dados ou informações sem autorização expressa ou tácita do titular, ou de instalar vulnerabilidades para obter vantagem ilícita. Pena de reclusão de 1 a 4 anos e multa, com aumento se resulta prejuízo econômico, e forma qualificada — reclusão de 2 a 5 anos — se a invasão resulta na obtenção de conteúdo de comunicações privadas, segredos comerciais ou industriais, informações sigilosas, ou no controle remoto não autorizado do dispositivo. Há aumento adicional quando há divulgação ou venda dos dados obtidos, e quando a vítima ocupa determinados cargos públicos.
+
+Duas observações importam ao leitor deste manual. A expressão **"sem autorização expressa ou tácita do titular"** é o eixo de tudo o que se discute no @sec-cap007: a autorização é o que separa o teste de invasão do crime. E a norma alcança a instalação de vulnerabilidade para obter vantagem ilícita — o que abrange a implantação de porta dos fundos.
+
+**Furto mediante fraude eletrônica (art. 155, §4º-B).** Furto praticado mediante fraude, por meio de dispositivo eletrônico ou informático, com ou sem violação de mecanismo de segurança ou uso de programa malicioso, ou por qualquer outro meio fraudulento análogo. Pena de reclusão de 4 a 8 anos e multa, com aumento se praticado contra idoso ou vulnerável, ou mediante servidor mantido fora do território nacional. É o tipo que alcança boa parte das fraudes bancárias eletrônicas do @sec-cap066.
+
+**Estelionato eletrônico (art. 171, §2º-A).** Fraude cometida com o uso de informações fornecidas pela vítima ou por terceiro induzido a erro, por meio de redes sociais, contatos telefônicos ou envio de correio eletrônico fraudulento, ou por qualquer outro meio fraudulento análogo. Pena de reclusão de 4 a 8 anos e multa, com aumento contra idoso ou vulnerável. É o tipo que alcança o phishing do @sec-cap065 quando há obtenção de vantagem.
+
+**Outros tipos aplicáveis.** Dano (art. 163), que alcança a destruição de dados; extorsão (art. 158), o enquadramento típico do ransomware; interrupção ou perturbação de serviço telegráfico, telefônico, informático, telemático ou de informação de utilidade pública (art. 266), que alcança ataques de negação de serviço; falsidade ideológica e falsidade documental em meio eletrônico; violação de segredo profissional; e os crimes contra a honra praticados em meio digital, com aumento de pena.
+
+**Interceptação de comunicações (Lei nº 9.296/1996).** A lei regulamenta a interceptação de comunicações telefônicas e, expressamente, do fluxo de comunicações em sistemas de informática e telemática. Ela exige ordem judicial, define hipóteses restritas e — o ponto que interessa ao profissional — **criminaliza a realização de interceptação sem autorização judicial ou com objetivos não autorizados**. Captura de tráfego alheio fora de escopo autorizado não é zona cinzenta: tem tipo penal próprio [@lei9296].
+
+**Crime organizado e obtenção de prova (Lei nº 12.850/2013).** Define organização criminosa e disciplina meios de obtenção de prova como a infiltração de agentes, inclusive virtual, e o acesso a registros e a dados cadastrais — sempre com o respectivo regime de autorização [@lei12850].
+
+## Convenção de Budapeste e a cooperação internacional
+
+O Brasil aderiu à Convenção sobre o Crime Cibernético, promulgada internamente em 2023. A adesão tem efeitos concretos para quem opera infraestrutura no país [@budapeste2023].
+
+A convenção prevê mecanismos de **preservação expedita** de dados armazenados e de dados de tráfego, cooperação internacional acelerada por meio de uma rede de pontos de contato disponível ininterruptamente, e harmonização de tipos penais. Na prática, isso significa que requisições envolvendo provedores estrangeiros e a preservação de evidência hospedada fora do país passam a contar com um canal formal — que continua sendo mais lento do que a volatilidade da evidência exige, mas que existe.
+
+Para o provedor brasileiro, o efeito mais direto é o aumento do volume e da formalidade dos pedidos de preservação, e a necessidade de ter um processo capaz de recebê-los e cumpri-los dentro de prazos curtos.
+
+## A cadeia de custódia entrou no Código de Processo Penal
+
+A Lei nº 13.964/2019 inseriu no CPP os artigos 158-A a 158-F, que definem a cadeia de custódia e disciplinam as etapas de reconhecimento, isolamento, fixação, coleta, acondicionamento, transporte, recebimento, processamento, armazenamento e descarte do vestígio.
+
+Isso deslocou a cadeia de custódia de boa prática técnica para **requisito processual expresso**, com consequências sobre a admissibilidade da prova. Para quem responde a incidentes, o efeito prático é o do @sec-cap085: documentar quem coletou, quando, com qual ferramenta, qual o valor de resumo criptográfico da imagem, e cada transferência de posse — não porque um manual recomenda, mas porque a falha nessa documentação é discutida em juízo [@lei13964; @rfc3227; @iso27037].
+
+## Onde isso toca quem faz segurança ofensiva
+
+O manual já tratou de ética e escopo no @sec-cap007. Aqui vale amarrar com a lei específica.
+
+**A autorização é o elemento do tipo.** O artigo 154-A pune a invasão "sem autorização expressa ou tácita do titular". Um teste de invasão com contrato assinado, escopo delimitado por escrito, período definido e assinado por quem tem poder para autorizar não configura o crime. Sem esses elementos, a conduta técnica é idêntica e o enquadramento também.
+
+**Quem autoriza precisa poder autorizar.** Autorização dada por um gerente de TI sobre um sistema hospedado em nuvem de terceiro não alcança o terceiro. Contratos de provedores de nuvem têm regras próprias sobre testes, e extrapolar o escopo contratado atinge um titular que não autorizou nada.
+
+**Sair do escopo é sair da proteção.** Pivotar para um ativo não listado, ainda que tecnicamente acessível a partir do alvo, é conduta não autorizada em relação àquele ativo. O momento de descobrir isso não é depois.
+
+**Divulgação de vulnerabilidade pede cuidado com o método.** Comunicar responsavelmente ao fabricante, com prazo, sem explorar além do necessário para demonstrar e sem exfiltrar dados de terceiros, é a prática que a norma internacional descreve e é o que separa pesquisa de conduta ilícita. Programas de recompensa com política pública de divulgação e cláusula de porto seguro dão previsibilidade jurídica ao pesquisador — e a ausência de programa não é autorização tácita [@iso29147; @iso30111].
+
+**Ferramentas de uso dual não são o problema; o uso é.** Portar um analisador de protocolo ou um arcabouço de exploração não é crime. Usá-los contra sistema alheio sem autorização é. A distinção parece óbvia e deixa de ser quando alguém guarda captura de tráfego de rede de cliente sem finalidade definida, ou mantém credenciais coletadas em um teste encerrado meses atrás.
+
+## ⚖️ Brasil em Foco
+
+**A estrutura de investigação é estadual, com apoio federal.** A maioria dos estados mantém delegacias especializadas em crimes cibernéticos, e todas as unidades da federação operam delegacias eletrônicas para registro de ocorrência à distância. A Polícia Federal atua nas hipóteses de sua competência, incluindo crimes com repercussão interestadual ou internacional. Para a organização vítima, o registro de ocorrência é passo concreto: documenta a condição de vítima, costuma ser exigido pela seguradora e sustenta a posição perante clientes e reguladores [@lei12737].
+
+**As competências não se sobrepõem, se somam.** Um incidente com dados pessoais pode gerar, simultaneamente: comunicação à ANPD sob a LGPD, registro de ocorrência policial, notificação ao regulador setorial e comunicação a titulares e clientes. Cada canal tem forma, prazo e conteúdo próprios, e cumprir um não dispensa os outros — erro recorrente em organizações que tratam o incidente como assunto exclusivamente policial ou exclusivamente regulatório [@anpd2024res15; @bcb4893].
+
+**O sigilo de dados é constitucional antes de ser legal.** O artigo 5º, XII, da Constituição protege o sigilo das comunicações, e a Emenda Constitucional nº 115/2022 inseriu a proteção de dados pessoais entre os direitos fundamentais. A leitura conjunta com o Marco Civil é o que sustenta a exigência de ordem judicial para acesso a registros e a conteúdo — e é o motivo pelo qual "ofício urgente" não substitui decisão judicial [@marcocivil2014; @lgpd2018].
+
+**Súmula 479 e o dever de segurança das instituições financeiras.** O Superior Tribunal de Justiça consolidou o entendimento de que as instituições financeiras respondem objetivamente pelos danos gerados por fortuito interno relativo a fraudes e delitos praticados por terceiros no âmbito de operações bancárias. É um dos exemplos mais claros de como o risco cibernético se converte em risco jurídico direto no Brasil, e sustenta boa parte do investimento em antifraude do setor [@stjsumula479; @cdc1990].
+
+**Provas digitais e a discussão sobre autenticidade.** Com a cadeia de custódia positivada no CPP e o uso crescente de evidência digital, cresce também o questionamento sobre autenticidade e integridade. Ata notarial de conteúdo em página web, registro de resumo criptográfico e uso de assinatura digital no padrão ICP-Brasil, sob a Lei nº 14.063/2020, são instrumentos usados para reforçar a prova — e é útil que a equipe técnica saiba que existem antes de precisar deles [@lei13964; @lei14063; @iti2024].
+
+**Perseguição e violência digital têm tipos próprios.** A Lei nº 14.132/2021 tipificou a perseguição, alcançando condutas praticadas por meio eletrônico, e a legislação de proteção à mulher trata da violência psicológica e da divulgação de conteúdo íntimo. São temas que aparecem com frequência no atendimento de provedores e de equipes de suporte, e que exigem encaminhamento adequado em vez de tratamento como ocorrência técnica [@lei14132; @marcocivil2014].
+
+**Cooperação internacional segue lenta apesar de Budapeste.** Mesmo com a adesão, pedidos que dependem de assistência jurídica mútua levam meses, enquanto o registro relevante frequentemente expira em semanas. A consequência operacional é conhecida: **pedir preservação cedo é mais eficaz do que pedir acesso rápido**. Equipes de resposta que sabem disso acionam a preservação nas primeiras horas do incidente [@budapeste2023].
+
+## 🛠️ No Campo
+
+**1. Escreva um procedimento de atendimento a requisições antes de receber a primeira.** Quem recebe, quem valida o instrumento, quem aprova a entrega, o que se registra.
+
+**2. Classifique o que está sendo pedido: cadastral, registro ou conteúdo.** As três categorias têm instrumentos diferentes, e confundi-las é o erro operacional mais comum.
+
+**3. Não entregue registros de conexão ou de acesso sem ordem judicial.** Ofício, mesmo urgente e legítimo em sua origem, não substitui decisão judicial para essa categoria.
+
+**4. Aceite pedidos de preservação sem ordem judicial e trate-os como diferentes de pedidos de acesso.** Preservar é cautelar; acessar depende de juiz.
+
+**5. Registre toda requisição atendida.** Quem pediu, com qual instrumento, o que foi entregue, quem aprovou, quando. É o que defende a conduta depois.
+
+**6. Aponte ao juízo pedidos genéricos, sem período ou sem indicação de utilidade.** É diferente de recusar cumprimento e está previsto no artigo 22.
+
+**7. Não armazene conteúdo de comunicações alheias.** Não há obrigação de guardá-lo, e guardá-lo cria alvo e exposição.
+
+**8. Não guarde registros além do prazo legal sem base própria.** Terminado o prazo, a obrigação legal cessa e a retenção passa a exigir outra justificativa sob a LGPD.
+
+**9. Trate mitigação de ataque como gestão técnica documentada.** Proporcional, transparente e sem discriminar conteúdo ou concorrente — é o que a neutralidade admite.
+
+**10. Exija autorização por escrito, com escopo e período, antes de qualquer teste.** A autorização é elemento do tipo penal, não formalidade contratual.
+
+**11. Confirme que quem autoriza tem poder para autorizar.** Ativo em nuvem de terceiro exige observar também as regras do provedor.
+
+**12. Nunca pivote para ativo fora do escopo.** Acessibilidade técnica não é autorização.
+
+**13. Divulgue vulnerabilidade pelo caminho responsável.** Comunicação ao fabricante, prazo, sem exploração além do necessário e sem exfiltrar dados de terceiros.
+
+**14. Descarte material de teste encerrado.** Capturas, credenciais e cópias mantidas sem finalidade definida são exposição pura.
+
+**15. Documente cadeia de custódia como requisito processual.** Coleta, resumo criptográfico, transferências de posse — está no CPP, não só no manual.
+
+**16. Acione preservação nas primeiras horas em incidentes com componente internacional.** Cooperação leva meses; registro expira em semanas.
+
+**17. Registre ocorrência policial nos incidentes relevantes.** Documenta a condição de vítima, costuma ser exigência de seguradora e não substitui nem é substituído pela comunicação à ANPD.
+
+## Resumo
+
+- O Marco Civil é, antes de tudo, uma lei de direitos: inviolabilidade das comunicações, neutralidade de rede e responsabilidade limitada por conteúdo de terceiros. As obrigações de guarda são consequência desse desenho, não seu ponto de partida.
+- **Registro de conexão** (1 ano, provedor de acesso) e **registro de acesso a aplicação** (6 meses, provedor de aplicação) são categorias distintas, e **nenhuma delas inclui conteúdo**. Guardar conteúdo alheio não é obrigação — é exposição.
+- Terminado o prazo legal, a retenção deixa de ser cumprimento de obrigação legal e passa a exigir base própria sob a LGPD. "Guardar por precaução" é uma decisão que precisa ser justificada.
+- **Preservar e acessar são pedidos diferentes.** Autoridade policial e Ministério Público podem requerer cautelarmente a guarda; o acesso a registros exige ordem judicial com indícios, motivação e período determinado.
+- Classificar o pedido em cadastral, registro ou conteúdo é a primeira decisão de qualquer atendimento a requisição — e confundir as categorias expõe tanto o provedor quanto quem assinou a entrega.
+- O artigo 154-A do Código Penal pune a invasão de dispositivo **sem autorização expressa ou tácita**, com forma qualificada quando há obtenção de comunicações privadas, segredos ou controle remoto. A autorização é elemento do tipo: é ela que separa o teste de invasão do crime.
+- A Lei 14.155/2021 elevou penas e criou tipos específicos para furto mediante fraude eletrônica e estelionato eletrônico, alcançando as fraudes bancárias e o phishing com obtenção de vantagem.
+- Interceptar fluxo de comunicações sem autorização judicial tem **tipo penal próprio** na Lei 9.296/96. Captura de tráfego alheio fora de escopo autorizado não é zona cinzenta.
+- A adesão à Convenção de Budapeste criou canal formal de preservação expedita e cooperação, mas a assistência jurídica mútua continua mais lenta que a volatilidade da evidência — o que torna **pedir preservação cedo** mais eficaz que pedir acesso rápido.
+- A cadeia de custódia é requisito do Código de Processo Penal desde 2019, não apenas boa prática: coleta documentada, resumo criptográfico e registro de cada transferência de posse são discutidos em juízo.
+- Um mesmo incidente pode gerar comunicação à ANPD, registro policial, notificação ao regulador setorial e comunicação a titulares — canais paralelos, com prazos e conteúdos próprios, em que cumprir um não dispensa os demais.
