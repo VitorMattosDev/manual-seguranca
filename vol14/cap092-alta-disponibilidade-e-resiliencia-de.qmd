@@ -1,3 +1,284 @@
 # Alta disponibilidade e resiliência de infraestrutura {#sec-cap092}
 
-*(em elaboracao)*
+O provedor tinha contratado dois links de trânsito, de duas operadoras diferentes, com contratos separados, roteadores separados e faturas separadas. Redundância exemplar no papel, cobrada como tal do cliente corporativo.
+
+Numa terça-feira à tarde, uma retroescavadeira rompeu um duto na avenida a seiscentos metros da estação. Os dois links caíram no mesmo segundo. As duas operadoras, ao longo daquele trecho, alugavam fibra do mesmo detentor de infraestrutura e passavam pelo mesmo duto. Ninguém tinha perguntado, e ninguém tinha como saber sem perguntar.
+
+Esse é o assunto do capítulo, e o erro é sempre o mesmo, em todas as camadas: **redundância só vale contra falhas independentes**. Duas fontes de alimentação ligadas na mesma régua, dois servidores no mesmo rack, duas zonas de disponibilidade que compartilham um plano de controle, dois links no mesmo duto — em todos os casos, o desenho comprou o custo da duplicação sem comprar a independência que a justificava.
+
+Enquanto o @sec-cap090 trata de voltar depois da queda, aqui a pergunta é **como não cair** — e, quando cair for inevitável, como cair de um jeito que preserve a maior parte do serviço.
+
+## A aritmética da disponibilidade
+
+Disponibilidade se expressa como a fração do tempo em que o serviço cumpre sua função. Os "noves" são a taquigrafia da indústria:
+
+| Nível | Indisponibilidade anual | Por mês |
+|---|---|---|
+| 99% | ~3,65 dias | ~7,2 h |
+| 99,9% | ~8,8 h | ~43 min |
+| 99,95% | ~4,4 h | ~22 min |
+| 99,99% | ~53 min | ~4,3 min |
+| 99,999% | ~5,3 min | ~26 s |
+
+: Noves de disponibilidade e o orçamento de queda correspondente. {#tbl-noves}
+
+Três observações que a tabela esconde e que decidem contratos.
+
+**A composição em série destrói noves.** Um serviço que depende de dez componentes, cada um com 99,9%, tem disponibilidade próxima de 99% — porque as probabilidades de sucesso se multiplicam. É por isso que reduzir dependências costuma render mais disponibilidade que melhorar componentes individualmente.
+
+**A redundância em paralelo multiplica indisponibilidades, e só se elas forem independentes.** Dois componentes de 99% em paralelo genuíno chegam a 99,99%. Se houver uma causa comum que derrube os dois — a régua de energia, o duto de fibra, o mesmo defeito de software, o mesmo certificado vencido —, o resultado real fica muito perto de 99%, e o dinheiro do segundo componente foi gasto em nada.
+
+**Onde se mede muda o número.** Disponibilidade medida no equipamento, na borda da rede ou na experiência do cliente produz resultados diferentes. Um serviço que responde com erro dentro do prazo está "disponível" para o monitor de porta e indisponível para quem usa.
+
+::: {#fig-serie-paralelo}
+```{.tikz}
+%%| filename: serie-paralelo
+%%| alt: Comparacao entre composicao em serie que reduz disponibilidade e redundancia em paralelo que so funciona sem falha de causa comum
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    bx/.style={draw, thick, rounded corners=2pt, align=center, font=\tiny,
+               inner sep=3pt, minimum width=1.5cm, minimum height=0.72cm},
+    fx/.style={-{Stealth[length=1.9mm]}, thick, manualgray}}
+
+  \node[font=\tiny, anchor=west, manualgray] at (-6.4,2.9)
+    {\textbf{série:} as disponibilidades se multiplicam};
+  \foreach \idx/\px in {1/-5.0, 2/-3.1, 3/-1.2, 4/0.7} {
+    \node[bx, draw=manualblue, fill=manualblue!12] (s\idx) at (\px,2.1)
+      {99,9\%};
+  }
+  \draw[fx] (s1) -- (s2);
+  \draw[fx] (s2) -- (s3);
+  \draw[fx] (s3) -- (s4);
+  \node[bx, draw=manualred, fill=manualred!13, minimum width=2.6cm]
+    at (3.3,2.1) {resultado: \textbf{99,6\%}};
+  \draw[fx] (s4) -- (2.0,2.1);
+
+  \node[font=\tiny, anchor=west, manualgray] at (-6.4,0.7)
+    {\textbf{paralelo independente:} as indisponibilidades se multiplicam};
+  \node[bx, draw=manualgreen, fill=manualgreen!13] (p1) at (-4.4,0.05) {99\%};
+  \node[bx, draw=manualgreen, fill=manualgreen!13] (p2) at (-4.4,-1.0) {99\%};
+  \node[bx, draw=manualgreen, fill=manualgreen!16, minimum width=2.6cm]
+    at (-0.9,-0.5) {resultado: \textbf{99,99\%}};
+  \draw[fx] (p1) -- (-2.2,-0.5);
+  \draw[fx] (p2) -- (-2.2,-0.5);
+
+  \node[bx, draw=manualyellow, fill=manualyellow!20] (c1) at (2.6,0.05) {99\%};
+  \node[bx, draw=manualyellow, fill=manualyellow!20] (c2) at (2.6,-1.0) {99\%};
+  \node[draw=manualred, thick, dashed, rounded corners=2pt, font=\tiny,
+        align=center, inner sep=3pt, minimum height=1.9cm, text width=1.35cm]
+    (cc) at (4.5,-0.5) {causa comum};
+  \node[bx, draw=manualred, fill=manualred!13, minimum width=1.9cm]
+    at (6.5,-0.5) {\textbf{$\approx$ 99\%}};
+  \draw[fx] (c1) -- (cc);
+  \draw[fx] (c2) -- (cc);
+  \draw[fx] (cc) -- (5.55,-0.5);
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.8cm]
+    at (0.1,-2.7)
+    {\textbf{A causa comum é o inimigo, não a falta de redundância.} Régua
+     de energia compartilhada, duto de fibra compartilhado, mesmo defeito
+     de software nos dois nós, mesmo certificado vencendo no mesmo dia,
+     mesmo plano de controle. Duplicar sem eliminar correlação compra
+     custo sem comprar disponibilidade.};
+\end{tikzpicture}
+```
+A aritmética que decide o desenho. Em série, cada dependência custa noves; em paralelo, só há ganho onde há independência real.
+:::
+
+Vale distinguir três siglas que costumam ser usadas como sinônimos e não são. O **SLA** é o compromisso contratual, com penalidade. O **SLO** é o objetivo interno, sempre mais rigoroso que o SLA, para que haja margem antes da multa. O **SLI** é o indicador efetivamente medido. A prática que a engenharia de confiabilidade consolidou — o **orçamento de erro** — usa a diferença entre 100% e o SLO como um saldo consumível: enquanto houver saldo, o time entrega funcionalidades; quando o saldo acaba, a prioridade vira estabilidade. É o mecanismo mais eficaz já encontrado para resolver a disputa entre velocidade e confiabilidade sem que ela dependa de personalidade [@beyer2016].
+
+## Onde a redundância precisa existir
+
+A cadeia de dependências de um serviço tem camadas, e o elo mais fraco define o resultado.
+
+::: {#fig-camadas-ha}
+```{.tikz}
+%%| filename: camadas-ha
+%%| alt: Camadas de redundancia de infraestrutura com o ponto de correlacao tipico de cada uma
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    lx/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=4.3cm, minimum height=0.95cm},
+    rx/.style={draw, thick, dashed, rounded corners=3pt, align=left,
+               font=\tiny, inner sep=4pt, text width=6.2cm,
+               minimum height=0.95cm}}
+
+  \node[lx, draw=manualblue, fill=manualblue!13]   (l1) at (-3.4,3.0)
+    {\textbf{energia} --- 2N ou N+1, gerador, nobreak};
+  \node[lx, draw=manualblue, fill=manualblue!11]   (l2) at (-3.4,1.8)
+    {\textbf{refrigeração} --- N+1, sem duto único};
+  \node[lx, draw=manualgreen, fill=manualgreen!13] (l3) at (-3.4,0.6)
+    {\textbf{rede e trânsito} --- rotas e operadoras distintas};
+  \node[lx, draw=manualgreen, fill=manualgreen!11] (l4) at (-3.4,-0.6)
+    {\textbf{computação} --- múltiplos nós e domínios de falha};
+  \node[lx, draw=manualyellow, fill=manualyellow!18] (l5) at (-3.4,-1.8)
+    {\textbf{dados} --- réplicas com quórum e isolamento};
+  \node[lx, draw=manualred, fill=manualred!12]     (l6) at (-3.4,-3.0)
+    {\textbf{entrada} --- DNS, balanceador, certificado};
+
+  \node[rx, draw=manualgray, fill=manualgray!7] at (3.6,3.0)
+    {a mesma régua, o mesmo quadro, o mesmo tanque de combustível};
+  \node[rx, draw=manualgray, fill=manualgray!7] at (3.6,1.8)
+    {a mesma tubulação de água gelada, o mesmo controlador};
+  \node[rx, draw=manualgray, fill=manualgray!7] at (3.6,0.6)
+    {o mesmo duto, o mesmo poste, o mesmo ponto de troca de tráfego};
+  \node[rx, draw=manualgray, fill=manualgray!7] at (3.6,-0.6)
+    {a mesma imagem defeituosa, o mesmo hipervisor, o mesmo rack};
+  \node[rx, draw=manualgray, fill=manualgray!7] at (3.6,-1.8)
+    {a mesma corrupção replicada, o mesmo quórum sem árbitro};
+  \node[rx, draw=manualgray, fill=manualgray!7] at (3.6,-3.0)
+    {o mesmo certificado vencendo, a mesma zona de DNS, o mesmo TTL};
+
+  \node[font=\tiny, manualgray, anchor=south] at (-3.4,3.7) {camada};
+  \node[font=\tiny, manualred, anchor=south] at (3.6,3.7)
+    {\textbf{onde a correlação se esconde}};
+\end{tikzpicture}
+```
+Camadas de redundância e a causa comum típica de cada uma. A coluna da direita é o roteiro de perguntas de qualquer revisão de arquitetura.
+:::
+
+Os padrões de dimensionamento têm nomes consagrados. **N+1** provisiona uma unidade além do necessário — tolera uma falha, e não tolera falha durante manutenção. **N+M** generaliza a folga. **2N** duplica tudo — é o padrão de energia em data center de missão crítica. **2(N+1)** duplica com folga em cada lado, e é o que sustenta manutenção sem perda de redundância.
+
+Já **ativo-passivo** e **ativo-ativo** descrevem como a redundância é usada, e a diferença prática é grande: o caminho passivo é o que ninguém exercita, e por isso é o que falha justamente quando é acionado. Sempre que o desenho permitir, ativo-ativo é preferível — não por capacidade, mas porque **o caminho está sendo testado continuamente pelo tráfego real**.
+
+## A camada de dados é a difícil
+
+Replicar computação é fácil: processos são descartáveis. Replicar estado é onde mora a complexidade real.
+
+**Replicação síncrona** confirma a escrita só depois que a réplica confirmou. RPO igual a zero, latência somada e um comportamento incômodo: se a réplica cai, ou se a latência entre sítios cresce, a escrita trava. Perfeita para dois sítios próximos, inviável para sítios distantes.
+
+**Replicação assíncrona** confirma primeiro e replica depois. Tolera distância e latência, ao custo de um RPO maior que zero: existe uma janela de transações confirmadas ao cliente e ainda não replicadas.
+
+Essa é uma manifestação concreta da restrição que Brewer formulou: em presença de partição de rede, um sistema distribuído escolhe entre continuar respondendo com dados possivelmente desatualizados e recusar-se a responder para preservar consistência [@brewer2000]. Não existe configuração que evite a escolha; existe a decisão consciente de qual lado sacrificar, e ela é diferente para o extrato bancário e para o catálogo de produtos.
+
+Dois problemas específicos merecem atenção porque produzem os piores desfechos:
+
+**Cérebro dividido.** Quando a comunicação entre nós se rompe e ambos os lados concluem que são o primário, os dois aceitam escritas e o estado diverge. A reconciliação posterior é dolorosa e frequentemente impossível sem perda. As contramedidas são o **quórum** — decisões exigem maioria, o que requer número ímpar de participantes ou um árbitro em terceiro local — e o **isolamento forçado**, que remove ativamente o nó suspeito do acesso ao armazenamento compartilhado antes de promover o outro.
+
+**Falha em silêncio na comutação.** O secundário promovido que não tinha replicação em dia, ou que estava com replicação pausada havia semanas sem alarme. O monitoramento precisa vigiar o **atraso de replicação**, e não apenas se o processo está de pé.
+
+E vale repetir o ponto do @sec-cap089: réplica não é backup. A replicação copia com fidelidade a exclusão acidental e a cifragem do ransomware.
+
+## Falhar bem: degradação, isolamento e o efeito dominó
+
+Sistemas grandes raramente caem porque um componente falhou. Caem porque a falha de um componente foi **amplificada** pela reação dos outros.
+
+**Tempestade de repetições.** O serviço A fica lento; o serviço B, que o chama, repete as chamadas; a repetição multiplica a carga sobre A, que fica mais lento ainda. A contramedida é repetir com espera exponencial e **jitter** — variação aleatória que impede todos os clientes de repetirem no mesmo instante — com número máximo de tentativas e um orçamento global de repetição.
+
+**Rebanho ansioso.** Após uma queda, todos os clientes tentam reconectar simultaneamente e derrubam o serviço no momento em que ele volta. Mesma contramedida, mais reentrada escalonada.
+
+**Ausência de tempo limite.** Chamada sem prazo prende a linha de execução até esgotar o recurso, e a falha de um serviço distante paralisa o serviço local. Todo chamada remota precisa de tempo limite explícito, menor que o do chamador.
+
+**Disjuntor.** Depois de N falhas consecutivas, o cliente para de chamar o serviço problemático por um tempo e devolve erro imediato ou resposta degradada. Protege o chamado de ser martelado e o chamador de ficar preso.
+
+**Anteparos.** Separar recursos por classe de tráfego — filas, conjuntos de conexões, cotas — para que o esgotamento causado por um cliente ou por uma funcionalidade não consuma a capacidade de todos.
+
+**Descarte de carga e degradação graciosa.** Quando a demanda excede a capacidade, é melhor recusar rapidamente uma fração das requisições, preservando as demais, do que atender todas mal e cair inteiro. E é quase sempre melhor servir o essencial sem os enfeites — o catálogo sem recomendações, o atendimento sem histórico — do que devolver erro. **Degradação planejada é uma decisão de arquitetura, não um acidente.**
+
+**Raio de alcance reduzido.** Particionar o serviço em células independentes, cada uma atendendo a um subconjunto de clientes, de modo que a falha de uma afete uma fração conhecida do total em vez de todo mundo. É o desenho que transforma indisponibilidade total em degradação parcial.
+
+Sobre a causa: mudança é o gatilho de outra grande parte das quedas. Implantação gradual com canário, verificação automática de saúde entre etapas, caminho de reversão testado e o hábito de não implantar mudança relevante na sexta-feira à tarde não são folclore operacional — são controles de disponibilidade.
+
+## Verificações de saúde que mentem
+
+O mecanismo que decide se um nó está vivo é o mais subestimado da arquitetura, e ele erra de duas formas caras.
+
+A verificação **rasa demais** responde "porta 443 aberta" enquanto a aplicação não consegue falar com o banco. O balanceador continua enviando tráfego para um nó que devolve erro em cada requisição.
+
+A verificação **profunda demais** testa toda a cadeia de dependências. Quando o banco de dados fica lento, **todos** os nós são marcados como doentes ao mesmo tempo e o serviço inteiro sai de operação por causa de uma degradação parcial que poderia ter sido servida.
+
+O desenho que funciona separa duas perguntas: *este nó deve receber tráfego agora?* — verificação leve, sobre a saúde local — e *este nó precisa ser reiniciado?* — verificação mais profunda, com limiar mais tolerante. Somam-se a isso um limite de quantos nós podem ser removidos simultaneamente e a regra de nunca deixar o conjunto abaixo de um mínimo, mesmo que todos pareçam doentes: servir degradado é melhor que não servir.
+
+## Nuvem: o que muda e o que não muda
+
+Em nuvem, os domínios de falha têm nomes do provedor. **Zonas de disponibilidade** são instalações separadas dentro de uma região, com falha majoritariamente independente. **Regiões** são geograficamente distantes e independentes de verdade — inclusive no plano de controle, na maior parte dos casos.
+
+Três armadilhas recorrentes:
+
+**Multizona não é multirregião.** Distribuir entre zonas protege contra a falha de uma instalação. Não protege contra um evento regional nem contra erro de configuração aplicado à conta inteira [@awswar2024].
+
+**A dependência do plano de controle.** Sistemas que precisam chamar a API do provedor para se recuperar — provisionar instância, ajustar balanceador, buscar segredo — falham exatamente quando essa API está degradada, que é justamente durante o incidente. A capacidade de recuperação precisa de um caminho que não dependa do que está caindo. Vale a mesma advertência do @sec-cap090: perder o acesso administrativo à conta é uma categoria própria de desastre.
+
+**Multinuvem tem custo real.** Distribuir entre provedores elimina a dependência de um deles e introduz complexidade, latência entre nuvens, duplicação de competência da equipe e mais superfície de configuração — que é a principal fonte de incidentes em nuvem (@sec-cap051). Para a maioria das organizações brasileiras, **duas regiões do mesmo provedor com backup em outro provedor** entrega quase todo o benefício por uma fração do custo. Multinuvem plena se justifica por exigência regulatória ou contratual, raramente por engenharia.
+
+## Resiliência é mais que redundância
+
+A norma de engenharia de sistemas ciberresilientes formula o objetivo de maneira útil: resiliência é a capacidade de **antecipar, resistir, recuperar e adaptar-se** diante de condições adversas — incluindo ataques deliberados, e não apenas falhas aleatórias [@nistsp800160v2].
+
+A diferença prática em relação à alta disponibilidade clássica é que a resiliência considera o adversário. Redundância projetada contra falha de hardware assume falhas independentes; um adversário produz falhas **correlacionadas de propósito**. Ele derruba os dois nós, apaga as duas réplicas, cifra o primário e o secundário. Daí três princípios que a alta disponibilidade tradicional não contempla:
+
+**Diversidade.** Componentes redundantes que compartilham a mesma versão de software compartilham a mesma vulnerabilidade. Diversidade custa caro e nem sempre compensa, mas o raciocínio precisa ser explícito.
+
+**Isolamento e privilégio mínimo entre as réplicas.** Se a mesma credencial administra os dois sítios, o comprometimento de uma administra os dois (@sec-cap027).
+
+**Reconstituição a partir de fonte confiável.** Capacidade de reconstruir o ambiente a partir de definição versionada e de imagem íntegra, em vez de depender de restaurar exatamente o que existia — que pode estar comprometido (@sec-cap054).
+
+E há o teste. Verificar redundância por inspeção documental é insuficiente: a única forma confiável de saber se o secundário assume é **fazer o primário cair** de propósito, em condições controladas, com hipótese escrita e botão de parada [@basiri2016]. É a mesma disciplina do @sec-cap091, aplicada à infraestrutura.
+
+## ⚖️ Brasil em Foco
+
+**Energia é o risco de disponibilidade número um.** Interrupções no fornecimento elétrico, oscilações e eventos climáticos severos tornam a autonomia local uma exigência de projeto, não um luxo. Os três pontos que costumam falhar: teste de partida do gerador sem carga real, que não prova nada; autonomia de combustível dimensionada para horas quando a reposição depende de caminhão em estrada eventualmente interditada; e o contrato de reabastecimento emergencial que nunca foi acionado. Instalações elétricas e a proteção contra incêndio em salas técnicas ainda respondem às normas regulamentadoras de segurança do trabalho, o que traz obrigações concretas de projeto, sinalização e manutenção [@tia942; @nr23].
+
+**Diversidade física de rota é contratual e verificável.** O caso de abertura deste capítulo é rotineiro no Brasil, onde a infraestrutura de fibra é frequentemente compartilhada entre operadoras por acordos de cessão. Contratar duas operadoras não garante rotas distintas. O que garante é exigir em contrato a **diversidade de rota física**, pedir o traçado e verificar os pontos de entrada no imóvel — de preferência dois, em faces opostas do prédio [@nicbr2024ix].
+
+**Disponibilidade é indicador regulado em telecomunicações.** Prestadoras estão sujeitas ao Regulamento de Qualidade da Anatel, com indicadores de disponibilidade e de tempo de reparo apurados e fiscalizados, além de obrigações de registro e de atendimento durante a interrupção. Para o provedor regional, o projeto de alta disponibilidade tem, portanto, uma dimensão de conformidade que se soma à comercial [@anatel717].
+
+**Setor financeiro: continuidade dos serviços e nuvem sob supervisão.** A Resolução CMN 4.893/2021 e a Resolução Conjunta nº 1/2020 exigem que instituições avaliem a capacidade dos prestadores de serviços em nuvem de assegurar continuidade, e que os contratos prevejam acesso aos dados e alternativas em caso de descontinuidade. Na prática, isso empurra o desenho para redundância entre regiões e para uma estratégia explícita de saída do fornecedor [@bcb4893; @bcbresconj1].
+
+**Indisponibilidade é incidente de segurança sob a LGPD.** A disponibilidade integra a definição legal de segurança da informação. Uma queda prolongada que impeça titulares de acessar seus próprios dados, ou que decorra de ataque, pode configurar incidente com dever de avaliação e eventual comunicação, além de constituir descumprimento do dever de segurança do agente de tratamento [@lgpd2018; @anpd2024res15].
+
+**Relação de consumo e SLA.** Para provedores com base de consumidores, a indisponibilidade prolongada gera dever de reparação e de abatimento proporcional sob o Código de Defesa do Consumidor, independentemente do que o contrato corporativo estipule. É uma exposição de massa que costuma superar, em valor total, as penalidades dos contratos corporativos negociados [@cdc1990].
+
+**Concentração de infraestrutura.** A interconexão brasileira é fortemente concentrada em poucos pontos de troca de tráfego, e boa parte do conteúdo consumido no país depende de um pequeno conjunto de provedores de nuvem e de distribuição. A avaliação de risco de disponibilidade precisa considerar a dependência de terceiros sobre a qual a organização não tem controle, e o plano de degradação para quando ela falhar [@nicbr2024ix].
+
+## 🛠️ No Campo
+
+**1. Cace causa comum antes de comprar redundância.** Régua, rack, duto, hipervisor, imagem, certificado, plano de controle. Duplicar sem independência é gastar sem ganhar.
+
+**2. Exija diversidade de rota física em contrato e verifique o traçado.** Duas operadoras não significam dois caminhos. Peça o desenho e confira as entradas do prédio.
+
+**3. Conte as dependências em série.** Cada elo custa noves. Remover uma dependência costuma render mais que melhorar um componente.
+
+**4. Separe SLA, SLO e SLI, e adote orçamento de erro.** É o mecanismo que resolve a disputa entre velocidade e estabilidade sem depender de personalidade.
+
+**5. Meça disponibilidade na experiência do cliente.** Responder com erro dentro do prazo é "disponível" para o monitor de porta e indisponível para quem usa.
+
+**6. Prefira ativo-ativo a ativo-passivo sempre que possível.** O caminho passivo é o que ninguém exercita, e por isso é o que falha quando é acionado.
+
+**7. Decida conscientemente entre consistência e disponibilidade.** A escolha existe e é diferente para o extrato bancário e para o catálogo de produtos.
+
+**8. Use quórum ímpar ou árbitro em terceiro local, com isolamento forçado.** É o que impede cérebro dividido — e a divergência de estado raramente se reconcilia sem perda.
+
+**9. Monitore o atraso de replicação, não só se o processo está de pé.** Secundário promovido com replicação pausada há semanas é a falha silenciosa clássica.
+
+**10. Ponha tempo limite em toda chamada remota, menor que o do chamador.** Chamada sem prazo transforma lentidão distante em paralisia local.
+
+**11. Repita com espera exponencial e variação aleatória, com teto.** Sem isso, a repetição vira o ataque de negação de serviço que você faz a si mesmo.
+
+**12. Implemente disjuntor e anteparos.** Isolar o problemático protege quem chama e quem é chamado.
+
+**13. Planeje a degradação em vez de sofrê-la.** Descartar carga e servir o essencial sem enfeites é decisão de arquitetura; cair inteiro é ausência dela.
+
+**14. Reduza o raio de alcance com células.** Falha que atinge um subconjunto conhecido de clientes é incidente; falha que atinge todos é crise.
+
+**15. Ajuste as verificações de saúde nos dois sentidos.** Rasa demais mantém nó doente em rotação; profunda demais tira todos os nós ao mesmo tempo. Limite quantos podem sair juntos.
+
+**16. Trate mudança como causa de queda.** Canário, verificação automática entre etapas, reversão testada, e nada relevante na sexta à tarde.
+
+**17. Teste a partida do gerador com carga real e dimensione combustível para dias.** Teste sem carga não prova nada, e o caminhão de abastecimento depende da estrada.
+
+**18. Derrube o primário de propósito, em condições controladas.** Hipótese escrita, escopo mínimo, botão de parada. Redundância verificada por documento não é redundância verificada.
+
+## Resumo
+
+- Redundância só funciona contra falhas **independentes**. Régua compartilhada, duto de fibra comum, mesma imagem defeituosa, mesmo certificado, mesmo plano de controle — a causa comum é o inimigo, não a falta de duplicação.
+- A composição **em série** multiplica probabilidades de sucesso e destrói noves; reduzir dependências costuma render mais disponibilidade que melhorar componentes. O paralelo só entrega ganho onde há independência real.
+- **SLA** é contrato, **SLO** é objetivo interno mais rigoroso, **SLI** é o que se mede. O **orçamento de erro** transforma confiabilidade em decisão de priorização em vez de disputa.
+- A camada de dados é a difícil: replicação síncrona zera o RPO ao custo de latência e de travar quando a réplica cai; assíncrona tolera distância com janela de perda. Em partição, escolhe-se entre responder desatualizado e não responder.
+- **Cérebro dividido** se previne com quórum ímpar ou árbitro em terceiro local e isolamento forçado; a falha silenciosa se previne monitorando o **atraso de replicação**.
+- Sistemas grandes caem por amplificação: tempestade de repetições, rebanho ansioso, chamada sem prazo. As contramedidas são tempo limite, espera exponencial com variação, disjuntor, anteparos, descarte de carga e **degradação planejada**.
+- Verificações de saúde erram nos dois sentidos — rasas mantêm nó doente em rotação, profundas tiram todos ao mesmo tempo. Separe "recebe tráfego?" de "precisa reiniciar?" e limite remoções simultâneas.
+- Em nuvem, multizona não é multirregião, a dependência do plano de controle falha justamente durante o incidente, e multinuvem tem custo real: duas regiões do mesmo provedor com backup em outro entrega quase todo o benefício.
+- Resiliência considera o **adversário**, que produz falhas correlacionadas de propósito. Isso acrescenta diversidade, isolamento de credenciais entre réplicas e reconstituição a partir de fonte confiável — e exige derrubar o primário de propósito para saber se o desenho funciona.
+- No Brasil, energia e diversidade de rota física são os riscos dominantes, disponibilidade é indicador fiscalizado pela Anatel, o Banco Central supervisiona continuidade e contratação de nuvem, e a indisponibilidade tem consequências sob a LGPD e o Código de Defesa do Consumidor.

@@ -149,7 +149,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 089** - Backup: estratégias e a regra 3-2-1-1-0 - `vol14/cap089-backup-estrategias-e-a-regra-3-2-1-1-0.qmd`
 - [x] **cap 090** - Recuperação de desastres e continuidade de negócio - `vol14/cap090-recuperacao-de-desastres-e-continuidade-de.qmd`
 - [x] **cap 091** - Testes de continuidade e exercícios de mesa - `vol14/cap091-testes-de-continuidade-e-exercicios-de-mesa.qmd`
-- [ ] **cap 092** - Alta disponibilidade e resiliência de infraestrutura - `vol14/cap092-alta-disponibilidade-e-resiliencia-de.qmd`
+- [x] **cap 092** - Alta disponibilidade e resiliência de infraestrutura - `vol14/cap092-alta-disponibilidade-e-resiliencia-de.qmd`
 - [ ] **cap 093** - Recuperação após um ataque de ransomware - `vol14/cap093-recuperacao-apos-um-ataque-de-ransomware.qmd`
 
 ## Fase 5 — Governança e Fronteira
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (91 concluidos).
+**Total:** 107 capitulos em 16 volumes (92 concluidos).
 
