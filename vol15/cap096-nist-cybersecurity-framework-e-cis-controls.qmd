@@ -1,3 +1,204 @@
 # NIST Cybersecurity Framework e CIS Controls {#sec-cap096}
 
-*(em elaboracao)*
+A pergunta chega quase sempre na mesma forma: *"por onde a gente começa?"*. Vem de uma empresa de duzentas pessoas que acabou de perder um contrato por não conseguir responder a um questionário de segurança, ou de um provedor regional que levou um susto com ransomware no concorrente, ou do diretor que leu uma notícia e quer saber se "estamos protegidos".
+
+A resposta errada é apresentar 93 controles, ou 153, ou 108 subcategorias. Ninguém executa um plano com essa cara. A resposta certa começa por separar duas conversas que costumam ser embaralhadas: **a conversa sobre onde estamos e para onde queremos ir**, que é de linguagem e de prioridade, e **a conversa sobre o que fazer segunda-feira de manhã**, que é de tarefa concreta e ordenada.
+
+O NIST Cybersecurity Framework serve muito bem à primeira. Os CIS Critical Security Controls servem muito bem à segunda. Usá-los juntos, cada um no papel em que é bom, resolve a maior parte do problema — e é o que este capítulo defende.
+
+## NIST CSF 2.0: uma linguagem antes de uma lista
+
+O CSF nasceu em 2014 para infraestrutura crítica nos Estados Unidos e virou, sem qualquer obrigatoriedade legal na maior parte do mundo, o vocabulário comum de risco cibernético. A versão 2.0, publicada em 2024, ampliou explicitamente o público-alvo para organizações de qualquer porte e setor, e fez a mudança estrutural mais relevante desde a origem: acrescentou a função **Governar** [@nistcsf2024].
+
+O arcabouço tem três componentes, e confundi-los é a fonte mais comum de mau uso.
+
+**O Núcleo** é a taxonomia: 6 funções, subdivididas em categorias e subcategorias. As subcategorias são declarações de resultado — "*ativos de hardware gerenciados pela organização são inventariados*" —, não instruções de implantação. Essa escolha é deliberada: o CSF descreve **o que precisa ser verdade**, não como chegar lá.
+
+**Os Perfis** são a aplicação do Núcleo à realidade de uma organização. Um **perfil atual** descreve o que já se faz; um **perfil alvo** descreve o que se pretende. A diferença entre eles é o plano de ação, com prioridade e custo. É o instrumento mais útil do arcabouço e o menos utilizado — a maioria das organizações para na taxonomia.
+
+**Os Níveis** — de Parcial a Adaptativo — descrevem o rigor com que a organização governa risco cibernético. Não são níveis de maturidade a serem escalados por padrão: o Nível 4 não é o objetivo de todo mundo, e uma empresa pequena operando bem no Nível 2 pode estar em melhor situação que uma grande fingindo estar no Nível 4.
+
+::: {#fig-funcoes-csf}
+```{.tikz}
+%%| filename: funcoes-csf
+%%| alt: As seis funcoes do NIST CSF 2.0 com Governar envolvendo as outras cinco e exemplos de categoria em cada uma
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fn/.style={draw, thick, rounded corners=4pt, align=left, font=\tiny,
+               inner sep=4pt, text width=4.4cm, minimum height=1.55cm}}
+
+  \node[draw=manualgray, very thick, rounded corners=6pt, fill=manualgray!6,
+        minimum width=10.4cm, minimum height=4.1cm] at (0,0.35) {};
+  \node[font=\tiny\bfseries, manualgray, anchor=north west]
+    at (-5.1,2.32) {GOVERNAR (GV) --- contexto, estratégia de risco, papéis, política, supervisão, risco da cadeia de suprimentos};
+
+  \node[fn, draw=manualblue, fill=manualblue!13] at (-2.5,1.15)
+    {\textbf{IDENTIFICAR (ID)}\\
+     ativos, avaliação de risco, melhoria contínua};
+  \node[fn, draw=manualgreen, fill=manualgreen!13] at (2.5,1.15)
+    {\textbf{PROTEGER (PR)}\\
+     identidade e acesso, conscientização, dados, plataforma, resiliência};
+  \node[fn, draw=manualyellow, fill=manualyellow!18] at (-2.5,-0.65)
+    {\textbf{DETECTAR (DE)}\\
+     monitoramento contínuo, análise de eventos adversos};
+  \node[fn, draw=manualred, fill=manualred!13] at (2.5,-0.65)
+    {\textbf{RESPONDER (RS)} e \textbf{RECUPERAR (RC)}\\
+     gestão do incidente, análise, comunicação, restauração};
+
+  \node[draw=manualblue, fill=manualblue!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.6cm]
+    at (0,-2.75)
+    {\textbf{A novidade da versão 2.0 é a função Governar}, que envolve as
+     outras cinco em vez de ficar ao lado delas. O recado é o do
+     capítulo anterior: sem decisão sobre apetite de risco, papéis e
+     supervisão, as cinco funções operacionais viram atividade sem
+     direção.};
+\end{tikzpicture}
+```
+As seis funções do CSF 2.0. Governar não é mais uma função na fila: é a camada que dá sentido às outras cinco.
+:::
+
+Duas observações sobre o que o CSF **não** é. Ele não é certificável — não existe "certificação NIST CSF" para organizações, e quem oferece isso está vendendo outra coisa. E ele não prescreve controles: cada subcategoria vem acompanhada de **referências informativas** que apontam para a 27002, para os CIS Controls, para publicações da série SP 800 e outras fontes, deixando a escolha do controle para a organização [@nistcsf2024; @nistcsfquick2024].
+
+## CIS Controls: o plano de segunda-feira
+
+Os CIS Critical Security Controls resolvem o problema oposto. São 18 controles, decompostos em 153 salvaguardas, escritos como ações concretas e ordenados por eficácia observada contra ataques reais. Não descrevem resultados desejados: dizem o que fazer [@ciscontrols].
+
+A contribuição mais valiosa deles é a divisão em **Grupos de Implementação**, e ela merece atenção porque resolve exatamente a pergunta da abertura deste capítulo.
+
+::: {#fig-grupos-cis}
+```{.tikz}
+%%| filename: grupos-cis
+%%| alt: Os tres grupos de implementacao dos CIS Controls com perfil de organizacao numero de salvaguardas e exemplos
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    ig/.style={draw, thick, rounded corners=4pt, align=left, font=\tiny,
+               inner sep=5pt, minimum height=2.3cm},
+    nu/.style={font=\tiny\bfseries, anchor=north west}}
+
+  \node[ig, draw=manualgreen, fill=manualgreen!13, text width=3.5cm] at (-4.0,1.3)
+    {\textbf{IG1} --- 56 salvaguardas\\[2pt]
+     \textit{higiene cibernética essencial}\\[3pt]
+     organização pequena, TI limitada, dados de sensibilidade baixa a
+     média. Defende contra ataque oportunista e não direcionado.};
+  \node[ig, draw=manualblue, fill=manualblue!13, text width=3.5cm] at (0,1.3)
+    {\textbf{IG2} --- +74 salvaguardas\\[2pt]
+     \textit{IG1 mais gestão estruturada}\\[3pt]
+     equipe dedicada, múltiplos perfis de risco, dados regulados.
+     Enfrenta adversário com alguma especialização.};
+  \node[ig, draw=manualred, fill=manualred!13, text width=3.5cm] at (4.0,1.3)
+    {\textbf{IG3} --- +23 salvaguardas\\[2pt]
+     \textit{IG2 mais capacidade especializada}\\[3pt]
+     time de segurança maduro, exposição a adversário
+     persistente. Cobre as 153 salvaguardas.};
+
+  \draw[-{Stealth[length=2.6mm]}, very thick, manualgray]
+    (-5.9,-0.55) -- (5.9,-0.55);
+  \node[font=\tiny, manualgray, anchor=north] at (-4.0,-0.7) {toda organização};
+  \node[font=\tiny, manualgray, anchor=north] at (0,-0.7) {porte médio, regulada};
+  \node[font=\tiny, manualgray, anchor=north] at (4.0,-0.7) {alvo direcionado};
+
+  \node[draw=manualgreen, fill=manualgreen!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.8cm]
+    at (0,-2.35)
+    {\textbf{O IG1 é a resposta honesta a "por onde começo".} Inventário de
+     ativos e de software, configuração segura, gestão de contas e de
+     acesso, gestão contínua de vulnerabilidades, registro de auditoria,
+     proteção de navegador e de correio, defesa de endpoint, recuperação de
+     dados, conscientização e resposta a incidentes. Nada exótico --- e é o
+     que teria evitado a maioria dos incidentes deste manual.};
+\end{tikzpicture}
+```
+Os três Grupos de Implementação dos CIS Controls. Os grupos são cumulativos: o IG2 contém o IG1, e o IG3 contém os dois.
+:::
+
+Os 18 controles, resumidos: inventário de ativos corporativos (1) e de software (2); proteção de dados (3); configuração segura de ativos e de software (4); gestão de contas (5) e de controle de acesso (6); gestão contínua de vulnerabilidades (7); gestão de registros de auditoria (8); proteções de correio eletrônico e navegador (9); defesas contra malware (10); recuperação de dados (11); gestão de infraestrutura de rede (12); monitoramento e defesa de rede (13); conscientização e treinamento (14); gestão de provedores de serviço (15); segurança de software de aplicação (16); gestão de resposta a incidentes (17); e testes de invasão (18).
+
+A ordem não é arbitrária: reflete a observação de que a maior parte dos comprometimentos explora ausência dos primeiros itens, não dos últimos. Uma organização que compra plataforma de detecção avançada sem ter inventário de ativos está comprando o controle 13 sem ter o controle 1 — e vai monitorar uma superfície que não conhece.
+
+Vale destacar o par 1 e 2, porque é onde quase todo mundo tropeça: **não se protege o que não se sabe que existe**. Toda vez que um incidente deste manual começou com "havia um servidor que ninguém sabia que estava exposto", a causa raiz foi o controle 1.
+
+O CIS mantém ainda os **Benchmarks** — guias de configuração segura por produto, com parâmetros específicos e ferramentas de verificação. Eles são a materialização dos controles 4 e 12, e a base prática do hardening dos capítulos @sec-cap036 e @sec-cap037 [@cisbenchmarks].
+
+## Como os três se encaixam
+
+Muita energia se perde na discussão sobre "qual arcabouço adotar", quando a resposta operacional é que eles ocupam camadas diferentes e se complementam sem grande atrito.
+
+**O CSF é a camada de conversa.** É o que se leva ao conselho, o que estrutura a avaliação de maturidade, o que dá nome às lacunas. Alguém pode dizer "estamos fracos em Detectar" e a sala inteira entende. As seis funções são um mapa que cabe em um slide, o que não é um detalhe menor quando o público tem quinze minutos de atenção.
+
+**Os CIS Controls são a camada de execução.** São o que vira tarefa, dono e prazo. Quando o CSF aponta a lacuna em Detectar, os controles 8 e 13 dizem o que fazer a respeito.
+
+**A 27001 é a camada de gestão e de prova.** É o que sustenta a operação contínua e produz o certificado que o cliente pede, conforme o @sec-cap095.
+
+Na prática, um caminho que funciona bem para organizações que estão começando: adotar o **IG1 do CIS** como plano dos primeiros doze a dezoito meses, usar o **CSF** para reportar progresso à liderança e para estruturar a avaliação anual, e — se e quando houver exigência comercial ou regulatória — construir o **SGSI da 27001** por cima do que já estiver operando. Fazer na ordem inversa, começando pela certificação, costuma produzir documento sem substância.
+
+Os mapeamentos entre os três existem e são públicos, o que reduz drasticamente o retrabalho: as referências informativas do CSF apontam para 27002 e CIS, o CIS publica mapeamentos para CSF, 27002 e PCI DSS, e a 27002:2022 traz o atributo de conceito de segurança cibernética alinhado às funções do CSF. Uma evidência coletada uma vez costuma atender três referenciais.
+
+## Fazer uma avaliação de perfil sem transformá-la em projeto de seis meses
+
+A avaliação de perfil do CSF tem fama de trabalhosa, e ela merece essa fama quando é conduzida como levantamento exaustivo. Há uma versão enxuta que entrega quase todo o valor.
+
+Escolha as subcategorias que importam para o seu contexto — raramente são todas as 106. Para cada uma, atribua uma classificação simples de estado atual: não existe, existe informalmente, existe documentado, existe e é medido. Registre a evidência que sustenta a classificação, ainda que seja uma frase e um link. Defina o estado alvo para o horizonte de doze meses, com a mesma escala. A lista das diferenças, ordenada por risco, é o plano.
+
+Três cuidados evitam que o resultado seja fantasia. **Autoavaliação otimista é a regra, não a exceção** — pedir evidência para cada "existe documentado" corrige a maior parte do desvio. **Nem toda lacuna precisa ser fechada**: algumas serão aceitas formalmente, com registro, como discutido no @sec-cap094. E **o alvo precisa ser plausível dado o orçamento**, ou o exercício vira lista de desejos que ninguém revisita.
+
+Uma nota sobre modelos de maturidade em geral, que vale para o CSF, para os modelos de SOC do @sec-cap081 e para qualquer escala de 1 a 5: o número é um resumo, não um diagnóstico. Uma organização que sobe de 2,1 para 2,4 no ano não necessariamente ficou mais segura — pode ter apenas documentado melhor. O que muda risco é o controle operando, e é isso que a evidência precisa mostrar.
+
+## ⚖️ Brasil em Foco
+
+**O CSF é referência de fato no Brasil, sem obrigatoriedade formal.** Não há norma brasileira que imponha o arcabouço, mas ele aparece com frequência como estrutura de avaliação em consultorias, em processos de homologação de fornecedores e em relatórios ao conselho. A tradução oficial para o português está disponível junto ao material do NIST, o que facilita o uso em documentação interna e reduz atrito com auditoria [@nistcsf2024].
+
+**No setor financeiro, o conteúdo do CSF e da norma coincide com a exigência regulatória.** A Resolução CMN nº 4.893/2021 e a Resolução BCB nº 85/2021 exigem política de segurança cibernética, procedimentos de prevenção e tratamento de incidentes, testes e cenários, e mecanismos de disseminação da cultura — que mapeiam quase linha a linha nas funções Governar, Proteger, Detectar, Responder e Recuperar. Organizações reguladas ganham tempo estruturando a evidência regulatória pelo mesmo eixo do arcabouço [@bcb4893; @bcb85].
+
+**Na administração pública federal, o Framework de Privacidade e Segurança da Informação é a referência local.** O material produzido no âmbito do governo federal para apoiar órgãos e entidades na adequação à LGPD e na estruturação de segurança dialoga diretamente com o CSF e com o Privacy Framework do NIST, e o CTIR Gov é o ponto de notificação de incidentes da APF [@gtcsg2024; @nistprivacy2020; @ingsi5].
+
+**O CERT.br oferece o equivalente prático ao IG1.** As práticas de segurança para administradores de redes internet e o material de tratamento de incidentes mantidos pelo CERT.br cobrem boa parte do que o IG1 pede, em português, com contexto de infraestrutura brasileira e sem custo. Para provedores regionais e organizações pequenas, é o caminho de entrada mais barato que existe no país [@cert2024praticas; @cert2024incidentes].
+
+**Os Benchmarks do CIS são úteis inclusive para atender ao regulador.** Quando a norma setorial exige "configuração segura" sem detalhar parâmetros — o que é a regra —, adotar formalmente um benchmark reconhecido e demonstrar aderência é a forma mais eficiente de produzir evidência auditável. Isso vale para Anatel, Banco Central e para editais sob a Lei nº 14.133/2021 [@cisbenchmarks; @anatel740; @lei14133].
+
+**O IG1 mapeia bem as obrigações de segurança da LGPD.** Os artigos 46 a 49 exigem medidas técnicas e administrativas aptas a proteger os dados pessoais, sem especificar quais. Adotar o IG1 como padrão declarado e documentar a aderência é uma forma defensável de demonstrar à ANPD que a organização adotou medidas proporcionais — especialmente para agentes de tratamento de pequeno porte, cuja regulamentação específica reconhece a proporcionalidade [@lgpd2018; @lei13709art46; @anpd2023guia].
+
+## 🛠️ No Campo
+
+**1. Use o CSF para conversar e o CIS para executar.** Um dá linguagem à liderança; o outro dá tarefa com dono e prazo.
+
+**2. Comece pelo IG1 se a pergunta é "por onde começo".** 56 salvaguardas, nada exótico, e é o que teria evitado a maioria dos incidentes reais.
+
+**3. Faça o controle 1 antes de comprar o controle 13.** Detecção sobre superfície desconhecida monitora o que já se conhecia.
+
+**4. Não procure certificação NIST CSF.** Ela não existe para organizações. Quem oferece está vendendo outra coisa.
+
+**5. Construa perfil atual e perfil alvo, não só a taxonomia.** A diferença entre os dois é o plano; parar na taxonomia é o desperdício mais comum do arcabouço.
+
+**6. Selecione as subcategorias que importam.** Avaliar todas as 106 transforma o exercício em projeto de seis meses e mata o hábito.
+
+**7. Exija evidência para cada autoavaliação positiva.** Autoavaliação otimista é regra, e uma frase com link corrige a maior parte do desvio.
+
+**8. Trate Nível de Implementação como escolha, não como escada.** Nível 4 não é objetivo universal; adequação ao contexto é.
+
+**9. Adote formalmente um benchmark de configuração por plataforma.** É a forma mais eficiente de transformar "configuração segura" em requisito auditável.
+
+**10. Use os mapeamentos públicos entre CSF, CIS, 27002 e PCI DSS.** Uma evidência coletada uma vez costuma atender três referenciais.
+
+**11. Aceite lacunas formalmente quando não for fechá-las.** Com registro, dono e prazo — a lacuna sem decisão vira dívida sem responsável.
+
+**12. Não confunda alta de maturidade com queda de risco.** Subir de 2,1 para 2,4 pode significar apenas documentação melhor.
+
+**13. Construa o SGSI por cima do que já opera.** Certificar primeiro e operar depois produz documento sem substância.
+
+**14. Aponte o IG1 como padrão declarado nas obrigações de segurança da LGPD.** Documentar aderência a um referencial reconhecido é defesa concreta perante a ANPD.
+
+**15. Aproveite o material gratuito do CERT.br.** Cobre boa parte do IG1, em português, com contexto brasileiro.
+
+## Resumo
+
+- Existem duas conversas distintas e elas pedem instrumentos diferentes: **onde estamos e para onde vamos** (linguagem e prioridade) e **o que fazer segunda-feira** (tarefa concreta). O CSF serve à primeira, os CIS Controls à segunda.
+- O CSF 2.0 tem três componentes: o **Núcleo** (6 funções, categorias e subcategorias escritas como resultados, não como instruções), os **Perfis** (atual e alvo, cuja diferença é o plano) e os **Níveis** de implementação (escolha, não escada).
+- A grande mudança da versão 2.0 é a função **Governar**, que envolve as outras cinco: sem decisão sobre apetite de risco, papéis e supervisão, as funções operacionais viram atividade sem direção.
+- O CSF **não é certificável** e não prescreve controles — aponta referências informativas para 27002, CIS e SP 800, deixando a escolha à organização.
+- Os CIS Controls são 18 controles e 153 salvaguardas escritos como ação, ordenados por eficácia observada. A divisão em **Grupos de Implementação** responde diretamente à pergunta "por onde começo": IG1 (56 salvaguardas) é higiene essencial para qualquer organização.
+- A ordem dos controles não é arbitrária. Inventário de ativos e de software vêm primeiro porque **não se protege o que não se sabe que existe** — a causa raiz mais recorrente deste manual.
+- As três camadas se encaixam: CSF para conversar com a liderança, CIS para executar, 27001 para sustentar a operação e produzir prova. Começar pela certificação, antes de operar, produz documento sem substância.
+- Os mapeamentos entre CSF, CIS, 27002 e PCI DSS são públicos, e uma evidência coletada uma vez costuma atender três referenciais.
+- A avaliação de perfil pode ser enxuta: subcategorias selecionadas, escala simples, evidência exigida para cada resposta positiva, alvo plausível dado o orçamento, lacunas ordenadas por risco. Nota de maturidade é resumo, não diagnóstico.
+- No Brasil, o CSF é referência de fato sem obrigatoriedade, o conteúdo coincide com a exigência do Banco Central para regulados, o CERT.br oferece o equivalente prático do IG1 em português e sem custo, e adotar formalmente um benchmark reconhecido é a forma mais eficiente de transformar "medidas de segurança" da LGPD em evidência auditável.
