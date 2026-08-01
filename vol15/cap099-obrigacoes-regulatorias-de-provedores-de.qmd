@@ -1,3 +1,199 @@
 # Obrigações regulatórias de provedores de internet {#sec-cap099}
 
-*(em elaboracao)*
+O ofício pedia a identificação do assinante que utilizava um determinado endereço IP público em uma data e horário específicos. O provedor consultou os registros, encontrou a sessão e respondeu com o nome do cliente. Semanas depois, descobriu-se que aquele endereço IP era compartilhado por cerca de setecentos assinantes simultaneamente, através de tradução de endereços em larga escala, e que sem a **porta de origem** não havia como determinar qual deles era o titular da conexão investigada.
+
+O provedor havia entregado o nome de uma pessoa que provavelmente não tinha nada a ver com o fato. E o pior: não tinha como saber, porque nunca havia registrado a informação que tornaria a resposta possível.
+
+Esse é um exemplo do tipo de problema que este capítulo trata. As obrigações de um provedor brasileiro não são particularmente difíceis de cumprir — são difíceis de **descobrir**, porque estão espalhadas por três regimes que não conversam entre si e que foram construídos em momentos diferentes, com lógicas diferentes: o das telecomunicações, o do Marco Civil e o da proteção de dados. Um provedor regional com quinze funcionários responde a todos os três simultaneamente.
+
+## Três regimes, três reguladores, um provedor
+
+::: {#fig-camadas-obrigacao}
+```{.tikz}
+%%| filename: camadas-obrigacao
+%%| alt: Tres regimes de obrigacao aplicaveis a um provedor de internet no Brasil com regulador e objeto de cada um
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    rg/.style={draw, thick, rounded corners=4pt, align=left, font=\tiny,
+               inner sep=5pt, text width=3.5cm, minimum height=3.0cm}}
+
+  \node[rg, draw=manualblue, fill=manualblue!12] at (-4.1,0.9)
+    {\textbf{TELECOMUNICAÇÕES}\\
+     \textit{regulador: Anatel}\\[3pt]
+     outorga e licença (SCM), obrigações de qualidade, direitos do
+     consumidor, segurança cibernética do setor, prestadora de pequeno
+     porte com regime simplificado};
+  \node[rg, draw=manualyellow, fill=manualyellow!18] at (0,0.9)
+    {\textbf{MARCO CIVIL}\\
+     \textit{aplicação: Judiciário}\\[3pt]
+     guarda de registros de conexão por 1 ano, sigilo e ambiente
+     controlado, neutralidade de rede, atendimento a ordem judicial,
+     vedação à guarda de conteúdo};
+  \node[rg, draw=manualgreen, fill=manualgreen!12] at (4.1,0.9)
+    {\textbf{PROTEÇÃO DE DADOS}\\
+     \textit{regulador: ANPD}\\[3pt]
+     base legal por finalidade, minimização e retenção, direitos dos
+     titulares, encarregado, comunicação de incidente em 3 dias úteis};
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.9cm]
+    at (0,-1.5)
+    {\textbf{Os três incidem ao mesmo tempo e podem puxar em direções
+     opostas.} O Marco Civil manda guardar registros por um ano; a LGPD
+     manda minimizar e não guardar além do necessário. A composição correta
+     é: guardar exatamente o que a lei exige, exatamente pelo prazo que ela
+     fixa, com base legal de cumprimento de obrigação legal --- e nada
+     além disso sem justificativa própria.};
+
+  \node[draw=manualgray, fill=manualgray!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=11.9cm]
+    at (0,-3.15)
+    {\textbf{Some ainda:} Código de Defesa do Consumidor (informação,
+     continuidade, cobrança), obrigações fiscais e trabalhistas, e --- para
+     quem opera sistema autônomo --- as boas práticas de roteamento e de
+     tratamento de abuso, que não são lei mas são exigidas na prática pela
+     comunidade de operadores.};
+\end{tikzpicture}
+```
+Os três regimes que incidem simultaneamente sobre um provedor de internet brasileiro.
+:::
+
+Antes de entrar em cada um, uma distinção que organiza tudo: **provedor de conexão** e **provedor de aplicação** são categorias diferentes com obrigações diferentes. O provedor de conexão fornece acesso à internet e guarda registros de conexão por um ano. O provedor de aplicação oferece um serviço na internet — uma plataforma, um site, um sistema — e, se constituído como pessoa jurídica com fins econômicos e atividade organizada, guarda registros de acesso a aplicação por seis meses. Muitos provedores regionais são as duas coisas ao mesmo tempo: fornecem acesso e operam portal do assinante, correio eletrônico e serviços de valor agregado. Cada chapéu tem suas obrigações [@marcocivil2014].
+
+## O regime de telecomunicações
+
+O provedor de acesso à internet no Brasil presta, no arcabouço da Anatel, o **Serviço de Comunicação Multimídia** — o SCM —, que exige autorização da agência. Sem outorga, a operação é irregular, com risco de sanção e de dificuldade para contratar trânsito e obter blocos de endereçamento.
+
+**O regime de prestadora de pequeno porte** é o que torna a operação viável para milhares de provedores regionais. A Resolução nº 694/2018 estabeleceu tratamento assimétrico para prestadoras que atendam aos critérios de porte, com simplificação de obrigações de reporte, de qualidade e de acompanhamento regulatório. Conhecer em qual faixa a empresa se enquadra é a primeira tarefa regulatória de qualquer provedor em crescimento — porque a transição de faixa traz obrigações novas que ninguém avisa [@anatel694; @anatel614].
+
+**Direitos do consumidor de telecomunicações.** A Resolução nº 632/2014 consolidou o regulamento geral de direitos do consumidor: transparência nas ofertas, regras de cobrança e contestação, prazos de atendimento, direito de cancelamento sem barreiras, e o dever de manter registros das solicitações com número de protocolo. Boa parte das autuações que atingem provedores regionais vem daqui, não de segurança [@anatel632].
+
+**Qualidade.** O regulamento de qualidade estabelece indicadores e metas para os serviços, com coleta e reporte, e prevê o acompanhamento da percepção do usuário. Indisponibilidade prolongada — inclusive a causada por incidente de segurança — tem implicação de qualidade além da implicação contratual [@anatel717].
+
+**Segurança cibernética do setor.** A Resolução nº 740/2020 aprovou o Regulamento de Segurança Cibernética Aplicada ao Setor de Telecomunicações. Ela estabelece que prestadoras devem adotar política de segurança cibernética, tratar e comunicar incidentes relevantes de segurança, considerar aspectos de segurança na aquisição de produtos e serviços de telecomunicações, e observar requisitos aplicáveis a equipamentos. Há gradação conforme o porte, mas o núcleo alcança o setor inteiro — e é a norma que muitos provedores regionais desconhecem [@anatel740; @anatel680].
+
+## O que exatamente se guarda, e o problema do CGNAT
+
+O registro de conexão definido pelo Marco Civil compreende data e hora de início e término da conexão, sua duração e o endereço IP utilizado pelo terminal. O Decreto nº 8.771/2016, que regulamenta a lei, detalha os padrões de segurança para a guarda: controle estrito de acesso com autenticação individual, mecanismos de gestão de registros de acesso aos próprios registros guardados, inventário detalhado de acessos com momento, duração, identidade do responsável e arquivo acessado, e uso de soluções de gestão que garantam a inviolabilidade dos dados [@decreto8771].
+
+Leia de novo o parágrafo acima com olhos de operador: **o regulamento exige registro de auditoria sobre quem consultou os registros de conexão**. Isso é um requisito técnico concreto, raramente implantado, e é o que separa um provedor que consegue demonstrar que não houve consulta indevida de um que não consegue.
+
+E chegamos ao problema da abertura. Com a escassez de endereços IPv4, praticamente todo provedor brasileiro opera tradução de endereços em larga escala, compartilhando um endereço público entre centenas de assinantes. Nesse cenário, **o par endereço IP e horário deixou de identificar uma conexão**. A informação que identifica é a combinação de endereço IP público, porta de origem e horário — e é isso que precisa estar registrado.
+
+As implicações práticas são três, e nenhuma é opcional para quem opera CGNAT:
+
+**Registrar a porta de origem** junto com o endereço e o horário, o que aumenta significativamente o volume de registro e exige planejamento de armazenamento. Estratégias de alocação determinística de blocos de portas por assinante reduzem drasticamente esse volume, porque permitem registrar a atribuição do bloco em vez de cada sessão individual.
+
+**Sincronizar o tempo com rigor.** Um desvio de relógio de poucos segundos, com portas sendo reutilizadas em intervalos curtos, aponta para o assinante errado. Sincronização confiável, com fonte de referência conhecida, deixa de ser boa prática e vira requisito de correção da resposta a ofícios (@sec-cap076).
+
+**Responder ao ofício informando a limitação quando ela existir.** Se o pedido traz apenas endereço e horário, sem porta de origem, e o provedor opera CGNAT, a resposta tecnicamente correta é explicar que a informação fornecida não permite identificação unívoca — e não escolher um assinante entre setecentos. Provedores que padronizaram essa resposta evitam causar dano a terceiros e evitam responsabilização própria.
+
+## Atender ordens judiciais sem virar refém delas
+
+Um provedor de médio porte recebe dezenas de requisições por mês. Sem processo, cada uma vira uma emergência que atravessa o dia de um administrador de rede.
+
+**Um canal único e publicado.** Endereço de correio eletrônico específico, com responsável designado, divulgado inclusive no cadastro público de contatos do provedor. Requisições que chegam por canais informais — mensagem direta a um técnico, ligação para o suporte — são redirecionadas para o canal, e isso é uma regra, não uma descortesia.
+
+**Validação do instrumento antes de qualquer consulta.** Qual autoridade, qual processo, qual o objeto exato, qual o período, e — a pergunta central — o instrumento apresentado ampara aquilo que está sendo pedido? A classificação do @sec-cap098 em dados cadastrais, registros e conteúdo resolve a maior parte dos casos.
+
+**Consulta com trilha.** Quem consultou, quando, o que retornou. É o requisito do decreto e é o que protege o provedor da acusação de acesso indevido aos próprios registros.
+
+**Resposta padronizada, com o que se tem e o que não se tem.** Incluindo a explicação sobre CGNAT quando aplicável, e a informação de que conteúdo não é armazenado quando for o caso.
+
+**Arquivo de tudo.** O ofício, a validação, a consulta, a resposta e o comprovante de envio. Guardados pelo prazo que o jurídico definir — e esse arquivo é, ele próprio, um conjunto de dados pessoais que precisa de acesso restrito.
+
+**Prazos judiciais são inegociáveis.** Descumprimento de ordem judicial gera multa e, em casos extremos, medidas mais severas contra a empresa e seus responsáveis. Um provedor que não tem processo descobre isso da pior forma: quando o prazo já passou e ninguém sabia que o ofício estava na caixa de entrada de alguém de férias.
+
+## O que o provedor deve fazer mesmo sem obrigação legal
+
+Há um conjunto de práticas que não são lei, mas que a comunidade de operadores trata como requisito de admissão — e cuja ausência é notada rapidamente.
+
+**Antispoofing na borda.** Filtrar na entrada da rede pacotes com endereço de origem que não pertence ao cliente é a medida que impede que a sua rede seja origem de ataques de reflexão e amplificação. É barata, tem décadas de recomendação formal e continua não implantada em boa parte das redes — o que a torna, na prática, o item de maior impacto coletivo por unidade de esforço na internet brasileira [@rfc2827; @rfc3704].
+
+**Higiene de roteamento.** Registrar objetos de roteamento, assinar os prefixos com certificados de origem e validar as rotas recebidas evita tanto sequestro acidental quanto propagação de anúncio inválido, conforme o @sec-cap033. A adesão às práticas acordadas entre operadores dá previsibilidade à interconexão [@manrs2024; @rfc6811; @nicbr2024ix].
+
+**Endereço de abuso funcional.** Um contato de abuso publicado nos registros e efetivamente monitorado é o que permite que uma máquina comprometida na sua rede seja avisada em horas em vez de semanas. Contato que aponta para caixa abandonada é um dos sinais mais confiáveis de provedor mal operado [@cert2024praticas; @nicbr2024registro].
+
+**Gestão da porta 25.** A política de gerência de porta 25, coordenada no país, reduziu drasticamente o envio de mensagem não solicitada a partir de redes de acesso brasileiras. Provedores que a implantam corretamente — bloqueando o envio direto e orientando o cliente a usar a porta de submissão autenticada — protegem a reputação dos próprios blocos de endereçamento.
+
+**Notificação ao CERT.br.** O centro de tratamento de incidentes mantido pelo NIC.br recebe notificações, publica estatísticas e material de referência e coordena com operadores. É o ponto de apoio mais acessível para um provedor pequeno, e o custo de usá-lo é zero [@cert2024incidentes; @cert2024ddos].
+
+**Registro de tempo confiável e registros de rede úteis.** Fluxos de rede com retenção definida, registros de sessão de autenticação e sincronização de tempo são o que transforma um incidente em algo investigável (@sec-cap088). Provedor sem isso não consegue nem responder a ofício, nem investigar o próprio problema.
+
+## Neutralidade de rede: o que se pode e o que não se pode fazer
+
+A neutralidade é frequentemente apresentada como impedimento à gestão de rede, e não é. O Decreto nº 8.771/2016 detalha as hipóteses de discriminação admitidas: requisitos técnicos indispensáveis à prestação adequada dos serviços — tratamento de situações excepcionais de congestionamento, e o atendimento de serviços de emergência.
+
+Traduzindo para a operação:
+
+**É legítimo** mitigar ataques de negação de serviço, filtrar tráfego malicioso identificado, gerenciar congestionamento por critérios técnicos aplicados isonomicamente, e priorizar tráfego de emergência.
+
+**Não é legítimo** degradar ou bloquear serviço de concorrente, cobrar por acesso diferenciado a aplicações específicas de forma que discrimine conteúdo, ou inspecionar conteúdo além do necessário para a gestão técnica.
+
+Os requisitos que acompanham qualquer medida de gestão são quatro: **proporcionalidade** ao objetivo técnico, **transparência** ao usuário sobre as práticas adotadas, **isonomia** entre conteúdos e aplicações equivalentes, e **não discriminação** por conteúdo comercial. Documentar a medida com esses quatro elementos, no momento em que ela é adotada, é o que torna defensável uma decisão tomada às três da manhã durante um ataque.
+
+## ⚖️ Brasil em Foco
+
+**A governança da internet no Brasil é multissetorial.** O CGI.br estabelece diretrizes e publicou os princípios que orientaram a construção do Marco Civil; o NIC.br executa, mantendo o registro de domínios, a distribuição de endereçamento no país, os pontos de troca de tráfego do IX.br e o CERT.br. Para um provedor, essas não são instituições distantes: são de onde vêm o bloco de endereçamento, o número de sistema autônomo, o ponto de interconexão local e o suporte a incidentes [@cgibr2009; @nicbr2024registro; @nicbr2024ix].
+
+**A interconexão no IX.br mudou a economia do provedor regional.** Trocar tráfego local em ponto neutro reduz custo de trânsito e latência, e traz consigo a exigência prática de higiene de roteamento — porque erro de anúncio em ponto de troca de tráfego é visível para dezenas de participantes imediatamente. É um caso raro em que o incentivo econômico e a boa prática técnica apontam para o mesmo lado [@nicbr2024ix; @manrs2024].
+
+**A LGPD alcança o provedor de forma dupla.** Ele é controlador dos dados dos próprios assinantes — cadastro, faturamento, atendimento — e tem obrigações de guarda que o Marco Civil impõe. A composição correta é declarar cumprimento de obrigação legal como base para os registros de conexão, pelo prazo exato da lei, e bases próprias para o restante. Provedores costumam falhar em dois pontos: manter registro além do prazo sem justificativa e não conseguir responder a requisições de titulares porque os dados estão espalhados entre sistema de gestão, controlador de banda e planilhas [@lgpd2018; @marcocivil2014].
+
+**O incidente do provedor tem três destinatários.** Vazamento de dados de assinantes gera comunicação à ANPD em três dias úteis do conhecimento do fato; incidente relevante de segurança cibernética pode gerar comunicação à Anatel sob o regulamento setorial; e a indisponibilidade prolongada tem consequências de qualidade e de relação de consumo. São canais distintos, com conteúdos distintos, e cumprir um não substitui os outros [@anpd2024res15; @anatel740; @anatel717].
+
+**O Código de Defesa do Consumidor incide sobre a relação com o assinante.** Dever de informação clara, continuidade do serviço essencial, e responsabilidade por falha na prestação. Interrupções decorrentes de incidente de segurança não afastam a responsabilidade perante o consumidor, e a jurisprudência é consistente nesse ponto. Comunicação transparente durante a crise é, além de obrigação, a medida que mais reduz exposição judicial [@cdc1990; @anatel632].
+
+**A guarda de registros é obrigação, mas o excesso é passivo.** Provedores que guardam mais do que devem — conteúdo de correio, histórico de navegação, cópias de tráfego — acumulam um alvo cuja perda produz um incidente muito maior do que o serviço justificava. A leitura conjunta do Marco Civil com a LGPD leva à mesma conclusão que a segurança da informação já daria: guardar o mínimo necessário pelo tempo mínimo necessário [@marcocivil2014; @lei13709art46].
+
+**Prestadoras de pequeno porte não estão dispensadas de segurança.** O regime assimétrico simplifica obrigações de reporte e de acompanhamento regulatório, não o dever de proteger dados de assinantes nem o de tratar incidentes. A ANPD, do mesmo modo, flexibiliza formalidades para agentes de pequeno porte sem flexibilizar o dever de segurança e o de comunicar incidentes [@anatel694; @anpd2023guia].
+
+## 🛠️ No Campo
+
+**1. Descubra em qual regime de porte a empresa se enquadra na Anatel.** A transição de faixa traz obrigações novas e ninguém avisa quando ela acontece.
+
+**2. Registre porta de origem junto com endereço IP e horário se opera CGNAT.** Sem ela, o registro não identifica ninguém — e a resposta ao ofício aponta para o assinante errado.
+
+**3. Use alocação determinística de blocos de portas por assinante.** Reduz drasticamente o volume de registro em relação ao registro de sessão individual.
+
+**4. Sincronize o tempo com fonte confiável e monitore o desvio.** Poucos segundos de deriva, com reuso de portas, produzem identificação incorreta.
+
+**5. Implante o registro de auditoria sobre quem consulta os registros de conexão.** É exigência expressa do regulamento e é o que demonstra ausência de acesso indevido.
+
+**6. Publique um canal único para requisições judiciais, com responsável designado.** E redirecione para ele tudo o que chegar por caminho informal.
+
+**7. Valide o instrumento antes de consultar qualquer base.** Cadastral, registro ou conteúdo — cada categoria tem seu amparo.
+
+**8. Padronize a resposta que explica a limitação do CGNAT.** Melhor do que escolher um assinante entre setecentos.
+
+**9. Arquive ofício, validação, consulta, resposta e comprovante.** E trate esse arquivo como base de dados pessoais, com acesso restrito.
+
+**10. Controle prazos judiciais com alarme, não com memória.** Ofício esquecido em caixa de entrada de quem está de férias vira multa.
+
+**11. Não guarde conteúdo de comunicações.** Não há obrigação, e o passivo é desproporcional.
+
+**12. Não guarde registros além do prazo legal sem base própria documentada.** A obrigação legal cessa; a exposição, não.
+
+**13. Implante antispoofing na borda.** É a medida de maior impacto coletivo por unidade de esforço, e continua ausente em boa parte das redes.
+
+**14. Assine e valide rotas, e registre seus objetos de roteamento.** Erro de anúncio em ponto de troca de tráfego é imediatamente visível a dezenas de participantes.
+
+**15. Mantenha um contato de abuso que alguém realmente lê.** Caixa abandonada é o sinal mais confiável de provedor mal operado.
+
+**16. Documente toda medida de gestão de tráfego com os quatro elementos.** Proporcionalidade, transparência, isonomia e não discriminação — no momento em que a medida é adotada, não depois.
+
+**17. Mapeie os três destinatários de um incidente.** ANPD, Anatel e o assinante, com prazos e conteúdos diferentes.
+
+## Resumo
+
+- Um provedor brasileiro responde simultaneamente a três regimes que não conversam entre si: telecomunicações sob a Anatel, Marco Civil aplicado pelo Judiciário e proteção de dados sob a ANPD. A dificuldade raramente é cumprir; é descobrir o que se aplica.
+- **Provedor de conexão e provedor de aplicação são categorias distintas** — um ano de registros de conexão para o primeiro, seis meses de registros de acesso para o segundo. Provedores regionais costumam ser os dois ao mesmo tempo.
+- Marco Civil e LGPD parecem puxar em direções opostas, e a composição correta é única: guardar exatamente o que a lei exige, pelo prazo que ela fixa, sob a base de cumprimento de obrigação legal — e nada além disso sem justificativa própria.
+- Com CGNAT, **o par endereço IP e horário deixou de identificar uma conexão**. Sem registro da porta de origem e sem sincronização rigorosa de tempo, a resposta a um ofício aponta para o assinante errado — e o provedor não tem como saber.
+- O regulamento do Marco Civil exige registro de auditoria sobre **quem consultou os registros guardados**. É requisito técnico concreto, raramente implantado, e é o que demonstra ausência de acesso indevido.
+- Atender requisições exige processo: canal único publicado, validação do instrumento antes da consulta, trilha de auditoria, resposta padronizada e arquivo completo. Sem processo, cada ofício vira emergência e algum prazo será perdido.
+- A Resolução Anatel nº 740/2020 impõe política de segurança cibernética, tratamento e comunicação de incidentes relevantes e cuidado na aquisição — com gradação por porte, mas alcançando o setor inteiro.
+- Prestadora de pequeno porte tem regime simplificado de reporte, **não dispensa de segurança**. O mesmo vale para agente de tratamento de pequeno porte perante a ANPD.
+- Antispoofing na borda, higiene de roteamento, contato de abuso funcional, gestão da porta 25 e notificação ao CERT.br não são lei — são requisito prático de admissão na comunidade de operadores, e a ausência é notada.
+- Neutralidade de rede **não impede gestão técnica**. Mitigar ataque e gerenciar congestionamento são legítimos quando proporcionais, transparentes, isonômicos e não discriminatórios por conteúdo — e documentar esses quatro elementos no momento da decisão é o que a torna defensável depois.
+- Um único incidente pode gerar comunicação à ANPD em três dias úteis, comunicação de incidente relevante à Anatel e consequências de qualidade e de relação de consumo perante o assinante — canais paralelos, conteúdos distintos.
