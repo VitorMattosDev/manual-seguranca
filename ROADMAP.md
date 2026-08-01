@@ -141,7 +141,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 084** - Contenção, erradicação e recuperação - `vol13/cap084-contencao-erradicacao-e-recuperacao.qmd`
 - [x] **cap 085** - Fundamentos de forense digital e cadeia de custódia - `vol13/cap085-fundamentos-de-forense-digital-e-cadeia-de.qmd`
 - [x] **cap 086** - Forense de disco e sistemas de arquivos - `vol13/cap086-forense-de-disco-e-sistemas-de-arquivos.qmd`
-- [ ] **cap 087** - Forense de memória - `vol13/cap087-forense-de-memoria.qmd`
+- [x] **cap 087** - Forense de memória - `vol13/cap087-forense-de-memoria.qmd`
 - [ ] **cap 088** - Forense de rede e análise de tráfego - `vol13/cap088-forense-de-rede-e-analise-de-trafego.qmd`
 
 ### Volume 14 — Continuidade e Resiliência
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (86 concluidos).
+**Total:** 107 capitulos em 16 volumes (87 concluidos).
 

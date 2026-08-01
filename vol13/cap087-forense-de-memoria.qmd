@@ -1,3 +1,247 @@
 # Forense de memória {#sec-cap087}
 
-*(em elaboracao)*
+A equipe de segurança de uma operadora de saúde passou dois dias analisando o disco de um servidor de aplicação que o EDR havia sinalizado. Não encontraram nada. Nenhum executável estranho, nenhuma tarefa agendada suspeita, nenhum serviço fora do padrão, nenhum arquivo criado fora da janela de manutenção. O disco era, para todos os efeitos, o de um servidor saudável.
+
+O que eles não coletaram foi a memória. Nela estavam: um processo `svchost.exe` legítimo com uma região de memória executável que não correspondia a nenhum arquivo em disco; três conexões abertas para um endereço em outro país; a linha de comando completa de um interpretador que havia sido invocado com um script codificado e já não existia; e, em texto claro, as credenciais de duas contas de serviço.
+
+O adversário não escondeu nada bem. Ele simplesmente não tocou o disco.
+
+Uma parte crescente da atividade adversária moderna vive exclusivamente em memória — por escolha deliberada, porque é lá que a detecção baseada em arquivo não alcança e onde a evidência morre junto com a energia elétrica. Este capítulo trata do que só a memória tem, de como adquiri-la sem destruir o que se quer preservar, e do que a análise consegue extrair dela.
+
+## O que só existe na memória
+
+A memória é o estado de execução do sistema. Boa parte do que ela contém nunca é escrita em lugar nenhum.
+
+::: {#fig-memoria-vs-disco}
+```{.tikz}
+%%| filename: memoria-vs-disco
+%%| alt: Comparacao entre o que a memoria contem exclusivamente e o que fica registrado no disco
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    it/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=4.9cm, minimum height=0.78cm}}
+
+  \node[draw=manualred, fill=manualred!7, very thick, rounded corners=5pt,
+        minimum width=5.6cm, minimum height=6.3cm, anchor=north west]
+        at (-7.0,3.0) {};
+  \node[font=\tiny\bfseries, manualred, anchor=north west] at (-6.9,2.9)
+    {SÓ NA MEMÓRIA --- some ao desligar};
+
+  \foreach \idx/\py/\itm in {%
+    1/2.0/{chaves de cifragem e segredos em claro},
+    2/1.1/{conexões de rede ativas e sockets abertos},
+    3/0.2/{código injetado sem arquivo correspondente},
+    4/-0.7/{linha de comando completa de processos},
+    5/-1.6/{scripts decodificados após a ofuscação},
+    6/-2.5/{credenciais em cache de processos de autenticação}}
+    {
+      \node[it, draw=manualred, fill=manualred!12, anchor=west] at (-6.8,\py)
+        {\itm};
+    }
+
+  \node[draw=manualgreen, fill=manualgreen!7, very thick, rounded corners=5pt,
+        minimum width=5.6cm, minimum height=6.3cm, anchor=north west]
+        at (0.9,3.0) {};
+  \node[font=\tiny\bfseries, manualgreen, anchor=north west] at (1.0,2.9)
+    {NO DISCO --- sobrevive ao desligamento};
+
+  \foreach \idx/\py/\itm in {%
+    1/2.0/{arquivos, metadados e diários},
+    2/1.1/{artefatos de execução e persistência},
+    3/0.2/{registros de eventos e logs},
+    4/-0.7/{configuração e chaves do registro},
+    5/-1.6/{espaço não alocado e apagados},
+    6/-2.5/{arquivo de paginação e hibernação --- \textbf{memória parcial}}}
+    {
+      \node[it, draw=manualgreen, fill=manualgreen!12, anchor=west] at (1.1,\py)
+        {\itm};
+    }
+
+  \node[draw=manualblue, fill=manualblue!9, thick, rounded corners=3pt,
+        align=center, inner sep=5pt, font=\tiny, text width=12.0cm]
+    at (0.0,-3.6)
+    {\textbf{A regra que decorre daí:} isolar da rede \textbf{sem desligar}.
+     Desligar resolve o problema de agora e apaga a resposta a todas as
+     perguntas seguintes.};
+\end{tikzpicture}
+```
+O que a memória tem e o disco não. O arquivo de paginação e o de hibernação são a exceção parcial — guardam pedaços de memória em disco.
+:::
+
+Três dessas categorias merecem destaque, por serem as que mais frequentemente resolvem um caso.
+
+**Código sem arquivo.** Técnicas de injeção fazem código malicioso executar dentro de um processo legítimo, sem que exista arquivo correspondente no disco. Para o antivírus baseado em arquivo, não há o que examinar; para a análise de memória, há uma região de memória executável que não corresponde a nenhum módulo carregado — o que é, em si, altamente anômalo.
+
+**A linha de comando completa.** Interpretadores invocados com argumentos longos e codificados são o padrão da execução moderna. O comando fica registrado na estrutura do processo em memória, e frequentemente o **conteúdo já decodificado** também está lá, porque o interpretador precisou decodificá-lo para executar. O que o disco guardaria seria, na melhor das hipóteses, a versão ofuscada.
+
+**Segredos em claro.** Chaves de sessão, chaves de cifragem de ransomware, tokens, senhas em cache de processos de autenticação. Em alguns casos de ransomware, a chave recuperada da memória de uma máquina capturada durante a cifragem permitiu decifrar arquivos sem pagar resgate — um resultado raro, mas que só existe para quem coletou memória.
+
+## Aquisição: o ato de medir altera o medido
+
+A coleta de memória tem uma característica desconfortável: **para ler a memória, é preciso rodar um programa, e esse programa ocupa memória**. A aquisição sempre altera, em alguma medida, o que está sendo adquirido. Não há como evitar; há como minimizar e documentar.
+
+Princípios práticos:
+
+**Colete cedo e primeiro.** Antes de isolar, antes de matar processo, antes de qualquer coisa. Cada minuto de operação altera o conteúdo.
+
+**Use ferramenta pequena, conhecida e a partir de mídia externa.** Executar a partir do disco local escreve mais no sistema; gravar a captura no disco local sobrescreve espaço não alocado que talvez interesse. O destino ideal é mídia externa ou compartilhamento de rede.
+
+**Documente a interferência.** Ferramenta, versão, horário de início e fim, usuário que executou, tamanho da captura e hash. Isso não é formalidade: é o que sustenta o achado quando alguém perguntar o que a coleta alterou (@sec-cap085).
+
+**Em máquina virtual, prefira o instantâneo com memória.** É a forma mais limpa que existe: o hipervisor captura o estado sem executar nada dentro do sistema alvo. Sempre que a máquina for virtual, esse é o caminho — e ainda entrega disco e memória consistentes no mesmo instante.
+
+Há três fontes secundárias que valem lembrar quando a memória viva já se foi: o **arquivo de paginação**, que contém páginas que estiveram em memória; o **arquivo de hibernação**, que é uma cópia comprimida da memória no momento em que a máquina hibernou; e os **despejos de falha**, que capturam estado no momento de um travamento. São parciais e frequentemente antigos, mas em máquina já desligada podem ser tudo o que resta.
+
+Uma nota sobre nuvem e contêineres: em instâncias de máquina virtual em nuvem, o instantâneo é a via natural, embora nem todo provedor capture memória junto. Em contêineres, a memória do processo pertence ao nó hospedeiro, e a coleta é feita a partir dele — o que exige acesso ao nó, nem sempre disponível em serviços gerenciados. Planejar isso antes é parte da preparação (@sec-cap083).
+
+## Análise: as perguntas que a memória responde
+
+A análise de captura de memória se apoia na reconstrução das estruturas internas do sistema operacional. O Volatility é a ferramenta de referência do campo, e sua versão 3 dispensa perfis fixos em favor de tabelas de símbolos do núcleo correspondente [@volatility2024; @ligh2014].
+
+**Que processos estavam rodando?** A listagem básica percorre a lista encadeada que o próprio sistema mantém. Uma segunda técnica varre a memória procurando estruturas de processo por assinatura, **independentemente da lista**. A comparação entre as duas é o achado clássico: um processo que aparece na varredura e não na lista foi deliberadamente ocultado — a técnica de desencadeamento direto de objetos do núcleo, típica de rootkit.
+
+**A árvore faz sentido?** Relações de parentesco anômalas são um dos sinais mais confiáveis: um processo de suíte de escritório gerando um interpretador de comandos, um serviço de sistema gerando um navegador, um processo de sistema com processo pai errado. A árvore de processos em memória revela isso mesmo quando o registro de criação de processos não foi coletado.
+
+**Há código injetado?** A busca por regiões de memória com permissão de execução que não correspondem a nenhum arquivo mapeado é o método central. As variantes comuns — injeção de biblioteca, injeção de código puro, e o esvaziamento de processo, em que um processo legítimo é criado suspenso e tem sua imagem substituída — deixam sinais distintos e detectáveis: descritores de memória com permissões incomuns, cabeçalhos de executável em regiões anônimas, imagem em memória divergente da imagem em disco.
+
+**Com quem ele falava?** As estruturas de rede em memória revelam conexões e sockets, incluindo conexões já encerradas cujas estruturas ainda não foram reaproveitadas — informação que nenhum log de firewall teria se o tráfego foi interno.
+
+**O que foi digitado e executado?** Histórico de comandos de consoles ainda abertos, blocos de script de interpretadores, buffers de terminal. É frequentemente aqui que aparece a intenção do adversário em texto legível.
+
+**O que estava carregado no núcleo?** Módulos e drivers, com a mesma técnica de comparação entre lista e varredura para detectar ocultação.
+
+::: {#fig-deteccao-injecao}
+```{.tikz}
+%%| filename: deteccao-injecao
+%%| alt: Metodo de deteccao de ocultacao e injecao comparando fontes independentes de enumeracao de processos
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    fo/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=3.6cm, minimum height=1.1cm},
+    rs/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=4.5cm, minimum height=0.9cm},
+    fx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[fo, draw=manualblue, fill=manualblue!12] (lista) at (-4.4,2.6)
+    {\textbf{Lista encadeada}\\o que o sistema \emph{declara}\\estar em execução};
+  \node[fo, draw=manualgreen, fill=manualgreen!12] (varre) at (0.9,2.6)
+    {\textbf{Varredura por assinatura}\\o que \emph{de fato} existe\\na memória};
+
+  \node[fo, draw=manualyellow, fill=manualyellow!18] (comp) at (-1.75,0.8)
+    {\textbf{Comparar}};
+
+  \draw[fx] (lista) -- (comp);
+  \draw[fx] (varre) -- (comp);
+
+  \node[rs, draw=manualgray, fill=manualgray!9] (r1) at (-4.9,-0.9)
+    {\textbf{Consta nas duas}\\processo normal};
+  \node[rs, draw=manualred, fill=manualred!13] (r2) at (0.6,-0.9)
+    {\textbf{Só na varredura}\\ocultação deliberada --- a lista do
+     sistema foi adulterada};
+
+  \draw[fx] (comp) -- (r1);
+  \draw[fx] (comp) -- (r2);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.4cm]
+    at (5.3,1.6)
+    {\textbf{Os sinais de injeção}\\[3pt]
+     $\bullet$ região executável sem arquivo mapeado\\
+     $\bullet$ cabeçalho de executável em memória anônima\\
+     $\bullet$ imagem em memória divergente da do disco\\
+     $\bullet$ processo pai incompatível com o filho};
+
+  \node[draw=manualgreen, fill=manualgreen!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.4cm]
+    at (5.3,-1.5)
+    {\textbf{O princípio geral}\\[3pt]
+     Adulterar \emph{uma} fonte é fácil; manter \textbf{duas fontes
+     independentes coerentes} entre si é muito difícil. Toda a
+     detecção de ocultação vive dessa assimetria.};
+\end{tikzpicture}
+```
+Detecção de ocultação por comparação de fontes independentes. O mesmo princípio vale para módulos do núcleo, drivers e conexões de rede.
+:::
+
+## Memória em Linux e o problema dos símbolos
+
+Em Linux, a coleta exige um módulo de núcleo — como o LiME — ou o acesso a interfaces de memória do próprio sistema, quando disponíveis. Há um obstáculo específico e frequente: a análise depende de **tabelas de símbolos correspondentes exatamente ao núcleo em execução**, incluindo versão e compilação da distribuição. Se essa tabela não estiver disponível, é preciso gerá-la a partir do sistema alvo — o que exige acesso à máquina, idealmente enquanto ela ainda existe.
+
+A consequência operacional é direta: **gere a tabela de símbolos no momento da coleta**, junto com a captura. Descobrir semanas depois que a captura é ilegível porque o núcleo era uma compilação específica de uma distribuição já atualizada é uma frustração evitável.
+
+Para investigação em Linux, é importante lembrar que boa parte do que se buscaria em memória também está em `/proc` no sistema vivo — mapas de memória de processo, descritores abertos, linha de comando, conexões. Coletar `/proc` durante a triagem é barato e frequentemente suficiente para orientar o resto.
+
+## Limites honestos
+
+**A memória é um instantâneo.** Ela mostra o estado de um momento. O que rodou e terminou há três horas provavelmente não está lá. A memória responde "o que está acontecendo"; o disco e os logs respondem "o que aconteceu". As duas análises são complementares, e nenhuma substitui a outra.
+
+**Nem tudo em memória está em claro.** Adversários competentes cifram suas próprias cadeias de texto e as decifram apenas no momento do uso. Encontrar o texto claro depende de capturar no momento certo.
+
+**Anti-forense de memória existe.** Detecção de ferramentas de aquisição, manipulação de estruturas do núcleo, execução em contextos que dificultam a captura. É trabalhosa e rara, mas existe.
+
+**Captura de memória contém dados pessoais em claro** — de usuários, de clientes, de terceiros. Isso não é detalhe jurídico: é a razão pela qual a captura precisa de controle de acesso, prazo de retenção e critério de descarte tão rigorosos quanto os de uma base de produção.
+
+**O maior limite é organizacional, não técnico:** quase toda memória que faria diferença nunca é coletada, porque alguém desligou a máquina primeiro. A técnica mais valiosa deste capítulo é a decisão de isolar sem desligar (@sec-cap084).
+
+## Do achado à detecção
+
+Análise de memória que termina em relatório desperdiça metade do valor. Cada achado deve virar capacidade permanente:
+
+O **hash e as características do código injetado** viram regra YARA aplicável tanto a memória quanto a arquivos, e a versão para memória frequentemente pega o que a versão para disco não pega (@sec-cap078). O **padrão de comportamento** — este processo pai gerando este filho, este processo abrindo esta região executável — vira regra de detecção comportamental no EDR. Os **endereços e domínios** extraídos das conexões viram indicadores de busca retroativa em todo o histórico de rede (@sec-cap074). E o **conjunto de artefatos** que caracterizou o caso vira consulta de triagem executada em toda a frota, para responder à pergunta que importa: em quantas outras máquinas isso também está?
+
+## ⚖️ Brasil em Foco
+
+**Captura de memória é tratamento de dado pessoal de alto risco.** Uma captura de servidor de aplicação contém, em texto claro, dados de clientes em processamento naquele instante — nomes, documentos, dados de saúde ou financeiros, credenciais. Sob a LGPD, isso exige base legal, finalidade estritamente delimitada, acesso restrito e nominal, registro de quem acessou, prazo curto de retenção e descarte comprovado. Tratar a captura com menos rigor que a base de produção da qual ela é um retrato é incoerente — e, em fiscalização, indefensável [@lgpd2018].
+
+**Coleta em servidor de produção precisa de autorização registrada.** A coleta com o sistema vivo interfere no serviço e nos dados. Quem autorizou, com que fundamento, em que escopo e por quanto tempo — tudo registrado antes. Em resposta a incidente, a autorização deve estar **pré-aprovada no plano**, para que a coleta não dependa de decisão às 3h da manhã (@sec-cap083).
+
+**O vestígio de memória é irrepetível — e isso tem peso processual.** A memória não pode ser coletada de novo depois: o estado é único e efêmero. Sob a lógica dos arts. 158-A a 158-F do CPP, isso torna o registro da coleta ainda mais crítico, porque não há como refazer o exame sobre o original. Documentar ferramenta, versão, horário, executor e hash da captura é o que sustenta o achado [@lei13964].
+
+**Compartilhar captura com terceiro exige contrato e minimização.** Enviar uma captura de memória para fornecedor de perícia, para o fabricante do EDR ou para sandbox pública é transferir dado pessoal de clientes. Ambientes públicos de análise **tornam o material acessível a terceiros**, e já produziram vazamentos de dados corporativos e pessoais no Brasil. Nunca envie captura de memória, despejo de processo ou artefato extraído de produção para serviço público de análise sem avaliação explícita (@sec-cap072) [@lgpd2018; @virustotal2024].
+
+**Chave de ransomware recuperada não dispensa a comunicação.** Se a memória entrega a chave e os arquivos são recuperados sem pagamento, o incidente continua sendo incidente: houve acesso não autorizado e possivelmente exfiltração. O dever de comunicação à ANPD e aos titulares independe do êxito da recuperação técnica [@anpd2024res15; @anpd2023ransomware].
+
+**Preparação técnica específica.** Ter ferramenta de coleta de memória validada, com licença ou versão definida, testada nas plataformas do parque — incluindo as tabelas de símbolos dos núcleos Linux em uso — e armazenamento dimensionado para capturas de servidores com muita memória é parte do kit de resposta. Descobrir na hora que a ferramenta não roda naquela versão de sistema é o modo mais banal de perder a evidência mais valiosa [@ligh2014; @volatility2024].
+
+## 🛠️ No Campo
+
+**1. Isole sem desligar — sempre.** É a decisão mais valiosa deste capítulo, e a mais frequentemente tomada errado sob pressão.
+
+**2. Colete memória antes de qualquer outra coisa.** Antes de isolar, de matar processo ou de mexer no disco. Cada minuto altera o conteúdo.
+
+**3. Em máquina virtual, use o instantâneo com memória.** É a coleta mais limpa possível e entrega disco e memória consistentes no mesmo instante.
+
+**4. Rode a ferramenta a partir de mídia externa e grave fora do disco local.** Gravar localmente sobrescreve espaço não alocado que pode interessar.
+
+**5. Documente a interferência da coleta.** Ferramenta, versão, horário, executor, tamanho e hash. A coleta viva é legítima; a coleta viva não documentada, não.
+
+**6. Em Linux, gere a tabela de símbolos junto com a captura.** Sem ela, semanas depois a captura pode ser ilegível.
+
+**7. Compare listagem e varredura de processos.** Processo que só aparece na varredura foi ocultado deliberadamente.
+
+**8. Olhe a árvore de parentesco antes dos detalhes.** Aplicativo de escritório gerando interpretador é sinal mais forte que a maior parte dos indicadores comprados.
+
+**9. Procure região executável sem arquivo mapeado.** É o método central de detecção de injeção, e independe de assinatura conhecida.
+
+**10. Extraia as conexões da memória.** Incluem sessões já encerradas que nenhum log de firewall registrou, especialmente as internas.
+
+**11. Quando a máquina já foi desligada, procure paginação, hibernação e despejo de falha.** São parciais, mas podem ser tudo o que restou.
+
+**12. Trate a captura como base de produção.** Controle de acesso nominal, retenção curta, descarte comprovado. Ela contém dado pessoal em claro.
+
+**13. Nunca envie captura ou despejo de processo para sandbox pública.** O conteúdo fica acessível a terceiros — é vazamento causado pela própria investigação.
+
+**14. Converta o achado em regra.** YARA para memória, regra comportamental no EDR, busca retroativa dos indicadores e consulta de triagem na frota inteira.
+
+**15. Valide a ferramenta de coleta no parque antes do incidente.** Inclusive nas versões de núcleo em uso. Descobrir na hora é perder a evidência mais valiosa.
+
+## Resumo
+
+- Uma parte crescente da atividade adversária **nunca toca o disco**. Código injetado, linha de comando completa, scripts já decodificados, chaves e credenciais em claro só existem em memória — e somem com o desligamento.
+- A aquisição de memória sempre altera o alvo. A resposta correta não é evitá-la, e sim **minimizar e documentar** a interferência: ferramenta, versão, horário, executor e hash.
+- Em máquina virtual, o **instantâneo com memória** é a coleta mais limpa que existe, porque o hipervisor captura o estado sem executar nada dentro do sistema alvo.
+- A análise se apoia na reconstrução das estruturas do sistema operacional. O método mais poderoso é **comparar fontes independentes** — listagem encadeada contra varredura por assinatura —, porque manter duas fontes coerentes após adulteração é muito difícil.
+- Injeção de código se detecta por regiões executáveis sem arquivo mapeado, cabeçalhos em memória anônima e divergência entre a imagem em memória e a do disco — sem depender de assinatura conhecida.
+- Em Linux, a análise exige tabelas de símbolos correspondentes ao núcleo exato; **gere-as junto com a captura**, ou a evidência pode se tornar ilegível.
+- A memória é um instantâneo do agora e não substitui disco e logs, que respondem pelo passado. E o maior limite do campo é organizacional: a memória mais valiosa é a que nunca foi coletada porque alguém desligou a máquina.
+- No Brasil, a captura contém dado pessoal em claro e exige o mesmo rigor de uma base de produção; a coleta em produção precisa de autorização pré-aprovada; o vestígio é irrepetível, o que agrava a exigência de registro; e **nunca se envia captura de memória para serviço público de análise**.
