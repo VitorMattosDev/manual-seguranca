@@ -1,3 +1,296 @@
 # Preparação: plano, papéis e playbooks {#sec-cap083}
 
-*(em elaboracao)*
+Uma cooperativa de crédito do interior descobriu numa terça-feira que tinha um plano de resposta a incidentes de 68 páginas, aprovado pelo conselho, revisado por consultoria e absolutamente inútil.
+
+O documento listava o nome do então gerente de TI, que havia saído da empresa dezoito meses antes. O telefone do fornecedor de perícia era de um contrato encerrado. O procedimento de acionamento mandava "abrir chamado no portal de service desk" — que rodava no mesmo domínio comprometido. A lista de contatos da diretoria estava em uma planilha no compartilhamento de rede que o ransomware cifrou às 2h14.
+
+O plano existia. O que não existia era qualquer prova de que ele funcionava.
+
+Preparação é a única fase do ciclo que acontece com tempo, calma e orçamento — e é a única cujo resultado só se conhece no pior momento possível. Este capítulo trata do que precisa existir antes: o plano que se lê sob pressão, os papéis que evitam que quinze pessoas decidam a mesma coisa em direções opostas, as autorizações que permitem agir às 3h da manhã e os playbooks que transformam conhecimento individual em capacidade organizacional.
+
+## O plano: o que ele é e o que ele não é
+
+O erro mais comum é confundir plano de resposta com documento de conformidade. O segundo existe para ser mostrado ao auditor; o primeiro, para ser usado por alguém cansado, assustado e com pouco tempo.
+
+Um plano útil responde a **seis perguntas**, e nada mais:
+
+**Quando isto se aplica?** Critérios objetivos de ativação — o que caracteriza incidente, o que caracteriza crise, quem declara cada um.
+
+**Quem faz o quê?** Papéis, não pessoas, com titular e substituto nomeados em anexo separado — porque o anexo muda todo trimestre e o corpo do plano não deveria mudar junto.
+
+**Quem pode decidir o quê, sem perguntar?** A matriz de autoridade. É a seção que mais economiza tempo e a que mais falta.
+
+**Como nos falamos?** Canal primário, canal alternativo, canal de crise fora de banda. Com números de telefone que alguém ligou este mês.
+
+**A quem comunicamos, em quanto tempo?** Interno, cliente, regulador, autoridade policial, seguro. Com o prazo de cada um explícito.
+
+**Como registramos?** Onde fica o diário do incidente, quem escreve, o que precisa constar.
+
+Tudo o mais — teoria de segurança, descrição de ameaças, política corporativa — pertence a outro documento. Um plano de resposta que precisa ser lido de ponta a ponta antes de ser usado não será usado.
+
+Duas propriedades práticas separam plano vivo de plano decorativo. Ele precisa estar **acessível quando a rede não está**: cópia impressa em local conhecido, cópia em dispositivo fora do domínio, cópia em nuvem com acesso independente do diretório corporativo. E precisa ter **data de validade**: revisão semestral obrigatória, com teste de contatos, senão apodrece exatamente como o da cooperativa.
+
+## Papéis: separar quem decide de quem investiga
+
+A confusão de papéis produz dois fracassos simétricos. No primeiro, o técnico mais experiente vira o centro de tudo: investiga, decide, comunica à diretoria e atende o telefone do fornecedor — e a investigação para toda vez que alguém pergunta alguma coisa. No segundo, ninguém decide nada porque todos acham que outro está decidindo.
+
+Os papéis que precisam existir, mesmo que uma pessoa acumule vários em organização pequena:
+
+**Comandante do incidente.** Coordena, prioriza, decide o que fazer em seguida e é o dono do relógio. **Não investiga** — no momento em que ele mergulha numa análise técnica, ninguém está coordenando. É o papel mais mal compreendido: a competência exigida é de condução, não de profundidade técnica.
+
+**Líder técnico.** Conduz a investigação, distribui frentes de análise e traduz achados em recomendação de ação.
+
+**Escriba.** Mantém o diário do incidente em tempo real: horário, ação, autor, resultado. Parece burocrático e é o papel que salva a organização quando o regulador, o seguro ou o juízo perguntam o que foi feito. Em incidente longo, esse papel se reveza.
+
+**Comunicação.** Interna e externa. Uma única voz para fora, com mensagens aprovadas.
+
+**Jurídico e encarregado de dados.** Avaliam obrigação legal, prazo regulatório e risco de responsabilização — e precisam entrar cedo, não quando a investigação termina (@sec-cap082).
+
+**Ponto focal de negócio.** Quem sabe dizer o que aquele sistema sustenta, o que pode parar e o que não pode. Sem esse papel, decisões de contenção são tomadas às cegas sobre impacto.
+
+**Ligação com terceiros.** Fornecedor de nuvem, operadora, MSSP, empresa de perícia, seguradora. Concentrar isso em uma pessoa evita que três pessoas abram três chamados contraditórios.
+
+Duas regras de ouro. **O comandante do incidente não precisa ser o mais graduado** — precisa ser quem melhor coordena; o executivo participa da célula de crise, não do comando técnico. E **o papel é declarado em voz alta e registrado**: "eu sou o comandante deste incidente" é uma frase que precisa ser dita, porque comando implícito é comando inexistente.
+
+::: {#fig-papeis-crise}
+```{.tikz}
+%%| filename: papeis-crise
+%%| alt: Estrutura de papeis em uma celula de resposta a incidente separando comando, investigacao, apoio legal e comunicacao
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    pp/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+               inner sep=4pt, text width=2.75cm, minimum height=1.15cm},
+    lig/.style={thick, manualgray}}
+
+  \node[pp, draw=manualred, fill=manualred!13, text width=3.4cm]
+    (cmd) at (0,2.5)
+    {\textbf{Comandante do incidente}\\[2pt]
+     coordena, prioriza, dona do relógio --- \textbf{não investiga}};
+
+  \node[pp, draw=manualblue, fill=manualblue!13] (tec) at (-4.6,0.4)
+    {\textbf{Líder técnico}\\[2pt] conduz a investigação e as frentes de análise};
+  \node[pp, draw=manualgray, fill=manualgray!10] (esc) at (-1.55,0.4)
+    {\textbf{Escriba}\\[2pt] diário em tempo real: hora, ação, autor, resultado};
+  \node[pp, draw=manualgreen, fill=manualgreen!13] (jur) at (1.55,0.4)
+    {\textbf{Jurídico e encarregado}\\[2pt] prazo regulatório e risco legal};
+  \node[pp, draw=manualyellow, fill=manualyellow!18] (com) at (4.6,0.4)
+    {\textbf{Comunicação}\\[2pt] uma única voz para fora};
+
+  \foreach \nom in {tec,esc,jur,com} { \draw[lig] (cmd) -- (\nom); }
+
+  \node[pp, draw=manualblue, fill=manualblue!7, text width=2.5cm]
+    (an) at (-5.9,-1.7) {análise de endpoint};
+  \node[pp, draw=manualblue, fill=manualblue!7, text width=2.5cm]
+    (ar) at (-3.1,-1.7) {análise de rede e identidade};
+  \draw[lig] (tec) -- (an);
+  \draw[lig] (tec) -- (ar);
+
+  \node[pp, draw=manualgreen, fill=manualgreen!7, text width=2.5cm]
+    (neg) at (0.2,-1.7) {ponto focal de negócio};
+  \node[pp, draw=manualgreen, fill=manualgreen!7, text width=2.5cm]
+    (ter) at (3.0,-1.7) {ligação com terceiros};
+  \draw[lig] (jur) -- (neg);
+  \draw[lig] (com) -- (ter);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=4.3cm]
+    at (5.6,-1.9)
+    {\textbf{O colapso típico}\\[3pt]
+     o técnico mais experiente acumula comando, investigação e
+     comunicação --- e a análise para a cada telefonema.};
+\end{tikzpicture}
+```
+Papéis de uma célula de resposta. Em organização pequena uma pessoa acumula vários, mas comando e investigação nunca devem ficar com a mesma pessoa.
+:::
+
+## Autoridade pré-aprovada: a seção que ninguém escreve
+
+Às 3h de um sábado, um analista de plantão vê uma conta de administrador de domínio autenticando de um endereço da Europa Oriental. Ele sabe exatamente o que fazer. O que ele não sabe é **se pode**.
+
+A pergunta "posso desabilitar essa conta?" tem três respostas possíveis, e duas delas são desastrosas: "não, espere aprovação" (o adversário trabalha por mais seis horas) e "não sei, vou perguntar" (mesmo efeito, com mais gente acordada). A única resposta útil é "sim, isso está pré-autorizado" — e ela precisa estar escrita antes.
+
+O critério que organiza a matriz é a **reversibilidade cruzada com o impacto no negócio**:
+
+**Pré-autorizado a qualquer momento, sem consulta:** isolar endpoint pelo EDR, encerrar sessões de um usuário, desabilitar uma conta individual, bloquear um indicador de rede, forçar troca de senha, revogar um token, coletar imagem de memória e de disco, congelar rotação de logs. Tudo reversível, de impacto limitado a um ativo ou identidade.
+
+**Pré-autorizado com notificação imediata a quem for definido:** isolar um segmento de rede, desabilitar um grupo de contas, derrubar um serviço não crítico, bloquear uma faixa de endereços, cortar acesso de um fornecedor.
+
+**Exige decisão do comandante do incidente, com registro:** parar um sistema de produção, desconectar a organização da internet, ativar o plano de continuidade, restaurar em massa a partir de backup.
+
+**Exige decisão executiva:** comunicar publicamente, comunicar ao regulador, acionar seguro, negociar com o adversário, envolver a imprensa, parar a operação que atende o cliente final.
+
+Escrever isso custa uma tarde. A ausência dessa tarde é o que produz as "seis horas até alguém autorizar" que aparecem em quase todo relatório de incidente sério. Uma advertência importante acompanha a matriz: **ação pré-autorizada não é ação sem registro**. Toda ação executada sob pré-autorização entra no diário do incidente com horário, autor e justificativa.
+
+::: {#fig-matriz-autoridade}
+```{.tikz}
+%%| filename: matriz-autoridade
+%%| alt: Matriz de autoridade pre-aprovada cruzando reversibilidade da acao com impacto no negocio
+\begin{tikzpicture}[font=\footnotesize]
+  \begin{axis}[
+      width=12.0cm, height=7.4cm,
+      xlabel={\tiny impacto no negócio $\longrightarrow$},
+      ylabel={\tiny dificuldade de reverter $\longrightarrow$},
+      xmin=0, xmax=10, ymin=0, ymax=10,
+      xtick=\empty, ytick=\empty,
+      axis lines=left]
+
+    \fill[manualgreen!16] (axis cs:0,0) rectangle (axis cs:4.6,4.6);
+    \fill[manualyellow!20] (axis cs:4.6,0) rectangle (axis cs:10,4.6);
+    \fill[manualyellow!20] (axis cs:0,4.6) rectangle (axis cs:4.6,10);
+    \fill[manualred!14] (axis cs:4.6,4.6) rectangle (axis cs:10,10);
+
+    \node[font=\tiny\bfseries, manualgreen, align=center]
+      at (axis cs:2.3,4.1) {PRÉ-AUTORIZADO\\sem consulta};
+    \node[font=\tiny\bfseries, manualyellow!70!black, align=center]
+      at (axis cs:7.3,4.1) {PRÉ-AUTORIZADO\\com notificação};
+    \node[font=\tiny\bfseries, manualred, align=center]
+      at (axis cs:7.3,9.2) {DECISÃO EXECUTIVA};
+
+    \node[ponto, manualgreen] at (axis cs:1.2,1.0) {};
+    \node[font=\tiny, anchor=west] at (axis cs:1.4,1.0) {isolar endpoint};
+    \node[ponto, manualgreen] at (axis cs:1.0,2.3) {};
+    \node[font=\tiny, anchor=west] at (axis cs:1.2,2.3) {encerrar sessões};
+    \node[ponto, manualgreen] at (axis cs:2.0,3.4) {};
+    \node[font=\tiny, anchor=west] at (axis cs:2.2,3.4) {desabilitar conta};
+
+    \node[ponto, manualyellow!70!black] at (axis cs:5.6,2.0) {};
+    \node[font=\tiny, anchor=west] at (axis cs:5.8,2.0) {isolar segmento};
+    \node[ponto, manualyellow!70!black] at (axis cs:2.6,6.0) {};
+    \node[font=\tiny, anchor=west] at (axis cs:2.8,6.0) {rotacionar krbtgt};
+
+    \node[ponto, manualred] at (axis cs:6.4,6.6) {};
+    \node[font=\tiny, anchor=west] at (axis cs:6.6,6.6) {parar produção};
+    \node[ponto, manualred] at (axis cs:5.6,8.2) {};
+    \node[font=\tiny, anchor=west] at (axis cs:5.8,8.2) {restaurar em massa};
+    \node[ponto, manualred] at (axis cs:8.2,5.2) {};
+    \node[font=\tiny, anchor=west] at (axis cs:6.9,4.8) {comunicar ao mercado};
+  \end{axis}
+\end{tikzpicture}
+```
+Matriz de autoridade. O quadrante verde precisa ser grande: é ele que determina se a madrugada está de fato coberta.
+:::
+
+## Comunicação: o canal que não pode estar comprometido
+
+Se o adversário está no domínio, ele está no e-mail. Se ele está no e-mail, ele lê o planejamento da resposta, sabe quando será desconectado e reage antes. Isso não é hipótese: é padrão observado em operações de ransomware com permanência longa.
+
+O que precisa existir **antes**:
+
+**Um canal de crise independente** da infraestrutura corporativa — grupo em plataforma externa, com contas não federadas ao diretório da empresa, ou ponte de conferência de terceiro. Testado, com todos os membros já dentro.
+
+**Lista de contatos fora do sistema.** Impressa e em dispositivo pessoal: célula de resposta, diretoria, jurídico, encarregado, fornecedores críticos, operadora, seguradora, empresa de perícia, contato policial. Com substituto para cada um.
+
+**Modelos de comunicação prontos.** Primeiro aviso interno, aviso à diretoria, comunicação ao cliente, comunicação ao regulador, nota pública. Escrever isso sob pressão produz texto que o jurídico vai reescrever três vezes enquanto o prazo corre.
+
+**Regra de sigilo explícita.** Quem pode falar, sobre o quê, com quem. Não por segredo corporativo, mas porque informação parcial vazando cedo prejudica a investigação e a posição legal.
+
+Um detalhe que só aparece em quem já passou por isso: **defina previamente o que não se diz no canal de crise**. Se há suspeita de insider, ou se o comprometimento inclui o dispositivo de alguém da célula, parte da coordenação precisa acontecer fora até que isso seja descartado.
+
+## Playbooks: onde o conhecimento deixa de ser individual
+
+O plano diz quem decide; o playbook diz o que fazer. É o documento que a pessoa de plantão abre no meio da madrugada e segue sem precisar lembrar de nada.
+
+Um playbook útil é curto e tem seções fixas:
+
+**Gatilho** — o que caracteriza este cenário. **Primeiras cinco ações**, na ordem, sem ambiguidade. **Consultas prontas para colar** — no SIEM, no EDR, no diretório. **Critério de escalonamento** — quando isso deixa de ser rotina e vira incidente maior. **Ações pré-autorizadas** neste cenário específico. **O que preservar antes de agir**. **Quem acionar**, com contato. **O que registrar**.
+
+O que ele **não** deve conter é explicação teórica. Por que a técnica funciona pertence ao treinamento; o playbook é lido sob pressão.
+
+Cinco cenários cobrem a maior parte do que de fato acontece, e vale escrever nesta ordem:
+
+**Conta comprometida.** O mais frequente de todos. Verificar sessões ativas, dispositivos registrados, regras de encaminhamento de e-mail criadas, aplicativos autorizados via OAuth, alterações de MFA — e só então encerrar sessões e trocar credencial. A ordem importa: revogar primeiro apaga o rastro do que ele configurou.
+
+**Ransomware.** Isolar sem desligar, identificar a variante e o vetor, mapear o alcance da cifragem, verificar integridade e isolamento dos backups, preservar memória e imagem antes de qualquer restauração, acionar jurídico e encarregado. Este é o playbook cujo primeiro passo mais frequentemente é executado errado.
+
+**Servidor exposto comprometido.** Web, VPN, appliance de borda. Preservar antes de derrubar, identificar a vulnerabilidade explorada, procurar webshell e persistência, verificar movimentação a partir dele — a borda comprometida quase nunca é o destino final.
+
+**Fraude de e-mail corporativo e desvio financeiro.** Cenário de altíssimo impacto no Brasil. Envolve tesouraria, banco e prazo curtíssimo para tentativa de bloqueio — em transferência instantânea, a janela útil é de minutos (@sec-cap066).
+
+**Suspeita de vazamento de dados pessoais.** Determinar quais dados, quantos titulares, se houve acesso efetivo ou apenas exposição, e disparar imediatamente o fluxo do encarregado. É o playbook com relógio legal mais curto.
+
+Playbook que nunca foi executado é hipótese. Cada um precisa ser percorrido ao menos uma vez em exercício, e o que se descobre nesse percurso — a consulta que não roda, o contato que mudou, a permissão que ninguém tem — é exatamente o que se descobriria durante o incidente, só que sem custo.
+
+## O kit de resposta e o acesso de emergência
+
+Preparação também é material. O que precisa estar pronto e testado:
+
+**Estação de análise isolada**, com ferramentas instaladas e sem depender do domínio corporativo. **Mídia de aquisição** — discos externos com espaço suficiente, bloqueador de escrita, ferramentas de imagem e de coleta de memória. **Coletor de triagem** capaz de rodar em máquina viva e extrair artefatos rapidamente, como Velociraptor ou equivalente [@velociraptor2024]. **Repositório de evidência** com controle de acesso, registro de quem tocou o quê e espaço dimensionado. **Cópia offline do plano, dos playbooks e da lista de contatos.**
+
+E o item mais delicado: **credenciais de emergência**. Se o diretório está comprometido ou indisponível, alguém precisa conseguir entrar nos sistemas críticos. Isso significa contas de emergência, guardadas fisicamente, com senha longa, sem MFA dependente do mesmo diretório, monitoradas de forma que qualquer uso gere alerta imediato. É um risco deliberado, aceito porque a alternativa — não conseguir entrar durante o incidente — é pior. O controle que o torna aceitável é o alerta de uso, não o cofre.
+
+## Exercícios: o único teste honesto
+
+Plano não testado é ficção documentada. Três formatos, em ordem crescente de custo:
+
+**Exercício de mesa.** Duas horas, uma sala, um cenário narrado e as pessoas discutindo o que fariam. Barato, revela ausência de decisão, papel duplicado e contato desatualizado. Deveria ser trimestral.
+
+**Exercício funcional.** Executa-se de fato parte do procedimento — restaura-se um backup, isola-se uma máquina de teste, roda-se a consulta do playbook. Revela o que a discussão não revela: que a restauração leva quatro vezes mais tempo que o previsto.
+
+**Simulação completa ou exercício de equipe adversária.** Alguém executa a técnica em ambiente controlado e a operação responde sem aviso prévio. Caro, e o mais revelador (@sec-cap079).
+
+Um formato barato e brutalmente eficaz merece destaque: **o teste de contatos**. Uma vez por trimestre, alguém liga para todos os telefones da lista fora do horário comercial e verifica quem atende. É a versão de dez minutos do problema que derrubou a cooperativa.
+
+Duas regras tornam qualquer exercício útil. Ele produz **itens de correção com dono e prazo**, senão vira teatro. E **falhar no exercício é o resultado desejado** — descobrir ali é a única alternativa a descobrir durante o incidente.
+
+## ⚖️ Brasil em Foco
+
+**A LGPD exige a capacidade, não apenas o documento.** Os arts. 46 a 50 obrigam agentes de tratamento a adotar medidas de segurança e a estruturar programa de governança que preveja **planos de resposta a incidentes e remediação**. Na fiscalização, a existência do plano é o mínimo; o que diferencia é a evidência de que ele é exercitado — registros de exercício, revisões datadas, itens de correção fechados [@lgpd2018; @lei13709art46].
+
+**O encarregado precisa estar na estrutura, com poder de acionar.** Como canal de comunicação com a ANPD e com os titulares, o encarregado não pode ser informado no fim da investigação. O plano deve prever seu acionamento automático a partir de gatilhos objetivos — qualquer indício de acesso indevido a base com dado pessoal, por exemplo [@lgpd2018].
+
+**Setor financeiro: o plano é item de fiscalização.** A Resolução BCB nº 4.893/2021 exige política de segurança cibernética com procedimentos e controles para tratamento de incidentes, plano de resposta formalizado, definição de responsabilidades e testes periódicos — além de exigências específicas sobre serviços de terceiros e computação em nuvem. Para instituições autorizadas, "temos um plano" é uma afirmação auditável [@bcb4893].
+
+**Telecomunicações: dever de tratar e de comunicar.** A regulamentação de segurança cibernética das redes de telecomunicações impõe às prestadoras deveres de gestão e comunicação de incidentes relevantes, o que exige estrutura formal de resposta em provedores que historicamente operavam apenas com NOC [@anatel717].
+
+**Cadeia de custódia começa na preparação, não na coleta.** Os arts. 158-A a 158-F do CPP definem etapas que só são cumpríveis se o material existir antes: lacres, formulários de rastreamento, local de armazenamento controlado e pessoal treinado. Improvisar isso durante o incidente é o que torna a evidência contestável depois (@sec-cap085) [@lei13964].
+
+**Contratos com operadores precisam refletir o prazo do controlador.** Fornecedores de nuvem, MSSP e desenvolvedores atuam como operadores. Se o contrato prevê notificação "em até 5 dias úteis", ele é incompatível com a obrigação de comunicação do controlador contada do conhecimento do fato. As cláusulas que importam: prazo de notificação por severidade, dever de cooperação na investigação, acesso a logs brutos, preservação de evidência e devolução de dados ao término [@anpd2024res15; @lgpd2018].
+
+**Retentor de resposta a incidentes é escasso e demora a contratar.** O mercado brasileiro de perícia e resposta especializada é pequeno, e negociar contrato no meio da crise significa pagar caro e esperar. Um contrato de retenção assinado antes, ainda que com franquia mínima de horas, resolve simultaneamente o problema comercial e o de conhecimento prévio do ambiente.
+
+**Seguro cibernético tem obrigações que precedem o sinistro.** As apólices oferecidas no Brasil costumam exigir notificação em prazo curto, uso de prestadores da rede credenciada e preservação de evidência — e recusam cobertura quando o segurado contrata perícia própria antes de comunicar. Ler a apólice no dia do incidente é tarde; as regras dela precisam estar dentro do playbook [@lgpd2018].
+
+**Feriados prolongados e escala reduzida.** Carnaval, Semana Santa e a virada do ano concentram incidentes no Brasil pela razão mais simples: menos gente de plantão. Preparação inclui escala reforçada, contatos confirmados e ampliação temporária das ações pré-autorizadas nesses períodos [@cert2024praticas].
+
+## 🛠️ No Campo
+
+**1. Corte o plano até caber em poucas páginas.** Seis perguntas: quando se aplica, quem faz o quê, quem decide o quê, como nos falamos, a quem comunicamos e como registramos. O resto vai para outro documento.
+
+**2. Mantenha nomes e telefones em anexo separado.** O corpo do plano não deveria mudar quando alguém sai da empresa — o anexo, sim, todo trimestre.
+
+**3. Guarde o plano fora da infraestrutura que ele socorre.** Impresso, em dispositivo fora do domínio e em nuvem com acesso independente do diretório corporativo.
+
+**4. Nomeie um comandante de incidente que não investiga.** Coordenação e análise na mesma pessoa param as duas. E o papel precisa ser declarado em voz alta e registrado.
+
+**5. Escreva a matriz de autoridade pré-aprovada.** Isolar endpoint, encerrar sessão, desabilitar conta, bloquear indicador e coletar evidência não deveriam depender de aprovação. Sem essa tarde de trabalho, a madrugada não está coberta.
+
+**6. Monte o canal de crise fora de banda e teste-o.** Se o adversário está no e-mail, ele lê o planejamento da resposta.
+
+**7. Escreva os cinco playbooks nesta ordem:** conta comprometida, ransomware, servidor exposto comprometido, fraude financeira por e-mail e suspeita de vazamento de dados pessoais.
+
+**8. Em conta comprometida, investigue antes de revogar.** Regras de encaminhamento, aplicativos OAuth, dispositivos e MFA — revogar primeiro apaga o rastro do que ele configurou.
+
+**9. Prepare credenciais de emergência com alerta de uso.** Guardadas fisicamente, independentes do diretório. O que torna o risco aceitável é o alerta, não o cofre.
+
+**10. Dimensione o repositório de evidência antes.** Imagem de disco de servidor consome muito espaço, e descobrir isso durante a aquisição interrompe a coleta.
+
+**11. Faça exercício de mesa trimestral com itens de correção.** Duas horas e uma sala. Falhar ali é o objetivo.
+
+**12. Ligue para os telefones da lista uma vez por trimestre, fora do horário.** É o teste de dez minutos que evita o fracasso mais banal.
+
+**13. Assine o retentor de perícia antes de precisar.** Negociar durante a crise custa mais e demora mais.
+
+**14. Leia a apólice de seguro e traga as obrigações dela para dentro do playbook.** Prazo de notificação e prestador credenciado costumam ser condição de cobertura.
+
+**15. Revise a matriz de autoridade e reforce a escala em feriado prolongado.** É quando os incidentes acontecem, justamente porque a equipe está reduzida.
+
+## Resumo
+
+- Preparação é a única fase que acontece com tempo e orçamento, e é a que determina o resultado de todas as outras. Plano existente não é plano funcional: o teste é se contatos, acessos e procedimentos foram exercitados.
+- Um plano útil responde a seis perguntas e cabe em poucas páginas. Precisa estar **acessível quando a rede não está** e ter revisão datada, com nomes e telefones em anexo separado do corpo.
+- Papéis são declarados, não presumidos. **Comando e investigação nunca na mesma pessoa**; o escriba, que parece burocrático, é o que sustenta a organização perante regulador, seguro e juízo.
+- A matriz de **autoridade pré-aprovada** é a seção mais ausente e a que mais economiza tempo. Ações reversíveis de impacto limitado — isolar, encerrar sessão, desabilitar conta, coletar evidência — não podem depender de aprovação caso a caso.
+- Canal de crise fora de banda, lista de contatos impressa e modelos de comunicação prontos são preparação, não improviso: se o adversário está no e-mail, ele acompanha a resposta.
+- Cinco playbooks cobrem a maior parte do que acontece: conta comprometida, ransomware, servidor exposto, fraude financeira por e-mail e suspeita de vazamento de dados pessoais. Playbook nunca executado é hipótese.
+- O kit de resposta inclui estação isolada, mídia de aquisição, coletor de triagem, repositório de evidência dimensionado e **credenciais de emergência com alerta de uso**.
+- Exercícios de mesa trimestrais, exercícios funcionais e teste de contatos são o único teste honesto — e falhar neles é o resultado desejado. No Brasil, a LGPD exige plano de resposta como parte do programa de governança, o BCB e a Anatel o auditam, a cadeia de custódia do CPP exige material preparado antes, e contratos de operador com prazo de notificação incompatível com o do controlador são um problema jurídico à espera de acontecer.
