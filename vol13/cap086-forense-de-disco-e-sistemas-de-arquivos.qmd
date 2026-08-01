@@ -1,3 +1,219 @@
 # Forense de disco e sistemas de arquivos {#sec-cap086}
 
-*(em elaboracao)*
+O adversário sabia o que estava fazendo. Depois de três semanas dentro do ambiente de uma transportadora, ele apagou as ferramentas que havia usado, limpou o registro de eventos de segurança do Windows, ajustou os horários dos arquivos que restaram para uma data de 2019 e desabilitou a auditoria antes de disparar a cifragem.
+
+Cinco dias depois, a análise do disco reconstruiu a operação quase inteira. Os arquivos apagados continuavam no espaço não alocado, porque apagar não é escrever. O `$UsnJrnl` guardava o registro de criação e exclusão de cada um deles, com horário. O Prefetch mostrava que os binários haviam sido executados, quantas vezes e quando. E o próprio ajuste de horários se denunciou: o adversário alterou os carimbos que a interface do sistema exibe, mas não os que o sistema de arquivos guarda em outro lugar — e a discrepância entre os dois é, ela mesma, evidência de manipulação deliberada.
+
+Forense de disco é o estudo daquilo que o sistema operacional registra sem que ninguém peça, e que quase ninguém sabe que existe. Este capítulo trata das camadas do armazenamento, das estruturas dos sistemas de arquivos que mais importam, dos artefatos que respondem às perguntas de um incidente e da construção da linha do tempo que amarra tudo.
+
+## As camadas do armazenamento
+
+Um disco é uma pilha de abstrações, e a análise forense pode entrar em qualquer nível. Entender a pilha explica por que a cópia de arquivos é inútil e a cópia bit a bit é indispensável.
+
+::: {#fig-camadas-disco}
+```{.tikz}
+%%| filename: camadas-disco
+%%| alt: Camadas de abstracao do armazenamento e o que a analise recupera em cada uma delas
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    cd/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=5pt, text width=4.6cm, minimum height=1.05cm}}
+
+  \foreach \idx/\py/\cor/\nom/\des in {%
+    1/2.6/manualgray/{Físico --- o dispositivo}/{setores; áreas reservadas, HPA/DCO, superprovisionamento de SSD},
+    2/1.35/manualblue/{Partição}/{tabela MBR ou GPT; espaço \textbf{entre} partições, onde já se escondeu código},
+    3/0.1/manualblue/{Sistema de arquivos}/{metadados: \$MFT, inodes, diários --- onde vive a linha do tempo},
+    4/-1.15/manualgreen/{Arquivo}/{conteúdo alocado; o que o usuário enxerga},
+    5/-2.4/manualred/{Não alocado e \emph{slack}}/{o que foi apagado e ainda não foi sobrescrito}}
+    {
+      \node[cd, draw=\cor, fill=\cor!12, anchor=west] at (-7.0,\py)
+        {\textbf{\nom}\\[2pt] \des};
+    }
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.9cm]
+    at (0.9,1.4)
+    {\textbf{Por que copiar arquivos não serve}\\[3pt]
+     Uma cópia lógica captura apenas a camada 4. As camadas 1, 2, 3 e 5
+     --- onde estão os apagados, os metadados e o que foi escondido
+     fora de partição --- \textbf{não vêm junto}.\\[3pt]
+     É a diferença entre fotografar a estante e levar a biblioteca.};
+
+  \node[draw=manualgreen, fill=manualgreen!8, thick, rounded corners=3pt,
+        align=left, inner sep=6pt, font=\tiny, text width=5.9cm]
+    at (0.9,-1.9)
+    {\textbf{Apagar não é escrever}\\[3pt]
+     Excluir um arquivo marca o espaço como disponível e remove a
+     referência. Os dados permanecem até que outra escrita ocupe
+     aquele espaço --- o que pode levar meses em disco pouco usado,
+     ou minutos em disco cheio.};
+\end{tikzpicture}
+```
+Camadas do armazenamento. A análise forense trabalha em todas; a cópia lógica alcança apenas uma.
+:::
+
+Vale registrar o que mudou com a tecnologia recente. Em SSD, o comando TRIM informa ao controlador que blocos foram liberados, e o controlador pode zerá-los espontaneamente — o que **reduz drasticamente a recuperação de arquivos apagados**, mesmo com a mídia intacta. E em disco com criptografia total ativada, o disco desligado é ruído: a aquisição só é útil se a chave estiver disponível, o que aumenta o valor da coleta com a máquina ligada e da memória (@sec-cap087, @sec-cap041).
+
+## NTFS: onde o Windows guarda a história
+
+O NTFS é, para o examinador, um presente: quase tudo passa por estruturas que ele mantém por conta própria.
+
+**A `$MFT`** é a tabela mestra de arquivos. Cada arquivo e diretório tem ao menos uma entrada, com nome, tamanho, atributos, localização dos blocos e — crucialmente — **dois conjuntos de carimbos de tempo**. Arquivos pequenos cabem inteiros dentro da própria entrada, o que significa que a `$MFT` frequentemente contém o conteúdo de arquivos que já foram apagados.
+
+**Os carimbos MACB** existem em dois atributos distintos: `$STANDARD_INFORMATION`, que é o que a interface do Windows exibe e o que as ferramentas comuns de manipulação alteram, e `$FILE_NAME`, mantido pelo sistema e muito menos acessível. Quando alguém adultera horários — a técnica de *timestomping* —, tipicamente altera o primeiro e não o segundo. **A discrepância entre os dois é indício direto de manipulação**, e é um dos achados mais valiosos da forense de disco em Windows [@carrier2005].
+
+**O `$LogFile`** é o diário de transações do sistema de arquivos: registra operações de metadados para permitir recuperação após falha. Guarda pouco tempo, mas com detalhe alto.
+
+**O `$UsnJrnl`** — o diário de alterações — registra cada criação, alteração, renomeação e exclusão de arquivo, com horário e motivo. Cobre um período maior que o `$LogFile` e é a fonte que frequentemente prova a existência de um arquivo que não existe mais. Foi o que reconstruiu o caso de abertura.
+
+**Fluxos de dados alternativos (ADS)** permitem anexar conteúdo adicional a um arquivo sem alterar seu tamanho aparente. Historicamente usados para esconder código; hoje, o mais útil é o fluxo `Zone.Identifier`, que o Windows anexa a arquivos baixados da internet e que indica a origem do download — informação que responde diretamente à pergunta "como isso chegou aqui?".
+
+## ext4 e o mundo Linux
+
+Em Linux, a análise é diferente em três aspectos.
+
+O **inode** guarda metadados e ponteiros para os blocos, mas **não guarda o nome do arquivo** — o nome vive na entrada de diretório. Quando um arquivo é apagado no ext4, a ligação entre nome e inode é desfeita e os ponteiros de bloco costumam ser zerados, o que torna a recuperação bem mais difícil que no NTFS.
+
+Os carimbos são quatro — acesso, modificação, alteração de metadados e criação —, sendo que o `ctime` (alteração de metadados) **não pode ser definido diretamente pelas ferramentas comuns**, o que o torna útil justamente contra manipulação: um arquivo com `mtime` de 2019 e `ctime` da semana passada denuncia a alteração.
+
+O **diário** do ext4 registra operações de metadados e pode conter versões anteriores de estruturas, ocasionalmente permitindo recuperar informação sobre arquivos já removidos.
+
+Compensa a dificuldade de recuperação o fato de que o Linux registra bem em outros lugares: `journald` e `/var/log` com histórico de autenticação e de serviços, `wtmp`/`btmp` com sessões e tentativas falhas, `bash_history` (facilmente apagável, mas frequentemente esquecido), unidades do `systemd` e temporizadores como mecanismo de persistência, e o `cron`.
+
+## Artefatos: o que responde às perguntas do incidente
+
+A análise raramente começa pelo sistema de arquivos. Começa por uma pergunta — *este binário rodou?*, *alguém conectou um dispositivo removível?*, *o que este usuário abriu?* — e cada pergunta tem artefatos que a respondem melhor.
+
+::: {#fig-artefatos-perguntas}
+```{.tikz}
+%%| filename: artefatos-perguntas
+%%| alt: Mapa das perguntas tipicas de uma investigacao e os artefatos do Windows e do Linux que as respondem
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    pg/.style={draw=manualblue, fill=manualblue!12, thick, rounded corners=3pt,
+               align=center, font=\tiny, inner sep=4pt, text width=2.8cm,
+               minimum height=0.85cm},
+    aw/.style={draw=manualgreen, fill=manualgreen!11, thick, rounded corners=3pt,
+               align=left, font=\tiny, inner sep=4pt, text width=4.5cm,
+               minimum height=0.85cm},
+    al/.style={draw=manualyellow, fill=manualyellow!16, thick, rounded corners=3pt,
+               align=left, font=\tiny, inner sep=4pt, text width=4.0cm,
+               minimum height=0.85cm}}
+
+  \node[font=\tiny\bfseries, manualblue] at (-5.2,3.0) {A PERGUNTA};
+  \node[font=\tiny\bfseries, manualgreen] at (-0.6,3.0) {NO WINDOWS};
+  \node[font=\tiny\bfseries, manualyellow!70!black] at (4.4,3.0) {NO LINUX};
+
+  \foreach \idx/\py/\per/\awin/\alin in {%
+    1/2.2/{Este programa rodou?}/{Prefetch, Amcache, ShimCache, evento 4688}/{auditd, journald, atime},
+    2/1.1/{Como ele persiste?}/{chaves Run, tarefas agendadas, serviços, WMI}/{systemd, cron, rc.local, perfis de shell},
+    3/0.0/{Quem entrou e quando?}/{eventos 4624/4625/4648, tipo de logon}/{wtmp, btmp, lastlog, auth.log},
+    4/-1.1/{O que foi aberto?}/{ShellBags, LNK, Jump Lists, UserAssist, MRU}/{bash\_history, arquivos recentes},
+    5/-2.2/{Que dispositivo foi ligado?}/{USBSTOR, setupapi.dev.log, MountedDevices}/{dmesg, udev, journald},
+    6/-3.3/{O arquivo existiu?}/{\$UsnJrnl, \$LogFile, \$MFT, não alocado}/{diário do ext4, não alocado}}
+    {
+      \node[pg] at (-5.2,\py) {\per};
+      \node[aw] at (-0.6,\py) {\awin};
+      \node[al] at (4.4,\py) {\alin};
+    }
+\end{tikzpicture}
+```
+Cada pergunta de investigação tem artefatos que a respondem. Começar pela pergunta, e não pela ferramenta, é o que torna a análise viável em prazo útil.
+:::
+
+Vale um comentário sobre os artefatos de execução do Windows, os mais usados na prática e os mais mal interpretados. **Prefetch** registra a execução de programas, com data da primeira e das últimas execuções e contagem — mas está desabilitado por padrão em muitos servidores. **Amcache** e **ShimCache** registram binários que o sistema *viu*; ShimCache em particular pode registrar um arquivo que foi apenas listado, sem ter sido executado. Tratar entrada de ShimCache como prova de execução é um erro comum que já produziu conclusão errada em laudo. A regra é sempre a mesma: **corroborar com uma segunda fonte** antes de afirmar.
+
+## A linha do tempo: o produto que amarra tudo
+
+Artefatos isolados produzem fatos soltos. O que responde às perguntas de um incidente é a **linha do tempo consolidada**: todos os eventos temporais de todas as fontes, ordenados, em um único conjunto.
+
+Ferramentas de super linha do tempo, como o Plaso, extraem carimbos de dezenas de tipos de artefato — sistema de arquivos, registro do Windows, registros de eventos, navegadores, diários — e produzem um arquivo único ordenado [@plaso2024]. O problema imediato é o volume: uma estação comum gera milhões de linhas, e ninguém lê milhões de linhas.
+
+Três técnicas tornam a linha do tempo utilizável:
+
+**Recortar a janela.** Restringir ao período de interesse identificado — as horas em torno do primeiro sinal — reduz o material em ordens de grandeza. Amplia-se depois, conforme os achados empurram a origem para trás.
+
+**Filtrar por tipo de evento relevante.** Criação de executável, escrita em diretório de sistema, criação de tarefa agendada, logon interativo, montagem de dispositivo. O ruído de fundo — atualizações do sistema, indexação, cache de navegador — pode ser excluído por padrão e revisitado se necessário.
+
+**Ancorar em um evento conhecido e caminhar.** A partir de um fato certo (a execução do binário, o logon anômalo), examinar minuciosamente os minutos anteriores e posteriores. Quase toda intrusão tem uma vizinhança temporal densa: o que veio junto revela o que veio antes.
+
+Duas armadilhas merecem atenção explícita. **Fusos horários**: artefatos diferentes registram em referências diferentes — alguns em UTC, alguns em hora local, alguns em formatos herdados. Misturá-los produz uma linha do tempo internamente inconsistente e conclusões erradas. A disciplina é converter tudo para UTC na ingestão e registrar a conversão. E **relógios dessincronizados** entre máquinas: se o servidor estava três minutos adiantado, a ordem aparente dos eventos entre máquinas pode se inverter, e a causalidade que se lê na tabela é ilusória (@sec-cap082).
+
+## Recuperação de dados apagados e seus limites
+
+**Recuperação por metadados** usa as estruturas do sistema de arquivos que ainda apontam para os blocos — em NTFS, entradas da `$MFT` marcadas como livres frequentemente ainda contêm os ponteiros. É a via mais confiável, porque preserva nome, horários e localização.
+
+**Carving** ignora o sistema de arquivos e varre o espaço não alocado procurando assinaturas de início e fim de tipos de arquivo conhecidos. Recupera conteúdo mesmo sem metadado algum, com três limitações honestas: não recupera nome nem horário, sofre com fragmentação e produz muitos falsos positivos. Um arquivo recuperado por carving é conteúdo sem contexto — útil, mas sempre mais fraco probatoriamente que um recuperado por metadados.
+
+**Slack** é o espaço entre o fim do arquivo e o fim do bloco alocado, que pode conter restos de dados anteriores. Rende pouco na prática moderna, mas ocasionalmente entrega um fragmento decisivo.
+
+O limite mais importante: **em SSD com TRIM ativo, presuma que o que foi apagado se foi**. E em qualquer mídia, quanto mais o sistema continua em uso, mais o espaço não alocado é sobrescrito — o que é mais um argumento para adquirir cedo.
+
+## Triagem em escala
+
+Imagem completa de disco não escala. Um incidente com quarenta máquinas suspeitas e imagens de 500 GB cada é inviável em prazo útil.
+
+A resposta é **triagem**: coletar remotamente apenas os artefatos de alto valor — `$MFT`, `$UsnJrnl`, registros de eventos, hives do registro, Prefetch, Amcache, histórico de shell, unidades de systemd — em poucos minutos por máquina e alguns megabytes de saída. Ferramentas como o Velociraptor executam essa coleta em escala, com consultas que podem ser aplicadas a toda a frota simultaneamente [@velociraptor2024].
+
+A estratégia que funciona em incidente grande: **triagem ampla, imagem seletiva**. Coleta-se artefato de todas as máquinas, identifica-se onde estão os fatos que importam e faz-se imagem completa apenas dos hosts que respondem às perguntas centrais — o primeiro comprometido, o que tinha privilégio, o que tocou o dado — e daqueles com perspectiva de uso judicial.
+
+Um subproduto valioso: o achado da triagem vira **regra de detecção** aplicável ao resto do ambiente. O caminho de arquivo, o nome de serviço, a assinatura do binário encontrado em uma máquina viram consulta executada em todas as outras (@sec-cap078).
+
+## ⚖️ Brasil em Foco
+
+**A imagem de disco é uma base de dados pessoais.** Copiar integralmente o disco de uma estação captura dados pessoais do usuário e de terceiros que nada têm com a apuração. Sob a LGPD, isso exige base legal, finalidade definida, proporcionalidade, acesso restrito e prazo de descarte — e o relatório não deve anexar listagens de arquivos pessoais irrelevantes ao objeto (@sec-cap085) [@lgpd2018].
+
+**Equipamento de empregado exige política prévia.** A jurisprudência trabalhista admite a inspeção de equipamento corporativo quando existe política clara, prévia e comunicada. Sem ela, a prova é contestável e a empresa se expõe. Escrever a política é preparação, não improviso durante a investigação (@sec-cap083).
+
+**Cadeia de custódia se aplica à mídia física.** Disco, notebook e dispositivo removível apreendidos seguem as etapas dos arts. 158-A a 158-F do CPP: isolamento, fixação, coleta, acondicionamento com lacre, transporte, recebimento, armazenamento controlado. A perda de qualquer elo compromete o que vem depois, ainda que a análise técnica seja impecável [@lei13964].
+
+**Criptografia de disco obrigatória tem consequência forense.** Políticas corporativas que exigem BitLocker ou LUKS em estações — corretas do ponto de vista de proteção de dados — tornam a aquisição pós-desligamento inútil sem a chave. A consequência prática é dupla: **guarde e teste as chaves de recuperação** no sistema de gestão, e privilegie a coleta com a máquina ligada durante o incidente (@sec-cap041).
+
+**Registros do Marco Civil ficam frequentemente em disco de servidor.** Para provedores, os registros de conexão e de acesso a aplicações sujeitos a guarda legal costumam estar nas máquinas que a resposta vai reconstruir. Exportar e preservar antes de reconstruir evita destruir o que a lei manda guardar e o que a autoridade pode requisitar [@marcocivil2014].
+
+**Validação de ferramenta importa em juízo.** Quando a análise é contestada, a pergunta é se a ferramenta faz o que se afirma. Programas de teste de ferramentas forenses e conjuntos de dados de referência públicos permitem sustentar tecnicamente o método, e registrar versão e comando exato executado é o que torna o resultado reproduzível anos depois [@nistcfreds; @sleuthkit2024].
+
+**Ata notarial complementa, não substitui.** Para conteúdo público e volátil, a ata notarial tem fé pública e é barata. Para o conteúdo de um disco, ela não substitui a perícia — mas pode ser usada para constatar o estado de um sistema em determinado momento, reforçando o conjunto probatório [@cpc2015].
+
+## 🛠️ No Campo
+
+**1. Nunca faça cópia lógica quando o caso importa.** Copiar arquivos deixa para trás os apagados, os metadados e o que está fora de partição.
+
+**2. Em suspeita de manipulação de horários, compare `$STANDARD_INFORMATION` com `$FILE_NAME`.** A discrepância é indício direto de *timestomping*.
+
+**3. Use o `$UsnJrnl` para provar que um arquivo existiu.** É a fonte que frequentemente reconstrói o que foi apagado, com horário.
+
+**4. Verifique o `Zone.Identifier` dos executáveis suspeitos.** Ele responde de onde o arquivo veio.
+
+**5. Não trate ShimCache como prova de execução.** Ele registra o que o sistema viu; corrobore com Prefetch, Amcache ou evento de criação de processo.
+
+**6. Converta tudo para UTC na ingestão da linha do tempo.** Misturar referências de fuso produz conclusões erradas com aparência de rigor.
+
+**7. Confira o desvio de relógio entre as máquinas antes de afirmar causalidade.** Três minutos de diferença invertem a ordem aparente dos eventos.
+
+**8. Recorte a janela antes de tentar ler a linha do tempo.** Ancore em um evento conhecido e caminhe para os lados; a vizinhança temporal é densa.
+
+**9. Prefira recuperação por metadados a carving.** Carving entrega conteúdo sem nome nem horário — mais fraco probatoriamente.
+
+**10. Presuma que em SSD com TRIM o apagado se foi.** E adquira cedo: cada hora de uso sobrescreve mais espaço não alocado.
+
+**11. Faça triagem ampla e imagem seletiva.** Artefato de todas as máquinas, imagem completa só das que respondem às perguntas centrais e das com uso judicial previsto.
+
+**12. Transforme o achado em regra e aplique à frota.** Caminho, nome de serviço e hash encontrados em um host viram consulta em todos os outros.
+
+**13. Guarde e teste as chaves de recuperação de disco.** Criptografia obrigatória sem gestão de chave torna a aquisição pós-desligamento inútil.
+
+**14. Registre versão da ferramenta e comando exato.** É o que sustenta a reprodução do resultado quando alguém contestar.
+
+**15. Exporte os registros sujeitos a guarda legal antes de reconstruir o servidor.** A reconstrução apaga o que a lei manda manter.
+
+## Resumo
+
+- O armazenamento é uma pilha de camadas, e a análise forense trabalha em todas. A cópia lógica alcança apenas a camada de arquivos; **apagados, metadados e áreas fora de partição só vêm na cópia bit a bit**.
+- No NTFS, a `$MFT` guarda **dois conjuntos de carimbos**, e a discrepância entre `$STANDARD_INFORMATION` e `$FILE_NAME` é indício direto de manipulação de horários. O `$UsnJrnl` frequentemente prova a existência de arquivos que já não existem.
+- Em ext4, a recuperação é mais difícil — inode sem nome e ponteiros zerados —, mas o `ctime`, que não é definível pelas ferramentas comuns, ajuda contra manipulação, e o Linux registra bem em `journald`, `wtmp`/`btmp`, `systemd` e `cron`.
+- Cada pergunta de investigação tem artefatos próprios. Os de execução no Windows são os mais úteis e os mais mal interpretados: **ShimCache não prova execução**, e toda afirmação precisa de segunda fonte.
+- A **linha do tempo consolidada** é o produto que amarra tudo, e só é utilizável com recorte de janela, filtro por tipo de evento e ancoragem em evento conhecido. Fuso horário e desvio de relógio são as duas armadilhas que produzem conclusões erradas com aparência de rigor.
+- Recuperação por metadados é mais confiável que carving, que entrega conteúdo sem contexto. Em SSD com TRIM, presuma que o apagado se foi — e adquira cedo, porque o uso continuado sobrescreve.
+- Em incidente grande, a estratégia é **triagem ampla e imagem seletiva**, com os achados virando regra de detecção aplicada à frota inteira.
+- No Brasil, a imagem de disco é base de dados pessoais sujeita à LGPD, a inspeção de equipamento de empregado exige política prévia, a mídia física segue a cadeia de custódia do CPP, e a criptografia de disco obrigatória torna essencial guardar e testar as chaves de recuperação.
