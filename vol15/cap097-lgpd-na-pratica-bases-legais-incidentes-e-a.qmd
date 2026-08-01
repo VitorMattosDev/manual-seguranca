@@ -1,3 +1,208 @@
 # LGPD na prática: bases legais, incidentes e a ANPD {#sec-cap097}
 
-*(em elaboracao)*
+Sexta-feira, 17h20. O analista de plantão percebe que um bucket de armazenamento em nuvem usado por uma integração antiga está com acesso público desde uma mudança feita há quatro meses. Dentro dele, exportações de relatórios com nome, CPF, endereço e histórico de atendimento de cerca de trezentos mil clientes. O acesso é fechado em oito minutos.
+
+A parte técnica acabou. A parte que este capítulo trata está apenas começando, e o relógio já está correndo.
+
+Quantos dias a organização tem? A quem comunicar? Precisa avisar os trezentos mil? A resposta a essas perguntas depende de coisas que ninguém consegue levantar às 17h20 de sexta se não tiver sido preparado antes: qual era a base legal daquele tratamento, se existe registro das operações, se há relatório de impacto, quem é o encarregado, e — a pergunta que decide quase tudo — se o incidente **acarreta risco ou dano relevante aos titulares**.
+
+A LGPD costuma ser apresentada ao público técnico como um problema jurídico que chega pronto do departamento legal. Não é. Boa parte das obrigações da lei se cumpre com decisões de arquitetura, de retenção, de registro e de controle de acesso — decisões que são tomadas por quem administra sistemas, meses ou anos antes de qualquer incidente [@lgpd2018].
+
+## O vocabulário que muda decisões técnicas
+
+Quatro definições da lei têm consequência direta no desenho de sistemas.
+
+**Dado pessoal** é informação relacionada a pessoa natural identificada ou **identificável**. A palavra "identificável" é a que surpreende: endereço IP, identificador de dispositivo, cookie persistente e número de matrícula são dados pessoais quando permitem, direta ou indiretamente, chegar a alguém. Isso significa que **registros de acesso e logs de segurança são, com frequência, dados pessoais** — o que sujeita o SIEM do @sec-cap077 às regras de finalidade, retenção e segurança da própria lei.
+
+**Dado pessoal sensível** é um subconjunto com regime mais restrito: origem racial ou étnica, convicção religiosa, opinião política, filiação sindical ou a organização de caráter religioso, filosófico ou político, dado referente à saúde ou à vida sexual, dado genético e **dado biométrico**. A biometria dentro dessa lista tem efeito prático imediato para quem implanta autenticação: um template facial ou de digital é dado sensível, com bases legais próprias e mais estreitas, o que muda o desenho discutido no @sec-cap024.
+
+**Anonimização** é o processo que impede a associação, direta ou indireta, a um indivíduo — considerando meios técnicos razoáveis e disponíveis na ocasião. Dado efetivamente anonimizado sai do escopo da lei. O detalhe crítico é que a lei diz explicitamente que o dado deixa de ser anonimizado se o processo for revertido ou se a reversão for possível com esforço razoável. **Pseudonimização não é anonimização**: substituir o CPF por um identificador continua sendo tratamento de dado pessoal, porque a chave existe em algum lugar. É uma medida de segurança valiosa e reconhecida pela lei, não uma saída do escopo.
+
+**Controlador e operador.** O controlador decide sobre as finalidades e os meios do tratamento; o operador trata em nome do controlador. Quem hospeda, processa ou dá suporte a sistemas de terceiros costuma ser operador — e a distinção define obrigações contratuais, deveres de segurança e o regime de responsabilidade do @sec-cap101. Provedores de tecnologia frequentemente são controladores de uns dados (dos próprios clientes e funcionários) e operadores de outros (dos dados que os clientes armazenam), simultaneamente [@anpd2021agentes].
+
+## As bases legais: consentimento é exceção, não regra
+
+Nenhum tratamento de dado pessoal é lícito sem uma base legal. A lei traz dez hipóteses no artigo 7º para dados comuns, e apenas oito, mais restritas, no artigo 11 para dados sensíveis.
+
+O equívoco mais difundido — e mais caro — é supor que tudo depende de consentimento. Ele é apenas uma das dez hipóteses, e frequentemente a pior escolha: precisa ser livre, informado, inequívoco, específico para finalidades determinadas, comprovável pelo controlador e **revogável a qualquer momento**, com procedimento gratuito e facilitado. Uma organização que ancora em consentimento o tratamento necessário para prestar seu serviço se coloca na posição absurda de ter que interromper o serviço quando alguém revoga.
+
+As bases que sustentam a maior parte da operação real de uma empresa de tecnologia são outras:
+
+**Execução de contrato** cobre o que é necessário para prestar o serviço contratado — cadastro, faturamento, entrega, suporte.
+
+**Cumprimento de obrigação legal ou regulatória** cobre guarda fiscal, guarda de registros de conexão sob o Marco Civil (@sec-cap099), obrigações trabalhistas e reporte a reguladores.
+
+**Legítimo interesse** cobre boa parte da segurança da informação: prevenção a fraude, detecção de intrusão, registro de acesso, proteção do crédito. A lei cita expressamente o apoio e a promoção das atividades do controlador e a proteção do exercício regular de direitos. Mas a base tem preço: exige **avaliação documentada** — o teste que confronta a finalidade legítima, a necessidade do tratamento e o balanceamento com os direitos e liberdades do titular, incluindo suas expectativas razoáveis. Sem esse registro, invocar legítimo interesse em uma fiscalização é afirmação sem lastro. E a base exige transparência e a possibilidade de oposição pelo titular [@anpd2022legitimo].
+
+**Exercício regular de direitos em processo** ampara a preservação de evidência em incidentes e litígios — a base sob a qual a forense do @sec-cap085 se sustenta.
+
+**Proteção da vida** e **tutela da saúde**, **estudo por órgão de pesquisa**, **proteção do crédito** e **políticas públicas** completam o rol.
+
+Para **dados sensíveis**, o rol é menor e não inclui legítimo interesse. Isso tem consequência direta: um sistema de reconhecimento facial para controle de acesso não pode se apoiar em legítimo interesse. Precisa de consentimento específico e destacado, ou de outra hipótese do artigo 11 — o que na prática restringe muito os casos legítimos e é a razão de tantos projetos de biometria travarem na análise jurídica.
+
+Uma regra que economiza retrabalho: **a base legal se define por finalidade, não por sistema**. O mesmo banco de dados pode conter dados tratados sob execução de contrato, sob obrigação legal e sob legítimo interesse, com prazos de retenção diferentes para cada um. O registro das operações de tratamento do artigo 37 é onde isso fica organizado, e é o documento que a ANPD pede primeiro em uma fiscalização.
+
+## Direitos dos titulares e o que eles exigem da arquitetura
+
+O artigo 18 dá ao titular os direitos de confirmação de existência de tratamento, acesso, correção, anonimização ou bloqueio de dados desnecessários ou tratados em desconformidade, portabilidade, eliminação dos dados tratados com consentimento, informação sobre compartilhamentos, informação sobre a possibilidade de não consentir, e revogação do consentimento.
+
+Do ponto de vista técnico, esses direitos impõem requisitos que raramente estão presentes em sistemas legados:
+
+Ser capaz de **localizar todos os dados de um titular** em todos os sistemas — inclusive nos backups, nos data lakes, nos logs e nas cópias que áreas de negócio mantêm em planilhas. Ser capaz de **eliminar** de forma consistente, respeitando o que a lei manda conservar. Ser capaz de **exportar em formato interoperável**. E ser capaz de fazer tudo isso em prazo razoável, com identificação segura do requerente — porque um processo de atendimento a titulares mal desenhado vira um canal de engenharia social para extrair dados de terceiros, exatamente o problema do @sec-cap064.
+
+O ponto sobre backup merece detalhe porque gera discussão recorrente. Eliminar um registro em produção e mantê-lo em backup não é contradição inaceitável: backups têm finalidade legítima de recuperação, ciclo de retenção próprio e não são consultados no curso normal do negócio. O que se exige é que a exclusão seja registrada e reaplicada caso o backup seja restaurado, e que os prazos de retenção do backup sejam definidos e cumpridos (@sec-cap089). O que não se sustenta é backup eterno "por precaução".
+
+## Relatório de impacto e privacidade desde a concepção
+
+O **Relatório de Impacto à Proteção de Dados Pessoais** documenta os tratamentos, os riscos às liberdades civis e aos direitos fundamentais, e as medidas de mitigação. A ANPD pode determinar sua elaboração, especialmente quando o tratamento se apoia em legítimo interesse ou envolve risco elevado [@anpd2024ripd].
+
+Os gatilhos que, na prática, recomendam elaborar um: tratamento em larga escala de dados sensíveis; monitoramento sistemático de pessoas, incluindo videomonitoramento e monitoramento de comportamento em aplicações; decisões automatizadas com efeitos significativos sobre o titular; uso de novas tecnologias sobre dados pessoais; tratamento de dados de crianças e adolescentes.
+
+O RIPD é também o instrumento que operacionaliza a **privacidade desde a concepção**, prevista no artigo 46, §2º. E aqui vale a observação prática: um RIPD elaborado depois que o sistema está em produção é um relatório de justificação, não de impacto. O valor está em fazê-lo enquanto ainda é possível mudar o desenho — que é exatamente o mesmo argumento da modelagem de ameaças do @sec-cap005, aplicado a outro eixo de risco.
+
+## O incidente: prazos, critérios e conteúdo
+
+Este é o ponto de contato mais direto entre a lei e a operação de segurança, e o que a Resolução CD/ANPD nº 15/2024 regulamentou em detalhe [@anpd2024res15].
+
+::: {#fig-decisao-incidente-lgpd}
+```{.tikz}
+%%| filename: decisao-incidente-lgpd
+%%| alt: Fluxo de decisao de comunicacao de incidente de dados pessoais sob a LGPD com prazo de tres dias uteis
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    et/.style={draw, thick, rounded corners=3pt, align=left, font=\tiny,
+               inner sep=4pt, text width=3.6cm, minimum height=1.35cm},
+    sx/.style={-{Stealth[length=2.2mm]}, thick, manualgray}}
+
+  \node[et, draw=manualred, fill=manualred!13] (i1) at (-4.2,2.5)
+    {\textbf{1. conhecimento do fato}\\
+     o relógio começa aqui, não no fim da investigação};
+  \node[et, draw=manualblue, fill=manualblue!13] (i2) at (0,2.5)
+    {\textbf{2. envolve dado pessoal?}\\
+     se não, segue só o fluxo comum de resposta a incidentes};
+  \node[et, draw=manualblue, fill=manualblue!11] (i3) at (4.2,2.5)
+    {\textbf{3. acionar encarregado e jurídico}\\
+     avaliação conjunta, não decisão da área técnica};
+
+  \node[et, draw=manualyellow, fill=manualyellow!18] (i4) at (4.2,0.0)
+    {\textbf{4. há risco ou dano relevante?}\\
+     natureza e volume dos dados, titulares vulneráveis, facilidade de
+     identificação, consequências};
+  \node[et, draw=manualgreen, fill=manualgreen!13] (i5) at (0,0.0)
+    {\textbf{5. comunicar em 3 dias úteis}\\
+     ANPD pelo canal oficial e titulares afetados};
+  \node[et, draw=manualgray, fill=manualgray!12] (i6) at (-4.2,0.0)
+    {\textbf{5'. não comunicar}\\
+     decisão registrada com a fundamentação --- a avaliação é auditável};
+
+  \draw[sx] (i1) -- (i2);
+  \draw[sx] (i2) -- (i3);
+  \draw[sx] (i3) -- (i4);
+  \draw[sx] (i4) -- node[above, font=\tiny, manualgreen] {sim} (i5);
+  \draw[sx] (i5) -- node[above, font=\tiny, manualgray] {não} (i6);
+
+  \node[draw=manualred, fill=manualred!8, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=12.0cm]
+    at (0,-2.0)
+    {\textbf{Dois erros que custam caro.} Contar o prazo a partir do fim da
+     investigação --- ele conta do conhecimento do fato, e a comunicação
+     admite complementação posterior. E deixar a decisão de comunicar com a
+     área técnica --- ela é do encarregado com o jurídico e a alta
+     administração, com o raciocínio registrado.};
+\end{tikzpicture}
+```
+Fluxo de decisão diante de um incidente com dados pessoais. O prazo de três dias úteis conta do conhecimento do fato.
+:::
+
+**O critério é risco ou dano relevante.** A resolução orienta a avaliação por elementos concretos: a natureza e a categoria dos dados afetados — dados sensíveis, de crianças e adolescentes, financeiros, de autenticação e de geolocalização pesam mais —, o volume de titulares atingidos, a facilidade de identificação, a possibilidade de dano material ou moral e o contexto do incidente. Cifragem de dados que os torna indisponíveis também é incidente, como visto no @sec-cap093 — indisponibilidade é uma das propriedades protegidas.
+
+**O prazo é de três dias úteis a contar do conhecimento do fato.** Não do fim da apuração. A comunicação inicial pode ser incompleta e complementada depois; o que a autoridade não aceita é silêncio durante a investigação.
+
+**O conteúdo mínimo** inclui a descrição do incidente e dos dados afetados, o número aproximado de titulares, as medidas técnicas e de segurança adotadas antes e depois, os riscos identificados, o motivo da eventual demora e as informações do encarregado.
+
+**A comunicação aos titulares** é devida quando houver risco relevante, em linguagem clara, informando o que aconteceu, quais dados foram afetados, quais os riscos e o que o titular pode fazer para se proteger. A ANPD pode determinar ampla divulgação em meios de comunicação e medidas para reverter ou mitigar os efeitos.
+
+**A decisão de não comunicar precisa ser registrada com fundamentação.** É uma decisão legítima quando o risco não é relevante — e é auditável. Registro ausente equivale, na prática, a decisão indefensável.
+
+Vale um ponto que costuma passar batido: **o operador deve comunicar o controlador**, não a ANPD. Quem se relaciona com a autoridade e com os titulares é o controlador. Contratos de operação precisam fixar prazo interno de notificação bem menor que três dias úteis, ou o controlador recebe a informação sem tempo de agir.
+
+## Sanções, fiscalização e o que a ANPD tem feito
+
+O artigo 52 prevê advertência com prazo para adoção de medidas corretivas; multa simples de até 2% do faturamento no Brasil no último exercício, limitada a R$ 50 milhões por infração; multa diária; publicização da infração; bloqueio e eliminação dos dados; e, para casos mais graves, suspensão parcial ou total do funcionamento do banco de dados ou do exercício da atividade de tratamento.
+
+O Regulamento de Dosimetria detalha como a autoridade calcula: gravidade e natureza da infração, boa-fé do infrator, vantagem auferida, condição econômica, reincidência, cooperação, adoção comprovada de política de boas práticas e de governança, e a **pronta adoção de medidas corretivas**. Duas conclusões práticas saem daí. Primeira: governança documentada é atenuante concreta, não retórica. Segunda: cooperar e corrigir rápido reduz sanção — o que inverte o incentivo de ocultar [@anpd2023dosimetria].
+
+Na atuação concreta, a autoridade tem combinado fiscalização, medidas preventivas e sanções, e os achados recorrentes são menos técnicos do que se imagina: ausência de encarregado indicado, ausência de registro das operações de tratamento, falta de resposta a requisições de titulares, informação de privacidade inadequada e ausência de base legal identificável. São falhas de documentação e de processo — as mais baratas de corrigir antes e as mais constrangedoras de explicar depois.
+
+## Transferência internacional
+
+Dados só podem sair do país sob hipóteses específicas: países com nível adequado de proteção reconhecido pela ANPD, cláusulas contratuais padrão aprovadas pela autoridade, cláusulas específicas, normas corporativas globais, selos e certificados, ou hipóteses pontuais como cumprimento de obrigação legal e proteção da vida.
+
+A Resolução CD/ANPD nº 19/2024 aprovou as cláusulas-padrão contratuais e estabeleceu prazo de adequação para contratos existentes. Para a maioria das organizações brasileiras, isso é assunto imediato: qualquer uso de nuvem, de plataforma de segurança, de serviço de correio ou de análise hospedado fora do país é transferência internacional e precisa de uma hipótese identificada e documentada [@anpd2024res19].
+
+## ⚖️ Brasil em Foco
+
+**A proteção de dados é direito fundamental.** A Emenda Constitucional nº 115/2022 inseriu a proteção de dados pessoais no rol de direitos fundamentais do artigo 5º e fixou a competência privativa da União para legislar sobre o tema — encerrando a discussão sobre normas estaduais e municipais conflitantes e dando à LGPD estatura reforçada na interpretação judicial [@lgpd2018].
+
+**A ANPD é a autoridade competente, e a competência é dela.** Reguladores setoriais mantêm suas atribuições, mas a autoridade nacional é o órgão central de interpretação e aplicação da lei, com competência exclusiva para aplicar as sanções do artigo 52. Isso importa na prática: comunicar o Banco Central ou a Anatel não substitui a comunicação à ANPD, e os conteúdos são diferentes [@anpd2024res15; @bcb4893; @anatel740].
+
+**Agentes de tratamento de pequeno porte têm regime proporcional.** A autoridade reconheceu a proporcionalidade para microempresas, empresas de pequeno porte, startups e pessoas naturais e entidades sem fins lucrativos que tratam dados em pequena escala, flexibilizando obrigações formais — inclusive a indicação de encarregado, que pode ser substituída por canal de comunicação — e prevendo prazo dobrado para algumas respostas. O que **não** é flexibilizado é o dever de segurança e o de comunicar incidentes [@anpd2023guia].
+
+**O setor público também é agente de tratamento.** Órgãos e entidades públicas seguem regime próprio nos artigos 23 a 30, com bases legais adaptadas e transparência reforçada, e são fiscalizados pela ANPD. A obrigação convive com a Lei de Acesso à Informação, e a tensão entre transparência ativa e proteção de dados pessoais é resolvida caso a caso — com a regra de que a publicidade de dados pessoais exige finalidade pública e proporcionalidade [@lgpd2018].
+
+**A responsabilidade civil alcança o operador.** O artigo 42 estabelece que o controlador ou o operador que causar dano em razão do exercício da atividade de tratamento é obrigado a repará-lo, com hipóteses de responsabilidade solidária. A jurisprudência sobre dano moral por vazamento tem exigido demonstração de dano concreto em parte dos casos, mas o volume de ações repetitivas após incidentes de grande escala é fato consolidado — o que torna a comunicação bem conduzida um instrumento de contenção de exposição, não só de conformidade [@lgpd2018; @cdc1990].
+
+**A relação com a segurança da informação é bidirecional.** A lei exige medidas técnicas e administrativas de segurança (artigos 46 a 49) sem especificá-las — o que faz do referencial adotado (@sec-cap096) a resposta prática. Mas o inverso também vale: o próprio aparato de segurança trata dados pessoais. Registros de auditoria, capturas de tráfego, imagens forenses e ferramentas de prevenção de vazamento processam dados de funcionários e de clientes, e precisam de base legal, de prazo de retenção definido e de controle de acesso. Programa de segurança que ignora isso cria a própria exposição [@lei13709art46].
+
+**O prazo de guarda do Marco Civil convive com a minimização da LGPD.** Provedores de conexão guardam registros por um ano por obrigação legal; provedores de aplicação, por seis meses. Guardar além do prazo, sem outra base, deixa de ser cumprimento de obrigação legal e passa a exigir justificativa própria. O @sec-cap099 detalha esse regime [@marcocivil2014].
+
+## 🛠️ No Campo
+
+**1. Trate log de segurança como dado pessoal.** IP, identificador de dispositivo e matrícula identificam. Isso implica finalidade declarada, retenção definida e controle de acesso no próprio SIEM.
+
+**2. Mantenha o registro das operações de tratamento atualizado.** É o primeiro documento que a ANPD pede, e é o que amarra finalidade, base legal e prazo de retenção.
+
+**3. Defina base legal por finalidade, não por sistema.** O mesmo banco pode ter dados sob contrato, obrigação legal e legítimo interesse, com prazos diferentes.
+
+**4. Não ancore em consentimento o que é necessário para prestar o serviço.** Consentimento é revogável a qualquer momento — e você fica sem base para operar.
+
+**5. Documente o teste de balanceamento sempre que invocar legítimo interesse.** Sem registro, a base é afirmação sem lastro em fiscalização.
+
+**6. Trate biometria como dado sensível desde o desenho.** Legítimo interesse não ampara; o rol do artigo 11 é mais estreito e muda o projeto.
+
+**7. Pseudonimizar não tira do escopo da lei.** É boa medida de segurança e continua sendo tratamento de dado pessoal.
+
+**8. Construa a capacidade de localizar e eliminar dados de um titular em todos os sistemas.** Inclui data lake, planilhas de área e cópias esquecidas.
+
+**9. Verifique a identidade de quem exerce direito de titular.** Processo mal desenhado vira canal de engenharia social para extrair dados de terceiros.
+
+**10. Defina e cumpra prazo de retenção de backup.** Backup eterno "por precaução" não se sustenta; registre a exclusão para reaplicá-la em restauração.
+
+**11. Faça o RIPD antes de a arquitetura congelar.** Depois da produção, o documento vira justificação, não avaliação de impacto.
+
+**12. Conte o prazo do incidente a partir do conhecimento do fato.** Três dias úteis, com complementação posterior permitida. Esperar o fim da investigação é o erro mais caro.
+
+**13. Não deixe a decisão de comunicar com a área técnica.** Encarregado, jurídico e alta administração decidem — e a decisão de não comunicar precisa de fundamentação registrada.
+
+**14. Fixe em contrato prazo interno de notificação do operador ao controlador.** Bem menor que três dias úteis, ou o controlador recebe a informação sem tempo de agir.
+
+**15. Mapeie toda transferência internacional.** Nuvem, correio, plataforma de segurança e análise fora do país exigem hipótese identificada e cláusulas adequadas.
+
+**16. Guarde evidência de governança em privacidade.** Boas práticas comprovadas e pronta adoção de medidas corretivas são atenuantes concretas na dosimetria.
+
+**17. Aplique a lei ao próprio aparato de segurança.** Captura de tráfego, imagem forense e prevenção de vazamento tratam dados de pessoas e precisam de base, prazo e acesso controlado.
+
+## Resumo
+
+- Boa parte da LGPD se cumpre com decisões de arquitetura, retenção, registro e controle de acesso — tomadas por quem administra sistemas, muito antes de qualquer incidente.
+- **Dado pessoal inclui o identificável**: IP, identificador de dispositivo e matrícula contam. Logs de segurança são, com frequência, dados pessoais, e o próprio SIEM entra no escopo da lei.
+- Biometria é **dado sensível**, com rol de bases legais mais estreito que não inclui legítimo interesse — o que muda o desenho de projetos de autenticação biométrica desde o início.
+- **Pseudonimização não é anonimização.** Só o dado efetivamente irreversível sai do escopo da lei.
+- Consentimento é uma das dez bases legais e frequentemente a pior escolha, porque é revogável a qualquer momento. Execução de contrato, obrigação legal e legítimo interesse sustentam a maior parte da operação real.
+- Legítimo interesse ampara boa parte da segurança da informação, mas **exige avaliação documentada** de finalidade, necessidade e balanceamento com os direitos do titular.
+- Os direitos do artigo 18 impõem à arquitetura a capacidade de localizar, corrigir, exportar e eliminar dados de um titular em todos os sistemas — com verificação segura de identidade, sob pena de o canal virar vetor de engenharia social.
+- O prazo de comunicação de incidente é de **três dias úteis do conhecimento do fato**, não do fim da investigação, com complementação posterior permitida. O critério é risco ou dano relevante, avaliado por natureza dos dados, volume, identificabilidade e consequências.
+- A decisão de **não** comunicar é legítima e precisa de fundamentação registrada. O operador comunica o controlador, não a autoridade — e o contrato precisa fixar prazo interno bem menor.
+- Sanções chegam a 2% do faturamento no Brasil, limitadas a R$ 50 milhões por infração, e a dosimetria considera governança comprovada e pronta correção como atenuantes — o que inverte o incentivo de ocultar.
+- Os achados recorrentes da ANPD são de documentação e processo: encarregado não indicado, registro de operações ausente, requisições de titulares sem resposta, base legal não identificável. São as falhas mais baratas de evitar e as mais constrangedoras de explicar.
+- Transferência internacional exige hipótese identificada e documentada, com cláusulas-padrão aprovadas pela autoridade — o que alcança praticamente qualquer uso de nuvem ou de plataforma hospedada fora do país.

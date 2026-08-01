@@ -160,7 +160,7 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 094** - Governança de segurança e o papel do CISO - `vol15/cap094-governanca-de-seguranca-e-o-papel-do-ciso.qmd`
 - [x] **cap 095** - ISO/IEC 27001 e 27002 - `vol15/cap095-iso-iec-27001-e-27002.qmd`
 - [x] **cap 096** - NIST Cybersecurity Framework e CIS Controls - `vol15/cap096-nist-cybersecurity-framework-e-cis-controls.qmd`
-- [ ] **cap 097** - LGPD na prática: bases legais, incidentes e a ANPD - `vol15/cap097-lgpd-na-pratica-bases-legais-incidentes-e-a.qmd`
+- [x] **cap 097** - LGPD na prática: bases legais, incidentes e a ANPD - `vol15/cap097-lgpd-na-pratica-bases-legais-incidentes-e-a.qmd`
 - [ ] **cap 098** - Marco Civil, Lei 12.737 e o direito penal digital brasileiro - `vol15/cap098-marco-civil-lei-12-737-e-o-direito-penal.qmd`
 - [ ] **cap 099** - Obrigações regulatórias de provedores de internet - `vol15/cap099-obrigacoes-regulatorias-de-provedores-de.qmd`
 - [ ] **cap 100** - PCI-DSS e requisitos setoriais - `vol15/cap100-pci-dss-e-requisitos-setoriais.qmd`
@@ -177,5 +177,5 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (96 concluidos).
+**Total:** 107 capitulos em 16 volumes (97 concluidos).
 
