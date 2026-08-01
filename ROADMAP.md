@@ -173,9 +173,9 @@ Commit por capitulo: `cap NNN: <titulo>` com o status atualizado no mesmo commit
 - [x] **cap 104** - Segurança de OT, IoT e sistemas embarcados - `vol16/cap104-seguranca-de-ot-iot-e-sistemas-embarcados.qmd`
 - [x] **cap 105** - Segurança da cadeia de suprimentos de software - `vol16/cap105-seguranca-da-cadeia-de-suprimentos-de-software.qmd`
 - [x] **cap 106** - Privacidade, anonimato e vigilância - `vol16/cap106-privacidade-anonimato-e-vigilancia.qmd`
-- [ ] **cap 107** - Carreira, certificações e aprendizado contínuo - `vol16/cap107-carreira-certificacoes-e-aprendizado-continuo.qmd`
+- [x] **cap 107** - Carreira, certificações e aprendizado contínuo - `vol16/cap107-carreira-certificacoes-e-aprendizado-continuo.qmd`
 
 ---
 
-**Total:** 107 capitulos em 16 volumes (101 concluidos).
+**Total:** 107 capitulos em 16 volumes (107 concluidos).
 

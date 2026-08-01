@@ -1,3 +1,224 @@
 # Carreira, certificações e aprendizado contínuo {#sec-cap107}
 
-*(em elaboracao)*
+Duas pessoas concorreram à mesma vaga de analista de segurança pleno num provedor regional. A primeira levou um currículo com cinco certificações, três delas de fabricante, obtidas em quatorze meses. A segunda tinha uma certificação básica e três anos de suporte de infraestrutura.
+
+A pergunta técnica foi a mesma para as duas: *"um cliente reclama que o acesso ao sistema dele fica lento em horários específicos. Como você investiga?"*
+
+A primeira listou categorias de ataque, mencionou negação de serviço, sugeriu verificar se havia malware e propôs implantar uma ferramenta. A segunda perguntou se a lentidão era no acesso ou na aplicação, se acontecia da rede interna também, quis ver o gráfico de utilização do enlace no horário, comentou que já tinha visto backup mal agendado produzir exatamente esse sintoma e disse que começaria por comparar o tempo de resolução de DNS com o tempo de conexão para separar as camadas.
+
+A segunda foi contratada. Não porque certificação não valha nada — vale, e este capítulo vai dizer para que —, mas porque **o que se contrata é capacidade de investigar, e essa não se estuda: se pratica**. A primeira candidata sabia mais nomes; a segunda sabia como descobrir.
+
+Este é o último capítulo do manual. Ele trata de como transformar o que os cento e seis anteriores apresentaram em uma carreira que se sustente — e de por que o aprendizado contínuo, nesta área, não é virtude, é condição de permanência.
+
+## O mercado real, sem o folheto
+
+Existe um número que circula em toda apresentação sobre o assunto: milhões de vagas de cibersegurança não preenchidas no mundo, dezenas de milhares no Brasil [@isc2workforce]. O número é real, mas é interpretado errado com uma frequência que faz mal a quem está começando.
+
+**O déficit é de profissionais experientes, não de pessoas interessadas.** As vagas abertas que ninguém preenche são de analista sênior de detecção, de engenheiro de segurança em nuvem, de especialista em resposta a incidentes, de arquiteto. As vagas de entrada existem em número muito menor e recebem centenas de candidaturas. Quem entra na área acreditando que fará um curso de seis meses e receberá propostas está montando uma decepção — e a decepção não é culpa da pessoa, é do folheto.
+
+O que o mercado de fato remunera, em ordem de escassez: **quem entende de nuvem e de automação com fundamento de segurança**; **quem sabe caçar e detectar em ambiente real**, não em laboratório curado; **quem faz segurança de aplicação junto com desenvolvedores**, falando a linguagem deles; **quem conduz resposta a incidente sob pressão**, com método e comunicação; e **quem traduz risco técnico para decisão de negócio**, que é a habilidade mais escassa e a mais bem paga.
+
+E há a assimetria que ninguém avisa: **segurança é uma especialização, não uma porta de entrada em tecnologia**. Quase todo bom profissional de segurança veio de outro lugar — suporte, redes, administração de sistemas, desenvolvimento, banco de dados. Isso não é preconceito de veterano: é que não se protege o que não se sabe operar. Quem quer detectar movimentação lateral em Active Directory precisa ter administrado um; quem quer revisar código precisa ter escrito código que quebrou.
+
+## Os caminhos, e o que cada um exige
+
+A área não é uma profissão só. O referencial de força de trabalho do NIST cataloga dezenas de papéis com tarefas, conhecimentos e habilidades distintos, e é um bom instrumento para quem está escolhendo direção ou montando descrição de vaga [@nistsp800181].
+
+::: {#fig-trilhas}
+```{.tikz}
+%%| filename: trilhas
+%%| alt: Mapa das trilhas de carreira em seguranca da informacao com a base comum e as portas de entrada laterais
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    trilha/.style={draw, thick, rounded corners=3pt, align=center, font=\tiny,
+                   inner sep=4pt, text width=2.6cm, minimum height=1.15cm},
+    porta/.style={draw=manualgray, thick, fill=manualgray!12, rounded corners=2pt,
+                  align=center, font=\tiny, inner sep=3pt, text width=2.1cm},
+    fl/.style={-{Stealth[length=2mm]}, thick, manualgray}}
+
+  \node[draw=manualblue, very thick, fill=manualblue!12, rounded corners=3pt,
+        align=center, font=\tiny, inner sep=5pt, text width=12.3cm] (base) at (0,0)
+    {\textbf{base comum --- não pula}\quad rede e TCP/IP $\cdot$ sistema
+     operacional (Linux e Windows) $\cdot$ ler e escrever código
+     $\cdot$ nuvem $\cdot$ ler documentação e norma sem atalho};
+
+  \node[porta] (p1) at (-4.6,-1.6) {suporte / NOC};
+  \node[porta] (p2) at (-1.55,-1.6) {redes e\\ infraestrutura};
+  \node[porta] (p3) at (1.55,-1.6) {administração\\ de sistemas};
+  \node[porta] (p4) at (4.6,-1.6) {desenvolvimento};
+  \node[font=\tiny, manualgray, anchor=north] at (0,-2.35)
+    {\textbf{as portas de entrada reais} --- quase ninguém começa em segurança};
+
+  \draw[fl] (p1) -- (base); \draw[fl] (p2) -- (base);
+  \draw[fl] (p3) -- (base); \draw[fl] (p4) -- (base);
+
+  \node[trilha, draw=manualgreen, fill=manualgreen!13] (t1) at (-4.85,1.85)
+    {\textbf{defesa e detecção}\\ SOC, hunting, engenharia de detecção};
+  \node[trilha, draw=manualred, fill=manualred!13] (t2) at (-1.95,1.85)
+    {\textbf{ofensiva}\\ pentest, red team, pesquisa};
+  \node[trilha, draw=manualyellow, fill=manualyellow!20] (t3) at (0.95,1.85)
+    {\textbf{aplicação e produto}\\ AppSec, revisão, DevSecOps};
+  \node[trilha, draw=manualblue, fill=manualblue!13] (t4) at (3.85,1.85)
+    {\textbf{engenharia}\\ nuvem, identidade, plataforma};
+
+  \node[trilha, draw=manualgreen, fill=manualgreen!10] (t5) at (-3.4,3.35)
+    {\textbf{resposta e forense}\\ RI, perícia, CSIRT};
+  \node[trilha, draw=manualgray, fill=manualgray!14] (t6) at (-0.5,3.35)
+    {\textbf{GRC}\\ risco, conformidade, encarregado};
+  \node[trilha, draw=manualblue, fill=manualblue!10] (t7) at (2.4,3.35)
+    {\textbf{arquitetura e liderança}\\ CISO, arquiteto};
+
+  \draw[fl] (base) -- (t1); \draw[fl] (base) -- (t2);
+  \draw[fl] (base) -- (t3); \draw[fl] (base) -- (t4);
+
+  \node[draw=manualgray, fill=manualgray!9, thick, rounded corners=3pt,
+        align=left, inner sep=4pt, font=\tiny, text width=3.1cm]
+    at (5.7,3.1)
+    {Trocar de trilha é normal e não é recomeçar: a base comum viaja junto, e
+     quem já defendeu entende melhor o que atacar --- e vice-versa.};
+\end{tikzpicture}
+```
+As trilhas da área, a base que todas exigem e as portas de entrada que de fato existem.
+:::
+
+**Defesa e detecção.** SOC, engenharia de detecção, caça a ameaças. Exige leitura de log com paciência, conhecimento profundo de como o sistema operacional se comporta em condições normais e capacidade de escrever regras que não afogam a equipe em falso positivo. É a trilha com mais vagas de entrada, e a que mais ensina rápido — em compensação, é a que tem plantão.
+
+**Ofensiva.** Teste de invasão, red team, pesquisa de vulnerabilidade. É a trilha mais desejada por quem chega e a que tem menos vagas de entrada, porque exige base ampla antes de ser útil: não se testa o que não se sabe como funciona. Também é a que mais depende de reputação demonstrável — relatório bem escrito vale mais que certificado.
+
+**Aplicação e produto.** Revisão de código, modelagem de ameaças, integração com o ciclo de desenvolvimento. Exige saber programar de verdade e conviver com desenvolvedores sem virar o obstáculo do sprint. Muito bem paga e cronicamente carente de gente.
+
+**Engenharia de segurança e plataforma.** Identidade, nuvem, automação, infraestrutura como código. É onde a demanda mais cresceu, e frequentemente onde estão as melhores remunerações fora da liderança.
+
+**Resposta a incidentes e forense.** Método sob pressão, cuidado com evidência, comunicação com jurídico e com direção. Trilha exigente e com carga emocional real.
+
+**GRC.** Risco, conformidade, políticas, encarregado de dados. É desprezada por quem está começando e não deveria: é uma das poucas trilhas com porta de entrada acessível a quem vem de fora da tecnologia, e o profissional de GRC que **também entende de técnica** é raro e valioso.
+
+**Arquitetura e liderança.** Chega depois, com repertório. E a habilidade que determina quem chega lá não é técnica: é a de escrever e falar com clareza para quem decide, como discutido no @sec-cap094.
+
+## Certificações: para que servem, de fato
+
+O debate costuma ser tribal, entre quem diz que certificação é tudo e quem diz que é papel. Nenhuma das duas posições sobrevive ao contato com a realidade. Certificação faz três coisas — e só essas três.
+
+**Passa por filtro.** Sistemas de triagem de currículo e requisitos de edital eliminam candidatura sem a sigla. Isso é chato e é real, e é o principal valor prático da certificação em início de carreira e em contratação pública.
+
+**Organiza estudo.** Um bom programa de certificação dá ementa, sequência e critério de parada. Para quem estuda sozinho e se perde na quantidade de material, isso vale bastante — muitas vezes mais do que o certificado em si.
+
+**Sinaliza compromisso.** Investir tempo e dinheiro demonstra intenção. É um sinal fraco, mas não é zero.
+
+O que certificação **não** faz: não prova competência (com poucas exceções, e são justamente as práticas), não substitui experiência, e não compensa a incapacidade de responder à pergunta do início deste capítulo.
+
+Sobre **como escolher**, três critérios resolvem a maior parte das dúvidas:
+
+**Prefira exame prático.** Certificações que exigem executar tarefas em ambiente real e produzir relatório sinalizam muito mais do que as de múltipla escolha. Um certificado que se obtém decorando banco de questões vale o que custa.
+
+**Escolha pelo destino, não pelo prestígio.** Vaga de SOC, certificação de defesa e de análise; vaga de nuvem, certificação de segurança do provedor que a empresa usa; vaga de GRC, certificação de auditoria e gestão; vaga de teste de invasão, certificação prática ofensiva. Olhar cinquenta anúncios da vaga que se quer e contar as siglas que aparecem é uma pesquisa de mercado de vinte minutos que substitui qualquer opinião — inclusive esta.
+
+**Respeite os pré-requisitos de experiência.** As certificações de gestão mais reconhecidas exigem anos comprovados de atuação e adesão a código de ética [@isc2ethics; @iso17024]. Persegui-las cedo demais é gastar dinheiro para virar "associado" de algo que só conta depois.
+
+E a armadilha, que merece nome: **coleção de certificações sem prática correspondente é um sinal negativo para quem entrevista bem**. Cinco siglas em catorze meses, sem projeto nenhum para mostrar, comunicam que a pessoa estuda para prova. O equilíbrio saudável é uma certificação por vez, escolhida pelo destino, seguida de aplicação real do que ela cobriu.
+
+## O portfólio que vale mais que a sigla
+
+O que efetivamente distingue candidatura em nível de entrada não é o certificado — é evidência de que a pessoa faz coisas.
+
+**Laboratório próprio.** Uma máquina antiga com um hipervisor, um firewall, um servidor de log, um domínio de teste, um alvo vulnerável. Montado do zero, quebrado e consertado várias vezes. As instruções do @sec-cap014 existem para isso. O valor não é o laboratório: é a coleção de problemas que só aparecem quando algo precisa funcionar.
+
+**Escrita pública.** Um blog simples com a análise de um incidente público, a explicação de um protocolo, o relato de um erro cometido e corrigido. Escrever força a organizar o entendimento e cria evidência verificável de raciocínio. **É o item de maior retorno por hora investida de toda esta lista**, e o menos utilizado — e a razão de o @sec-cap063 dedicar um capítulo inteiro a relatório é a mesma: comunicação é a metade do trabalho.
+
+**Competições e plataformas de desafio.** CTFs e ambientes de treino guiado ensinam técnica com retorno rápido e são divertidos, o que sustenta a constância. Limite conhecido: são cenários curados, com solução garantida, ao contrário da vida real — não confundir desempenho em plataforma com prontidão profissional.
+
+**Contribuição a projeto aberto.** Documentação, tradução, teste, correção pequena. Cria histórico público e ensina a trabalhar com o processo de revisão de outra pessoa.
+
+**Programas de recompensa por vulnerabilidade, dentro do escopo.** Legítimos e formativos, com a ressalva permanente do @sec-cap007: **escopo autorizado é fronteira jurídica, não sugestão**. Testar alvo fora do programa é crime no Brasil, independentemente da intenção, como visto no @sec-cap098.
+
+**Automação do próprio trabalho.** Um script que resolve um problema real do time atual demonstra exatamente o que empregador quer ver — e não exige permissão de ninguém.
+
+## Aprender continuamente sem se afogar
+
+Esta área produz mais informação por dia do que qualquer pessoa consegue ler por semana, e a sensação de estar sempre atrasado é universal, inclusive entre quem tem vinte anos de estrada. Três hábitos resolvem a maior parte do problema.
+
+**Separe notícia de conhecimento.** Notícia é o que aconteceu — vulnerabilidade nova, incidente do dia. Consome muito tempo e envelhece em uma semana. Conhecimento é o que explica **por que** aconteceu — o protocolo, o modelo de memória, o modo de operação da cifra, o mecanismo de autenticação. Envelhece devagar e é o que permite entender a próxima notícia sem estudar de novo. A proporção saudável é minoritária em notícia e majoritária em fundamento, e a maioria das pessoas faz o inverso.
+
+**Tenha profundidade em alguma coisa.** Superfície ampla e rasa produz profissional que reconhece termos e não resolve problema. Escolher um assunto por ano e ir ao fundo — ler a especificação, montar, quebrar, escrever sobre — vale mais que trinta cursos introdutórios. E fundamento não expira: TCP/IP, criptografia e sistema operacional continuarão relevantes daqui a vinte anos, quando o produto da moda tiver sumido.
+
+**Cadência sustentável.** Uma hora por dia útil, por dois anos, é mais que qualquer maratona de fim de semana que ninguém mantém por três meses. Constância vence intensidade, aqui como em tudo.
+
+Sobre fontes, uma orientação simples: prefira o material primário. A especificação, a norma, a publicação da agência, o aviso do fabricante, o relatório técnico original. Resumo de resumo perde o que importa — e a habilidade de ler documento primário sem atalho é, ela mesma, uma das mais valiosas da profissão.
+
+## A parte que ninguém escreve no folheto
+
+Segurança da informação tem características que desgastam, e fingir o contrário produz gente que abandona a área em cinco anos.
+
+**Plantão é real.** Incidente não escolhe horário, e boa parte das trilhas envolve escala. Vale perguntar sobre isso na entrevista, com franqueza, e vale exigir escala organizada, compensação e revezamento — time que trata plantão como heroísmo informal está queimando gente.
+
+**A relação com o resto da empresa é estruturalmente tensa.** Segurança frequentemente diz não, ou diz "sim, mas". Quem constrói a reputação de obstáculo perde influência e, com ela, capacidade de proteger qualquer coisa. Como visto no @sec-cap068, o profissional eficaz é o que oferece caminho, não o que apenas bloqueia.
+
+**Nem tudo termina bem.** Haverá o incidente que já estava em curso quando você chegou, a vulnerabilidade que você apontou e não foi corrigida por falta de orçamento, e o dia em que a decisão de negócio contraria a recomendação técnica. Documentar a recomendação, registrar a aceitação de risco por quem tem autoridade para aceitá-la, e seguir em frente é a postura profissional — não é derrota, é a função de assessoria funcionando.
+
+**Síndrome do impostor é quase universal aqui.** A área é vasta demais para ser dominada, e todo mundo convive com lacunas. O antídoto não é saber tudo: é ter método para descobrir o que falta, e honestidade para dizer "não sei, vou verificar". A resposta da candidata contratada no início deste capítulo não continha nenhuma certeza — continha um método.
+
+## ⚖️ Brasil em Foco
+
+**Não existe conselho profissional nem registro obrigatório para segurança da informação no Brasil.** Nenhum órgão regula o exercício da profissão, e não há reserva de mercado por diploma. Isso amplia o acesso — muita gente excelente entrou sem formação superior na área — e desloca inteiramente o critério de contratação para competência demonstrável. A contrapartida é que **nada protege o profissional que atua fora do escopo autorizado**: a licitude do trabalho vem do contrato e da autorização, não de uma carteira [@lei12737; @marcocivil2014].
+
+**A LGPD criou um mercado inteiro.** A figura do encarregado pelo tratamento de dados pessoais é exigida pela lei, e a ANPD orientou sobre suas atribuições. Isso abriu trilha de carreira que combina direito, processo e tecnologia — e é uma das poucas com porta de entrada real para quem vem de outras formações. Profissional de GRC com base técnica de verdade é escasso no país [@lgpd2018; @anpd2021agentes].
+
+**Concurso e contratação pública têm regras próprias.** Editais costumam exigir certificação nominalmente e formação específica, e a Lei nº 14.133/2021 permite exigir qualificação técnica em contratações. Para quem mira o setor público — que tem demanda crescente em segurança —, a escolha de certificação deve ser guiada pelos editais recentes da carreira pretendida, não pela reputação internacional da sigla [@lei14133].
+
+**Setores regulados criam demanda concentrada e estável.** Instituições financeiras e de pagamento, sob as resoluções do Banco Central, e prestadores de telecomunicações, sob o regulamento da Anatel, têm obrigações de política de segurança, de resposta a incidentes e de reporte que exigem equipe dedicada. São os empregadores mais previsíveis do país no assunto, e quem conhece a regulação específica tem vantagem clara na seleção [@bcb4893; @anatel740].
+
+**A comunidade nacional é acessível e vale mais que curso caro.** CERT.br e NIC.br publicam material técnico em português e conduzem capacitação; os grupos de usuários regionais, os eventos de segurança do país e as listas técnicas de provedores são onde as vagas circulam antes de virarem anúncio. Participar, apresentar e ajudar constrói rede profissional de forma mais eficaz do que qualquer plataforma de currículo [@cert2024praticas; @nicbr2024registro].
+
+**A fronteira legal é a mesma para estudante e para profissional.** A Lei nº 12.737/2012 tipifica invasão de dispositivo informático, e a autorização do titular é o que separa o teste do crime. Laboratório próprio, ambiente de treino contratado e programa de recompensa dentro do escopo são os caminhos legítimos; "testar" o site de terceiro para aprender não é zona cinzenta, é conduta típica — e o registro de acesso do @sec-cap099 estará lá [@lei12737; @lei14155].
+
+**Modalidade de contratação afeta direitos, e a escolha é informada.** Contratação por regime celetista, prestação de serviço por pessoa jurídica e trabalho para empresa no exterior têm implicações distintas em previdência, férias, plantão e responsabilidade. Não há resposta única, mas há uma recomendação: **cláusula de responsabilidade e de limite de escopo importa muito em segurança**, sobretudo para quem executa teste de invasão — o contrato do @sec-cap056 protege o profissional tanto quanto o cliente.
+
+## 🛠️ No Campo
+
+**1. Entre pela porta lateral.** Suporte, NOC, redes, sistemas ou desenvolvimento — quase todo bom profissional de segurança veio de operar antes de proteger.
+
+**2. Não confunda o déficit do mercado com facilidade de entrada.** A escassez é de gente experiente; vagas de entrada são poucas e disputadas.
+
+**3. Construa profundidade em um assunto por ano.** Superfície ampla e rasa reconhece termos; profundidade resolve problema.
+
+**4. Escolha certificação pelo destino, contando siglas em cinquenta anúncios reais.** Vinte minutos de pesquisa substituem qualquer opinião.
+
+**5. Prefira exame prático a múltipla escolha.** Certificado obtido decorando banco de questões vale o que custa.
+
+**6. Faça uma certificação por vez e aplique o conteúdo.** Coleção de siglas sem projeto é sinal negativo para quem entrevista bem.
+
+**7. Monte laboratório próprio e quebre-o de propósito.** O valor está nos problemas que só aparecem quando algo precisa funcionar.
+
+**8. Escreva em público.** Maior retorno por hora investida de toda a lista, e o item menos utilizado.
+
+**9. Não confunda desempenho em plataforma de desafio com prontidão profissional.** Cenário curado tem solução garantida; produção não tem.
+
+**10. Automatize um problema real do seu time atual.** Demonstra exatamente o que empregador procura e não depende de permissão de ninguém.
+
+**11. Respeite o escopo autorizado, sempre.** É fronteira jurídica, não etiqueta — a Lei nº 12.737/2012 não pergunta sobre intenção didática.
+
+**12. Leia material primário.** Especificação, norma, aviso do fabricante. Resumo de resumo perde justamente o que importa.
+
+**13. Gaste a maior parte do tempo em fundamento, não em notícia.** Protocolo e sistema operacional continuarão valendo quando o produto da moda tiver sumido.
+
+**14. Cadência diária vence maratona de fim de semana.** Uma hora por dia útil, por dois anos, é o que muda a carreira.
+
+**15. Pergunte sobre plantão na entrevista e exija escala organizada.** Time que trata plantão como heroísmo informal queima gente.
+
+**16. Ofereça caminho em vez de só bloquear.** Reputação de obstáculo custa influência, e sem influência não se protege nada.
+
+**17. Registre a aceitação de risco por quem tem autoridade para aceitá-la.** Quando a decisão contraria a recomendação, isso não é derrota: é a assessoria funcionando.
+
+**18. Diga "não sei, vou verificar" sem constrangimento.** O que se contrata é método, não catálogo de certezas.
+
+## Resumo
+
+- O que o mercado contrata é **capacidade de investigar**, e isso se pratica, não se estuda. Nomes memorizados perdem para método de descoberta em qualquer entrevista bem conduzida.
+- O déficit de profissionais é **de gente experiente**. Vagas de entrada são poucas e disputadas, e segurança é especialização, não porta de entrada em tecnologia: quase todo bom profissional veio de suporte, redes, sistemas ou desenvolvimento.
+- As trilhas — defesa e detecção, ofensiva, aplicação, engenharia de plataforma, resposta e forense, GRC, arquitetura e liderança — exigem coisas diferentes, mas compartilham a mesma base: rede, sistema operacional, código, nuvem e capacidade de ler documento primário.
+- Certificação faz três coisas: **passa por filtro, organiza estudo e sinaliza compromisso**. Não prova competência nem substitui experiência. Escolha pelo destino, prefira exame prático, faça uma por vez — e desconfie da própria coleção de siglas sem prática correspondente.
+- O portfólio vale mais em nível de entrada: laboratório próprio, **escrita pública** (o maior retorno por hora de toda a lista), competições com a ressalva de serem cenários curados, contribuição a projeto aberto, recompensa por vulnerabilidade dentro do escopo e automação do próprio trabalho.
+- Aprender sem se afogar se resume a **separar notícia de conhecimento**, ter profundidade em algo por vez e manter cadência sustentável. Fundamento não expira; produto da moda expira.
+- A parte desconfortável precisa ser dita: plantão é real, a relação com o resto da empresa é estruturalmente tensa, nem toda recomendação será acatada, e a síndrome do impostor é quase universal numa área grande demais para ser dominada.
+- No Brasil não há conselho profissional nem registro obrigatório — o acesso é amplo e o critério é competência demonstrável —, mas **nada protege quem atua fora do escopo autorizado**. A LGPD criou a trilha do encarregado, e os setores financeiro e de telecomunicações concentram a demanda mais estável do país.
+- Este é o fim do manual e não do assunto. O que fica não é a lista de técnicas, que envelhece, mas o hábito de perguntar o que pode dar errado, quem ganha com isso, o que aconteceria se este controle falhasse — e a disciplina de verificar em vez de supor.
