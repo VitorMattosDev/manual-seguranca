@@ -1,3 +1,211 @@
 # Segurança de OT, IoT e sistemas embarcados {#sec-cap104}
 
-*(em elaboracao)*
+O engenheiro de manutenção precisava acompanhar o comportamento de uma bomba durante a madrugada sem ir até a planta. Instalou na estação de operação um daqueles programas de acesso remoto que qualquer um baixa em cinco minutos, deixou a sessão permanentemente ativa e anotou a senha num bilhete colado ao monitor da sala de controle — a mesma senha que os três colegas do turno usavam, porque cada um precisava entrar quando fosse chamado.
+
+Isso resolveu um problema real de operação. Também expôs à internet uma interface capaz de comandar atuadores físicos, protegida por uma senha compartilhada, sem segundo fator, sem registro de quem entrou e sem que a equipe de segurança da informação soubesse que aquilo existia. A estação de operação nem constava no inventário: fora comprada pela engenharia, junto com o pacote do fornecedor da automação, e nunca passou pela TI.
+
+Este é o formato mais comum de incidente em tecnologia operacional, e é importante notar o que ele **não** tem: nenhuma exploração sofisticada de firmware, nenhum ataque a protocolo industrial, nenhum adversário estatal. Tem acesso remoto mal feito, credencial compartilhada e ausência de inventário. **A maior parte do risco de OT no Brasil hoje é higiene básica aplicada a um ambiente que nunca a recebeu** — e é por isso que este capítulo insiste mais em fundamentos do que em exotismo.
+
+## Por que OT não é TI com outro nome
+
+A diferença não é de tecnologia; é de consequência e de prioridade. Em TI, a hierarquia clássica do @sec-cap002 é confidencialidade, integridade, disponibilidade. Em ambiente industrial a ordem se inverte, e ainda ganha um item acima de todos: **segurança física de pessoas, depois disponibilidade, depois integridade, e por último confidencialidade** [@nistsp80082].
+
+Isso não é preferência cultural. É a consequência de que, do outro lado do fio, existe massa em movimento: uma turbina, uma esteira, um forno, uma válvula, um disjuntor de alta tensão. O pior resultado de um incidente de TI é vazamento ou parada. O pior resultado de um incidente de OT é alguém morrer.
+
+Cinco características operacionais decorrem disso e explicam por que as receitas dos volumes anteriores não se transplantam sem tradução:
+
+**Ciclo de vida de vinte a trinta anos.** Um controlador lógico programável instalado em 2006 pode estar rodando hoje, com o sistema operacional embarcado que veio de fábrica. Não há atualização, não há suporte, e trocar significa parar a produção e requalificar o processo.
+
+**Parada custa caro e às vezes é proibida.** Reiniciar um servidor de TI é rotina noturna. Parar uma linha de produção contínua pode levar dias para retomar, e há processos — fornos, indústria química, geração — em que a parada não programada é evento de segurança física por si só. Isso muda tudo sobre aplicação de correções: **a janela de manutenção de OT é medida em vezes por ano, não por semana**.
+
+**Protocolos sem autenticação por projeto.** Modbus, DNP3 clássico, IEC 60870-5-104, EtherNet/IP e Profinet foram desenhados para redes fisicamente isoladas, quando "quem está no barramento é confiável" era uma premissa razoável. Não há autenticação, não há cifra, não há verificação de integridade. Quem alcança a rede fala com o equipamento — e o equipamento obedece, porque foi feito para obedecer.
+
+**Certificação e responsabilidade do fabricante.** Aplicar uma correção não homologada pelo fabricante pode invalidar garantia e certificação de segurança funcional. Não é burocracia: é o regime jurídico de responsabilidade que sustenta a operação.
+
+**Determinismo temporal.** Muitos processos exigem latência previsível em milissegundos. Um agente de EDR consumindo CPU numa estação de operação ou uma varredura ativa de rede podem, literalmente, derrubar a produção. Varredura ativa em rede industrial já causou parada de planta mais de uma vez — e é a razão de o monitoramento em OT ser preferencialmente passivo.
+
+## Como o ataque chega de fato
+
+O imaginário público sobre segurança industrial foi moldado por casos excepcionais. Vale conhecê-los, com a ressalva de que eles são a exceção, não o padrão.
+
+**Stuxnet** demonstrou que software pode causar destruição física dirigida, manipulando velocidade de centrífugas enquanto reportava valores normais aos operadores [@langner2013]. **Industroyer** mostrou malware que falava os protocolos elétricos nativamente, capaz de abrir disjuntores por comando legítimo. **TRITON/TRISIS** cruzou a linha mais grave ao atacar o sistema instrumentado de segurança — a camada final que existe para levar a planta a estado seguro quando tudo mais falha.
+
+Esses três definem o teto da ameaça. O piso — que é onde quase todo mundo vive — tem outra cara [@dragos2024]:
+
+**Ransomware que entra pela TI e transborda.** É o cenário mais comum e mais caro. O adversário nem sempre alcança a rede OT; frequentemente basta cifrar os sistemas corporativos de que a operação depende — planejamento, faturamento, expedição, historiadores — para que a planta pare por decisão da própria empresa, incapaz de operar às cegas. A parada é real mesmo sem comprometimento do processo.
+
+**Acesso remoto exposto.** O caso da abertura. Interfaces de operação e servidores de acesso remoto alcançáveis pela internet, com credencial compartilhada ou padrão. Mecanismos de busca de dispositivos conectados indexam isso continuamente, e no Brasil não faltam achados.
+
+**Ativo esquecido na fronteira.** Modem de manutenção do fornecedor, enlace de rádio antigo, porta de firewall aberta em 2014 para um projeto encerrado em 2015.
+
+O caminho, portanto, é quase sempre o mesmo: **entra pela TI, atravessa a fronteira mal definida, chega à OT**. É por isso que a fronteira é o objeto central do desenho.
+
+## Zonas, condutos e o modelo de referência
+
+O modelo hierárquico de referência para automação industrial organiza o ambiente em níveis, do processo físico até a rede corporativa [@purdue1992]. Ele é um mapa conceitual, não uma planta de rede — mas continua sendo a linguagem comum entre TI e engenharia, e é útil exatamente por isso.
+
+::: {#fig-niveis-ot}
+```{.tikz}
+%%| filename: niveis-ot
+%%| alt: Modelo hierarquico de referencia industrial com niveis do processo fisico ate a rede corporativa e a zona desmilitarizada industrial
+\begin{tikzpicture}[font=\footnotesize]
+  \tikzset{
+    nivel/.style={draw, thick, rounded corners=2pt, align=left, font=\tiny,
+                  inner sep=4pt, text width=7.3cm, minimum height=0.78cm},
+    seta/.style={-{Stealth[length=2.2mm]}, very thick, manualred}}
+
+  \node[nivel, draw=manualgray, fill=manualgray!14] (n5) at (0,5.1)
+    {\textbf{Nível 5 --- rede corporativa}\quad internet, e-mail, ERP};
+  \node[nivel, draw=manualgray, fill=manualgray!11] (n4) at (0,4.25)
+    {\textbf{Nível 4 --- TI de negócio da planta}\quad sistemas de gestão};
+
+  \node[nivel, draw=manualred, fill=manualred!13, minimum height=0.95cm] (dmz) at (0,3.25)
+    {\textbf{DMZ industrial} --- o único ponto de travessia. Réplica de
+     historiador, servidor de salto, repositório de atualização.
+     \textbf{Nenhuma sessão atravessa de ponta a ponta.}};
+
+  \node[nivel, draw=manualblue, fill=manualblue!13] (n3) at (0,2.25)
+    {\textbf{Nível 3 --- operação da planta}\quad historiador, MES, engenharia};
+  \node[nivel, draw=manualblue, fill=manualblue!11] (n2) at (0,1.4)
+    {\textbf{Nível 2 --- supervisão}\quad SCADA, IHM};
+  \node[nivel, draw=manualgreen, fill=manualgreen!13] (n1) at (0,0.55)
+    {\textbf{Nível 1 --- controle}\quad CLP, RTU, controlador};
+  \node[nivel, draw=manualgreen, fill=manualgreen!16] (n0) at (0,-0.3)
+    {\textbf{Nível 0 --- processo físico}\quad sensores e atuadores};
+
+  \node[nivel, draw=manualyellow, fill=manualyellow!20, text width=7.3cm,
+        minimum height=0.72cm] (sis) at (0,-1.25)
+    {\textbf{SIS --- sistema instrumentado de segurança}\quad zona própria,
+     separada do controle};
+
+  % caminho real do ataque
+  \draw[seta] (4.0,5.1) to[bend left=32] (4.0,2.25);
+  \node[font=\tiny, manualred, anchor=west, align=left] at (4.35,3.7)
+    {\textbf{o caminho real}\\ do ataque: entra\\ pela TI e atravessa\\ a
+     fronteira mal\\ definida};
+
+  \node[draw=manualgray, fill=manualgray!9, thick, rounded corners=3pt,
+        align=left, inner sep=5pt, font=\tiny, text width=4.0cm]
+    at (-5.9,2.0)
+    {\textbf{Zonas e condutos.} A norma IEC 62443 substitui a leitura de
+     ``camadas empilhadas'' por \textbf{zonas} (ativos com requisito de
+     segurança comum) e \textbf{condutos} (as travessias entre elas, com
+     controle explícito). Duas células idênticas de produção podem ser zonas
+     distintas; um mesmo nível pode conter várias.};
+\end{tikzpicture}
+```
+O modelo de referência, a DMZ industrial e o caminho por onde o ataque efetivamente chega.
+:::
+
+A norma **IEC 62443** é o referencial setorial e traz o conceito que realmente organiza o desenho: **zonas** — agrupamentos de ativos com requisitos de segurança comuns — e **condutos**, as travessias entre zonas, que precisam ser explícitas, poucas e controladas [@iec62443]. Ela também define **níveis de segurança**, de 1 a 4, escalonados pela capacidade do adversário: desde violação casual até adversário com recursos de Estado. Escolher o nível-alvo por zona é o que evita gastar proteção de nível 4 onde nível 2 bastava — e o inverso, que é pior.
+
+Três decisões de arquitetura importam mais que todas as outras:
+
+**A DMZ industrial é o único ponto de travessia, e nenhuma sessão a atravessa de ponta a ponta.** Dados sobem por réplica — o historiador da DMZ replica para o corporativo, e é ele que o ERP consulta. Acesso desce por servidor de salto na DMZ, com autenticação forte e gravação de sessão. Se existe uma regra de firewall que permite a um usuário corporativo alcançar diretamente um equipamento de nível 2, a DMZ é decorativa.
+
+**O sistema instrumentado de segurança fica em zona própria**, separado do controle básico, com acesso à sua programação restrito fisicamente e por procedimento. É a lição de TRITON, e é a que menos admite economia.
+
+**O acesso remoto de fornecedor é processo, não conexão permanente.** Habilitado sob demanda, com prazo, aprovação, autenticação multifator, sessão gravada e desligamento verificado. A alternativa — túnel permanente do fornecedor, com credencial dele, sem registro — é o vetor que mais aparece em avaliação de planta.
+
+## IoT: o problema da escala e do descarte
+
+Se OT é o problema dos ativos caros que duram trinta anos, IoT é o oposto: ativos baratíssimos, em quantidade enorme, que ninguém sabe que tem e que ninguém atualiza. A câmera de vigilância, o gravador de vídeo, a impressora, a fechadura, o termostato, o rastreador veicular, o medidor.
+
+O padrão de falha é conhecido e repetitivo [@owaspiot; @nistir8259]: credencial padrão de fábrica, muitas vezes não alterável; serviços de gestão expostos na rede; ausência de mecanismo de atualização, ou atualização sem assinatura; **chave criptográfica idêntica em todos os exemplares do modelo**, de modo que extrair de um compromete todos; fim de suporte anos antes do fim de vida útil do equipamento; e componentes de terceiros embutidos sem qualquer visibilidade — a cadeia de suprimentos do @sec-cap105 em sua forma mais opaca.
+
+A botnet Mirai demonstrou a consequência agregada: dezenas de milhares de dispositivos com credencial padrão, recrutados por varredura trivial, produzindo ataques de negação de serviço em escala inédita, do tipo tratado no @sec-cap035. O Brasil figurou com destaque entre as origens, por causa do parque de gravadores de vídeo e roteadores domésticos instalados sem qualquer alteração de configuração.
+
+O que funciona, em ordem de retorno: **segmentar** — VLAN dedicada, sem acesso à rede administrativa nem à internet quando não for necessário, política de saída negando por padrão; **trocar credenciais e desligar serviços de gestão expostos**; **exigir critérios na compra**, porque a única alavanca real está na aquisição, e critérios como os da norma europeia de IoT de consumo dão uma lista objetiva — sem senha padrão universal, canal de reporte de vulnerabilidade, prazo declarado de suporte e atualização assinada [@etsi303645]; e **planejar o fim de suporte como se planeja o fim de vida de um servidor**.
+
+## Embarcado: onde a confiança começa
+
+Para quem projeta ou avalia o dispositivo em si, três pontos concentram o risco.
+
+**A cadeia de inicialização confiável.** Uma raiz de confiança em hardware verifica a assinatura do primeiro estágio, que verifica o próximo, e assim por diante. Sem isso, qualquer escrita na memória de programa é execução persistente com privilégio máximo — e as regras de inicialização segura do @sec-cap041 valem aqui com mais força, porque não há sistema operacional acima para compensar.
+
+**As interfaces de depuração.** JTAG, SWD e console serial em placa de produção são acesso completo ao equipamento por quem tiver alguns minutos com ele nas mãos. Devem ser desabilitadas ou protegidas por autenticação em unidades de campo. É o item mais frequentemente esquecido em produto que passou direto do protótipo para a linha.
+
+**Segredos e atualização.** Chave por dispositivo, nunca por modelo, com armazenamento em elemento seguro. Atualização assinada, com verificação antes da gravação, proteção contra reversão para versão vulnerável e capacidade de recuperação em caso de falha no meio do processo. Um mecanismo de atualização mal feito é pior que nenhum: vira o canal de comprometimento em massa.
+
+Vale acrescentar uma nota realista: **firmware de dispositivo comprado pronto é caixa-preta para o comprador**, e a extração e análise desse firmware — feita em laboratório, sobre equipamento próprio, com as cautelas do @sec-cap071 — é atividade legítima e frequentemente a única forma de descobrir uma chave embutida ou um serviço não documentado antes que outra pessoa descubra.
+
+## Operar com o que se tem
+
+Nenhuma planta será redesenhada porque um capítulo recomendou. O caminho praticável, em ordem:
+
+**Inventário, obtido de forma passiva.** Espelhamento de porta e análise do tráfego, sem varredura ativa. Ferramentas de monitoramento industrial identificam ativo, protocolo e versão só escutando. Em ambiente industrial, **a varredura ativa é ela própria um risco operacional**, e essa é uma das poucas inversões absolutas em relação à prática de TI.
+
+**A fronteira antes do resto.** Mapear e reduzir os condutos entre TI e OT, e eliminar o que atravessa por fora do desenho — rádio esquecido, modem do fornecedor, regra de firewall órfã.
+
+**Acesso remoto disciplinado.** Salto na DMZ, multifator, sob demanda, gravado. Fim das credenciais compartilhadas em bilhete no monitor.
+
+**Detecção passiva e específica de protocolo.** O que se procura não é assinatura de malware, é **comando fora do esperado**: uma escrita em CLP fora de janela de manutenção, uma mudança de ponto de ajuste vinda de origem incomum, um novo dispositivo falando protocolo de engenharia. Em rede industrial isso é factível porque o tráfego é notavelmente estável — a linha de base é real, ao contrário do que acontece em rede corporativa. Os registros vão para o SIEM do @sec-cap077, e a taxonomia de ATT&CK para sistemas de controle industrial dá o vocabulário para as regras [@mitreattackics].
+
+**Correção por risco, com compensação.** Como a janela é rara, o padrão é priorizar pelo que é alcançável a partir da fronteira e aplicar controle compensatório onde não dá para corrigir: isolamento adicional, lista de permissão de aplicações na estação de operação, bloqueio no conduto.
+
+**Resposta a incidente com prioridade invertida.** O plano do @sec-cap083 precisa de um anexo para OT, e ele muda uma decisão fundamental: **isolar não é a primeira ação**. Desconectar um segmento de controle pode ser mais perigoso que a intrusão. A decisão de contenção é tomada com a engenharia de processo, tem passagem para operação manual prevista, e a ordem de prioridade é pessoas, ambiente, equipamento e só então dados. O exercício de mesa do @sec-cap091 tem que incluir a equipe de operação — se ela nunca participou, o plano é ficção.
+
+## ⚖️ Brasil em Foco
+
+**O setor elétrico tem requisitos obrigatórios e fiscalizados.** Os procedimentos de rede do Operador Nacional do Sistema Elétrico estabelecem requisitos de segurança cibernética para agentes do Sistema Interligado Nacional, alcançando sistemas de supervisão e controle, comunicação com o centro de operação e gestão de acessos. Para geradores, transmissores e distribuidores conectados ao sistema, isso não é boa prática opcional: é condição de operação, com prazos e evidências [@ons2024].
+
+**A Anatel alcança o parque de dispositivos.** O regulamento de segurança cibernética aplicada aos equipamentos para telecomunicações trouxe requisitos objetivos para produtos homologados — vedação a senha padrão universal, obrigação de mecanismo de atualização e cuidados de configuração —, e o regulamento de segurança cibernética do setor impõe deveres aos prestadores. **Homologação passou a ser vetor de política de segurança**, e isso muda a conversa com fornecedor de roteador, ONU e equipamento de rede de acesso [@anatel740; @anatel680].
+
+**O provedor regional é, na prática, um integrador de OT alheia.** Quem opera rede de acesso frequentemente instala e mantém CFTV de cliente, telemetria de torre, controle de acesso de sala técnica, nobreak gerenciável e enlace de rádio para cliente industrial. Cada um desses é um ativo embarcado sob sua responsabilidade operacional, e o cliente atribuirá a você o incidente que vier deles. Segmentação por cliente, credencial única por dispositivo e inventário desses equipamentos são obrigação prática, não zelo excessivo [@cert2024praticas].
+
+**Câmera é tratamento de dados pessoais.** Um sistema de videomonitoramento capta imagem de pessoa identificável e está integralmente sob a LGPD: exige base legal, aviso, prazo de retenção definido, controle de acesso às gravações e registro de quem as consulta. Gravador exposto na internet com senha padrão é, simultaneamente, ativo de botnet e incidente de dados pessoais notificável à ANPD [@lgpd2018; @anpd2024res15].
+
+**Saneamento, transporte e saúde entram no radar regulatório.** Estações de tratamento, sistemas de controle de tráfego e equipamento médico conectado combinam OT com consequência direta sobre pessoas. No caso da saúde suplementar já há norma setorial de segurança da informação, e a tendência regulatória em infraestrutura crítica é de aperto — planejar como se a exigência já existisse é mais barato que reagir a ela [@ansrn2024; @nistsp80082].
+
+**Responsabilidade por produto defeituoso alcança o fabricante e o integrador.** O Código de Defesa do Consumidor trata de defeito de produto e de serviço com responsabilidade objetiva, e um dispositivo com senha padrão imutável e sem atualização é candidato natural a essa discussão. Para quem integra e revende equipamento, a exigência contratual de critérios mínimos ao fornecedor é também proteção jurídica própria [@cdc1990].
+
+**CERT.br e NIC.br publicam material específico e recebem notificações.** As recomendações para redes de acesso e para tratamento de dispositivos comprometidos são a referência nacional, e é por meio delas que chega o aviso de que o seu bloco de endereçamento está participando de um ataque — normalmente originado de dispositivos de cliente [@cert2024praticas; @cert2024ddos].
+
+## 🛠️ No Campo
+
+**1. Inverta a hierarquia: pessoas, disponibilidade, integridade e só então confidencialidade.** Do outro lado do fio existe massa em movimento.
+
+**2. Faça inventário passivo, nunca varredura ativa.** Em rede industrial a varredura é, ela mesma, risco operacional — já parou planta.
+
+**3. Trate a fronteira TI/OT antes de qualquer outra coisa.** O ataque quase sempre entra pela TI e atravessa por um conduto mal definido.
+
+**4. Não deixe sessão atravessar a DMZ industrial de ponta a ponta.** Dados sobem por réplica; acesso desce por salto. Se há regra permitindo acesso direto ao nível 2, a DMZ é decorativa.
+
+**5. Ponha o sistema instrumentado de segurança em zona própria.** É a lição de TRITON e a que menos admite economia.
+
+**6. Transforme acesso remoto de fornecedor em processo com prazo.** Sob demanda, aprovado, multifator, gravado, desligamento verificado.
+
+**7. Elimine credencial compartilhada em sala de controle.** Nominal, sempre — sem isso não há registro de quem comandou o quê.
+
+**8. Detecte comando anômalo, não assinatura de malware.** Escrita em CLP fora de janela e mudança de ponto de ajuste de origem incomum são os sinais; a linha de base industrial é estável e realmente funciona.
+
+**9. Priorize correção pelo que é alcançável a partir da fronteira.** Onde não dá para corrigir, compense com isolamento e lista de permissão de aplicações.
+
+**10. Escreva anexo de OT no plano de resposta — e não presuma isolamento.** Desconectar controle pode ser mais perigoso que a intrusão; a decisão é conjunta com a engenharia de processo.
+
+**11. Inclua a operação nos exercícios de mesa.** Plano de OT sem participação de quem opera a planta é ficção.
+
+**12. Segmente IoT em rede própria com saída negada por padrão.** Câmera e gravador não precisam falar com o resto do mundo.
+
+**13. Troque credencial de fábrica e desligue gestão exposta.** É o que separa o seu parque da próxima botnet.
+
+**14. Exija critérios objetivos na compra.** Sem senha padrão universal, atualização assinada, prazo declarado de suporte e canal de reporte de vulnerabilidade.
+
+**15. Planeje o fim de suporte como fim de vida.** Dispositivo sem atualização é dívida com data marcada.
+
+**16. Em produto próprio: inicialização verificada, depuração desabilitada, chave por dispositivo.** Chave por modelo compromete o parque inteiro a partir de uma unidade.
+
+**17. Trate CFTV como dado pessoal.** Base legal, aviso, retenção definida e controle de acesso às gravações — gravador exposto é incidente notificável, além de ativo de botnet.
+
+## Resumo
+
+- O incidente típico de OT não é sofisticado: **acesso remoto exposto, credencial compartilhada e ausência de inventário**. A maior parte do risco é higiene básica aplicada a um ambiente que nunca a recebeu.
+- A hierarquia se inverte — **pessoas, disponibilidade, integridade, confidencialidade** — porque o pior resultado deixa de ser vazamento e passa a ser dano físico.
+- Cinco características tornam as receitas de TI intransplantáveis sem tradução: ciclo de vida de décadas, janela de parada rara, protocolos sem autenticação por projeto, certificação do fabricante e exigência de determinismo temporal.
+- Stuxnet, Industroyer e TRITON definem o teto da ameaça; o piso, onde quase todos vivem, é **ransomware que entra pela TI e para a planta por dependência**, acesso remoto exposto e ativo esquecido na fronteira.
+- O modelo de referência dá a linguagem comum; a **IEC 62443** dá o que organiza o desenho: zonas, condutos e níveis de segurança escalonados pela capacidade do adversário.
+- Três decisões dominam: **DMZ industrial sem travessia de sessão ponta a ponta**, sistema instrumentado de segurança em zona própria e acesso remoto de fornecedor como processo com prazo, não como túnel permanente.
+- Em IoT o padrão de falha é repetitivo — credencial de fábrica, gestão exposta, chave idêntica por modelo, ausência de atualização assinada, fim de suporte precoce. **A alavanca real está na aquisição**, e depois na segmentação.
+- Em embarcado, o risco se concentra na cadeia de inicialização confiável, nas interfaces de depuração deixadas ativas e na gestão de segredos e de atualização — com chave por dispositivo, nunca por modelo.
+- A operação viável é: inventário passivo, fronteira, acesso remoto disciplinado, detecção de **comando anômalo** em vez de assinatura, correção por risco com compensação e resposta a incidente com prioridade invertida — em que isolar não é a primeira ação.
+- No Brasil, o setor elétrico já tem requisitos obrigatórios e fiscalizados, a Anatel transformou homologação em vetor de segurança de dispositivo, o provedor regional é integrador de OT alheia sem saber, e videomonitoramento é tratamento de dados pessoais sob a LGPD.
