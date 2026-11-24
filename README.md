@@ -31,7 +31,7 @@ TLMGR="$(command -v tlmgr || find "$HOME" -name tlmgr | head -n1)"
 # 3. Chrome headless (mermaid no PDF)
 quarto install chrome-headless-shell
 
-# 4. CSL da ABNT (o Claude Code faz isso no passo 2 do PROMPT-INICIAL.md)
+# 4. CSL da ABNT
 curl -fsSL -o associacao-brasileira-de-normas-tecnicas.csl \
   https://raw.githubusercontent.com/citation-style-language/styles/master/associacao-brasileira-de-normas-tecnicas.csl
 ```
